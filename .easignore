@@ -1,0 +1,41 @@
+# ----------------------------------------
+# EXPO EAS SAFE IGNORE FILE
+# Only include files INSIDE this project folder
+# ----------------------------------------
+
+# Ignore ANY accidental references to parent folders
+/*
+
+# Allow only these directories
+!/app
+!/assets
+!/components
+!/constants
+!/hooks
+!/scripts
+!/src
+
+# Allow only these config files
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/app.json
+!/eas.json
+!/.gitignore
+!/expo-env.d.ts
+
+# Expo artifacts
+.expo/
+.expo-shared/
+
+# Node junk
+node_modules/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
