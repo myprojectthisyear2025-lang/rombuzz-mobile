@@ -1,45 +1,72 @@
 {
   "expo": {
-    "name": "rombuzz-mobile",
+    "name": "RomBuzz",
     "slug": "rombuzz-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "rombuzzmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.rombuzz.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "RomBuzz needs access to your camera to take photos and MicroBuzz selfies.",
+        "NSPhotoLibraryUsageDescription": "RomBuzz needs access to your gallery to upload photos.",
+        "NSLocationWhenInUseUsageDescription": "RomBuzz needs your location for MicroBuzz radar and matching nearby users.",
+        "NSUserTrackingUsageDescription": "RomBuzz uses anonymous analytics to improve user experience."
+      }
     },
+
     "android": {
-  "adaptiveIcon": {
-    "backgroundColor": "#E6F4FE",
-    "foregroundImage": "./assets/images/android-icon-foreground.png",
-    "backgroundImage": "./assets/images/android-icon-background.png",
-    "monochromeImage": "./assets/images/android-icon-monochrome.png"
-  },
-  "edgeToEdgeEnabled": true,
-  "predictiveBackGestureEnabled": false,
-  "package": "com.rombuzz.app"
-},
+      "package": "com.rombuzz.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "versionCode": 1,
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
 
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
+      "expo-dev-client",
       "expo-router",
       "expo-secure-store"
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {
         "projectId": "403274b4-8881-4326-9995-eb281aa10fd3"
-      }
+      },
+
+      "googleAndroidClientId": "579443399527-q29pu29jhor729m3tr8rr73ai4j3og4k.apps.googleusercontent.com",
+      "googleIosClientId": "579443399527-g3ufrp6bbm69k7422ci7ag4p4ebmp6hp.apps.googleusercontent.com",
+      "googleWebClientId": "579443399527-3q3lpblalkiqces1d0etdgjfj301b75l.apps.googleusercontent.com",
+
+      "cloudinaryCloudName": null,
+      "cloudinaryPreset": null
     }
   }
 }

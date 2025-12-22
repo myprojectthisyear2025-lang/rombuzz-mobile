@@ -1,17 +1,24 @@
+
 /**
  * ============================================================
  * 📁 File: app/auth/login.tsx
  * 🎯 Purpose: RomBuzz Mobile Login Screen
- *      - Smaller animated logo (soft pulse)
- *      - Email + password login (real backend)
- *      - Buttons: Login, Create Account, Login with Google, Forgot Password
+ *
+ * FEATURES:
+ *   - Email + password login → POST /auth/login
+ *   - Login with Google (Expo) → POST /auth/google
+ *   - Stores token + user in SecureStore (RBZ_TOKEN / RBZ_USER)
+ *   - "Create a new account" → Mobile Signup flow (Signup.jsx logic)
  * ============================================================
  */
 
+import axios from "axios";
+import * as AuthSession from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
+import Constants from "expo-constants";
+
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -25,32 +32,27 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+// Expo Google Auth
+import * as WebBrowser from "expo-web-browser";
+
 import { API_BASE } from "../../src/config/api";
 
-// Required once for Expo AuthSession
 WebBrowser.maybeCompleteAuthSession();
-
 
 export default function LoginScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [googleLoading, setGoogleLoading] = useState(false);
-
-  // 🔐 Google Auth request (fill these client IDs from your Google Console)
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, // same as web CLIENT_ID
-  });
 
   // Logo animation (soft pulse)
   const logoScale = useRef(new Animated.Value(1)).current;
 
-   useEffect(() => {
+  useEffect(() => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(logoScale, {
@@ -67,70 +69,12 @@ export default function LoginScreen() {
     ).start();
   }, [logoScale]);
 
-  // 🎯 Handle Google auth response → call /auth/google (same as web)
-  useEffect(() => {
-    const run = async () => {
-      if (!response || response.type !== "success") return;
-
-      try {
-        setGoogleLoading(true);
-        setError(null);
-
-        const idToken = response.authentication?.idToken;
-        if (!idToken) {
-          setError("Google login failed. Missing token.");
-          return;
-        }
-
-        const res = await fetch(`${API_BASE}/auth/google`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ token: idToken }),
-        });
-
-        const data = await res.json().catch(() => ({} as any));
-
-        if (!res.ok) {
-          const msg =
-            (data as any)?.error ||
-            (data as any)?.message ||
-            "Google login failed. Please try again.";
-          setError(msg);
-          return;
-        }
-
-        const { token, user, status } = (data as any) || {};
-        if (!token || !user) {
-          setError("Invalid response from server for Google login.");
-          return;
-        }
-
-        await SecureStore.setItemAsync("RBZ_TOKEN", token);
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
-
-        // 🔀 Basic routing (later we can send incomplete_profile → mobile onboarding)
-        if (status === "incomplete_profile") {
-          // TODO: route to mobile CompleteProfile wizard when we build it
-          router.replace("/(tabs)");
-        } else {
-          router.replace("/(tabs)");
-        }
-      } catch (err) {
-        console.error("Google login error:", err);
-        setError("Google login failed. Please try again.");
-      } finally {
-        setGoogleLoading(false);
-      }
-    };
-
-    run();
-  }, [response, router, API_BASE]);
-  // ^ API_BASE is imported constant; TS will ignore the dep warning
-
+  /**
+   * ------------------------------------------------------------
+   * 🔐 Email / Password Login → POST /auth/login
+   * ------------------------------------------------------------
+   */
   const handleLogin = async () => {
-
     setError(null);
 
     if (!email.trim() || !password.trim()) {
@@ -158,6 +102,15 @@ export default function LoginScreen() {
         data = {};
       }
 
+      // Handle "no account" case - navigate to start screen
+      if (data.status === "no_account") {
+        console.log("No account found, navigating to start screen");
+        // Clear any error and navigate
+        setError(null);
+        router.replace("../signup");
+        return;
+      }
+
       if (!res.ok) {
         const message =
           data?.error ||
@@ -172,13 +125,16 @@ export default function LoginScreen() {
         return;
       }
 
+      // ✅ Save auth
       await SecureStore.setItemAsync("RBZ_TOKEN", data.token);
       if (data.user) {
         await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(data.user));
       }
 
-      // Go to main app tabs (we'll refine later)
-      router.replace("/(tabs)");
+      // ✅ Route to home immediately
+      console.log("Login successful, navigating to home");
+      router.replace("/(tabs)/homepage");
+
     } catch (err) {
       console.error("Login network error:", err);
       setError("Network error. Please try again.");
@@ -186,21 +142,76 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
- const handleGoogleLogin = async () => {
-    setError(null);
 
-    if (!request) {
-      setError("Google login is not ready. Please try again in a moment.");
+  /**
+   * ------------------------------------------------------------
+   * ⚡ Google Login (Expo AuthSession) → POST /auth/google
+   * ------------------------------------------------------------
+   */
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: "rombuzzmobile",
+  });
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: Constants.expoConfig?.extra?.googleAndroidClientId,
+    iosClientId: Constants.expoConfig?.extra?.googleIosClientId,
+    webClientId: Constants.expoConfig?.extra?.googleWebClientId,
+    redirectUri,
+  });
+
+  useEffect(() => {
+    if (response?.type === "success") {
+      const idToken = response.authentication?.idToken;
+      handleGoogleLogin(idToken);
+    }
+  }, [response]);
+
+  const handleGoogleLogin = async (idToken?: string | null) => {
+    if (!idToken) {
+      setError("Google login failed. No token received.");
       return;
     }
 
-    setGoogleLoading(true);
+    setLoading(true);
+    setError(null);
+
     try {
-      await promptAsync();
-    } catch (e) {
-      console.error("Prompt Google error:", e);
-      setError("Could not start Google login.");
-      setGoogleLoading(false);
+      const res = await axios.post(`${API_BASE}/auth/google`, {
+        token: idToken,
+      });
+
+      const { status, token, user, error } = res.data || {};
+
+      // Handle "no account" case for Google login
+      if (status === "no_account") {
+        console.log("No account found for Google login, navigating to start");
+        router.replace("../signup");
+        return;
+      }
+
+      if (!token || !user) {
+        throw new Error("Invalid response from server.");
+      }
+
+      // Save auth to SecureStore
+      await SecureStore.setItemAsync("RBZ_TOKEN", token);
+      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
+
+      // If backend marks as incomplete profile → go to mobile onboarding
+      if (status === "incomplete_profile" || !user.profileComplete) {
+        router.replace("/auth/register-full");
+      } else {
+        router.replace("/(tabs)/homepage");
+      }
+    } catch (err: any) {
+      console.error("Google login error:", err);
+      setError(
+        err?.response?.data?.error ||
+          err?.message ||
+          "Google login failed. Please try again."
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -220,13 +231,15 @@ export default function LoginScreen() {
           ]}
         >
           <Image
-            source={require("../../assets/logo.png")}
+            source={require("../../assets/images/logo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
         </Animated.View>
         <Text style={styles.title}>RomBuzz</Text>
-        <Text style={styles.subtitle}>Connect with people nearby in real-time</Text>
+        <Text style={styles.subtitle}>
+          Connect with people nearby in real-time
+        </Text>
       </View>
 
       {/* Error */}
@@ -245,14 +258,25 @@ export default function LoginScreen() {
           autoCorrect={false}
         />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#999"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        <View style={styles.passwordWrapper}>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Password"
+            placeholderTextColor="#999"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+          />
+
+          <TouchableOpacity
+            style={styles.showButton}
+            onPress={() => setShowPassword((v) => !v)}
+          >
+            <Text style={styles.showButtonText}>
+              {showPassword ? "Hide" : "Show"}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Login Button */}
         <TouchableOpacity
@@ -282,27 +306,22 @@ export default function LoginScreen() {
           <View style={styles.dividerLine} />
         </View>
 
-             {/* Google Login (real) */}
+        {/* Google Login */}
         <TouchableOpacity
-          style={[styles.googleButton, googleLoading && { opacity: 0.7 }]}
-          onPress={handleGoogleLogin}
-          disabled={googleLoading}
+          style={styles.googleButton}
+          disabled={!request || loading}
+          onPress={() => promptAsync()}
         >
-          {googleLoading ? (
-            <ActivityIndicator color="#444" />
-          ) : (
-            <Text style={styles.googleButtonText}>Login with Google</Text>
-          )}
+          <Text style={styles.googleButtonText}>Login with Google</Text>
         </TouchableOpacity>
 
-        {/* Create account */}
+        {/* Create account → mobile Signup (same as web Signup.jsx) */}
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => router.push("/auth/register")}
+          onPress={() => router.push("/auth/signup")}
         >
           <Text style={styles.secondaryButtonText}>Create a new account</Text>
         </TouchableOpacity>
-
       </View>
     </KeyboardAvoidingView>
   );
@@ -356,18 +375,32 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textAlign: "center",
     paddingHorizontal: 32,
+    fontSize: 14,
   },
   form: {
     width: "88%",
     marginTop: 8,
   },
-  input: {
-    width: "100%",
+  passwordWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#f5f5f7",
-    padding: 14,
     borderRadius: 12,
-    fontSize: 16,
     marginBottom: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 14,
+    fontSize: 16,
+  },
+  showButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  showButtonText: {
+    color: "#ff176e",
+    fontSize: 14,
+    fontWeight: "600",
   },
   primaryButton: {
     backgroundColor: "#ff176e",
@@ -428,5 +461,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#ff176e",
     fontWeight: "600",
+  },
+  input: {
+    width: "100%",
+    backgroundColor: "#f5f5f7",
+    padding: 14,
+    borderRadius: 12,
+    fontSize: 16,
+    marginBottom: 12,
   },
 });

@@ -1,3 +1,4 @@
+
 /**
  * ============================================================
  * 📁 File: app/index.tsx
@@ -7,13 +8,14 @@
  *      - Smaller glass card with logo
  *      - "Rombuzz" text with glow
  *      - 6 floating particles
- *      - Runs ~2s on app start, then → /auth/login
+ *      - Runs ~2s on app start, then → layout handles routing
  * ============================================================
  */
 
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef } from "react";
+
 import {
   Animated,
   Easing,
@@ -128,10 +130,12 @@ export default function SplashScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      router.replace("/auth/login");
+      // ✅ Splash animation finished (2-3 seconds total)
+      // 🔥 Layout will handle redirection based on auth state
+      console.log("✨ Splash animation complete");
+      // Don't navigate here - let _layout.tsx handle it
     });
   }, [
-    router,
     mainOpacity,
     coreScale,
     ringRotate,
@@ -175,7 +179,7 @@ export default function SplashScreen() {
     });
 
   return (
-        <LinearGradient
+    <LinearGradient
       style={styles.container}
       colors={["#ff4bbd", "#ff2f88", "#ff5b68", "#d633ff"]}
       start={{ x: 0, y: 0 }}
@@ -291,7 +295,7 @@ export default function SplashScreen() {
           ]}
         >
           <Image
-            source={require("../assets/logo.png")}
+            source={require("../assets/images/logo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -312,7 +316,6 @@ export default function SplashScreen() {
         </Animated.View>
       </Animated.View>
     </LinearGradient>
-
   );
 }
 
@@ -334,7 +337,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   ring: {
     position: "absolute",
     borderRadius: 9999,
@@ -360,7 +362,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
   },
   coreCard: {
-    width: 94,   // smaller, closer to web
+    width: 94, // smaller, closer to web
     height: 94,
     borderRadius: 26,
     backgroundColor: "rgba(255,255,255,0.18)",

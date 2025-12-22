@@ -21,16 +21,19 @@
  * ============================================================================
  */
 
+
+import { Audio, AVPlaybackStatus } from "expo-av";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
-    ActivityIndicator,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { LOOKING_FOR, RegisterForm, VISIBILITY_MODES } from "../index";
+import { LOOKING_FOR, RegisterForm } from "../index";
 
 type Props = {
   email: string;
@@ -38,7 +41,7 @@ type Props = {
   error: string;
   busy: boolean;
   onBack: () => void;
-  onFinish: () => void;
+  onFinish: () => void; // will redirect to homepage
 };
 
 export default function Step6Summary({
@@ -49,6 +52,74 @@ export default function Step6Summary({
   onBack,
   onFinish,
 }: Props) {
+  const router = useRouter();
+
+  const [sound, setSound] = React.useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [loadingSound, setLoadingSound] = React.useState(false);
+  const [duration, setDuration] = React.useState<number | null>(null);
+
+  // -----------------------------
+  // 🎤 LOAD + PLAY / PAUSE LOGIC
+  // -----------------------------
+  const handlePlayPause = async () => {
+    try {
+      if (!form.voiceUrl) return;
+
+      if (!sound) {
+        setLoadingSound(true);
+
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: form.voiceUrl },
+          { shouldPlay: true }
+        );
+
+        setSound(newSound);
+        setIsPlaying(true);
+
+        // Playback status handler
+        newSound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+          if (!status.isLoaded) return;
+
+          if (status.durationMillis) {
+            setDuration(status.durationMillis);
+          }
+
+          if (status.didJustFinish) {
+            setIsPlaying(false);
+          }
+        });
+
+        setLoadingSound(false);
+      } else {
+        const st = await sound.getStatusAsync();
+        if (st.isLoaded && st.isPlaying) {
+          await sound.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          await sound.playAsync();
+          setIsPlaying(true);
+        }
+      }
+    } catch (err) {
+      console.log("Audio error:", err);
+    }
+  };
+
+  React.useEffect(() => {
+    return () => {
+      if (sound) sound.unloadAsync();
+    };
+  }, [sound]);
+
+  // -----------------------------
+  // 🎯 FINISH BUTTON → Homepage
+  // -----------------------------
+  const finishAndGoHome = async () => {
+  await onFinish(); // parent controls navigation
+};
+
+
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Review & Finish</Text>
@@ -91,11 +162,6 @@ export default function Step6Summary({
           </Text>
 
           <Text style={styles.rowItem}>
-            <Text style={styles.bold}>Visibility:</Text>{" "}
-            {VISIBILITY_MODES.find((v) => v.key === form.visibilityMode)?.label}
-          </Text>
-
-          <Text style={styles.rowItem}>
             <Text style={styles.bold}>Interests:</Text>{" "}
             {form.interests.join(", ")}
           </Text>
@@ -104,15 +170,34 @@ export default function Step6Summary({
             <Text style={styles.bold}>Photos:</Text> {form.photos.length}
           </Text>
 
+          {/* 🎤 Voice Preview */}
+          {form.voiceUrl && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={styles.rowItem}>
+                <Text style={styles.bold}>Voice Intro:</Text>
+              </Text>
+
+              <TouchableOpacity
+                style={styles.voicePlayBtn}
+                onPress={handlePlayPause}
+                disabled={loadingSound}
+              >
+                <Text style={styles.voicePlayText}>
+                  {isPlaying ? "⏸ Pause" : "▶️ Play"}
+                </Text>
+              </TouchableOpacity>
+
+              {duration && (
+                <Text style={styles.voiceDuration}>
+                  Duration: {(duration / 1000).toFixed(1)}s
+                </Text>
+              )}
+            </View>
+          )}
+
           {form.phone ? (
             <Text style={styles.rowItem}>
               <Text style={styles.bold}>Phone:</Text> {form.phone}
-            </Text>
-          ) : null}
-
-          {form.voiceUrl ? (
-            <Text style={styles.rowItem}>
-              <Text style={styles.bold}>Voice intro:</Text> Added
             </Text>
           ) : null}
         </View>
@@ -128,7 +213,7 @@ export default function Step6Summary({
 
         <TouchableOpacity
           style={[styles.finishBtn, busy && styles.finishBtnDisabled]}
-          onPress={onFinish}
+          onPress={finishAndGoHome}
           disabled={busy}
         >
           {busy ? (
@@ -202,5 +287,23 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "700",
     fontSize: 13,
+  },
+  voicePlayBtn: {
+    marginTop: 4,
+    backgroundColor: "#ff2f6e",
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+  },
+  voicePlayText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  voiceDuration: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#555",
   },
 });

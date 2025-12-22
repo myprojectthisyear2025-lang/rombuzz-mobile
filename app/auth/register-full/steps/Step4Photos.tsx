@@ -4,18 +4,15 @@
  * 🎯 Step 4 — Photos (min 2)
  *
  * PURPOSE:
- *   - User enters photo URLs exactly like web version expects.
+ *   - User picks photos from gallery (no manual URL typing).
+ *   - Each chosen image is uploaded to Cloudinary.
+ *   - We store the secure URLs in form.photos.
  *   - First photo becomes avatar (unless user sets another).
  *   - Allows removing a photo + setting avatar.
  *
- * FUTURE UPGRADE:
- *   - Can replace text-input URL with camera/upload later.
- *
  * PROPS:
  *   - form
- *   - addPhotoUrl(url)
- *   - removePhotoUrl(url)
- *   - setAvatar(url)
+ *   - setField
  *   - canNext
  *   - onNext
  *   - onBack
@@ -24,252 +21,401 @@
 
 import React, { useState } from "react";
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
 } from "react-native";
+
+import CloudinaryUploader from "../../../components/CloudinaryUploader";
 import { RegisterForm } from "../index";
 
-type Props = {
+const MIN_PHOTOS = 2;
+const MAX_PHOTOS = 6;
+
+export type Step4Props = {
   form: RegisterForm;
-  addPhotoUrl: (url: string) => void;
-  removePhotoUrl: (url: string) => void;
-  setAvatar: (url: string) => void;
+  setField: <K extends keyof RegisterForm>(
+    key: K,
+    value: RegisterForm[K]
+  ) => void;
   canNext: boolean;
   onNext: () => void;
   onBack: () => void;
 };
 
-export default function Step4Photos({
-  form,
-  addPhotoUrl,
-  removePhotoUrl,
-  setAvatar,
-  canNext,
-  onNext,
-  onBack,
-}: Props) {
-  const [pendingUrl, setPendingUrl] = useState("");
+function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
+  const { width } = useWindowDimensions();
+  const isSmallScreen = width < 360;
 
-  const submitPhoto = () => {
-    if (!pendingUrl.trim()) return;
-    addPhotoUrl(pendingUrl.trim());
-    setPendingUrl("");
+  // Local editable copy of photos
+  const [photos, setPhotos] = useState<string[]>(
+    form.photos && form.photos.length > 0 ? form.photos : ["", ""]
+  );
+
+  const [uploaderVisible, setUploaderVisible] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const syncPhotos = (next: string[]) => {
+    // Ensure we don't exceed MAX_PHOTOS
+    const trimmed = next.slice(0, MAX_PHOTOS);
+    setPhotos(trimmed);
+    setField("photos", trimmed);
+
+    // If no avatar yet but we have a non-empty first photo, make it avatar
+    if (!form.avatar && trimmed[0] && trimmed[0].trim()) {
+      setField("avatar", trimmed[0].trim());
+    }
+  };
+
+  const updatePhotoAt = (index: number, value: string) => {
+    const next = [...photos];
+    next[index] = value;
+    syncPhotos(next);
+  };
+
+  const addSlot = () => {
+    if (photos.length >= MAX_PHOTOS) {
+      Alert.alert(
+        "Max photos reached",
+        `You can add up to ${MAX_PHOTOS} photos.`
+      );
+      return;
+    }
+    syncPhotos([...photos, ""]);
+  };
+
+  const removeSlot = (index: number) => {
+    const next = photos.filter((_, i) => i !== index);
+
+    if (next.length < MIN_PHOTOS) {
+      Alert.alert(
+        "Need more photos",
+        `Please keep at least ${MIN_PHOTOS} photo${MIN_PHOTOS > 1 ? "s" : ""}.`
+      );
+      return;
+    }
+
+    syncPhotos(next);
+  };
+
+  const setAvatarFrom = (url: string) => {
+    if (!url.trim()) return;
+    setField("avatar", url.trim());
+    Alert.alert(
+      "Avatar updated",
+      "This photo is now your main profile picture."
+    );
+  };
+
+  const openUploaderForIndex = (index: number) => {
+    setActiveIndex(index);
+    setUploaderVisible(true);
+  };
+
+  const handleUploaded = (url: string) => {
+    if (activeIndex == null) return;
+    updatePhotoAt(activeIndex, url);
+    setActiveIndex(null);
+    setUploaderVisible(false);
+  };
+
+  const handleCloseUploader = () => {
+    setActiveIndex(null);
+    setUploaderVisible(false);
+  };
+
+  const handleNext = () => {
+    const filledCount = photos.filter((p) => p.trim()).length;
+
+    if (filledCount < MIN_PHOTOS) {
+      Alert.alert(
+        "Add more photos",
+        `Please add at least ${MIN_PHOTOS} good photos so others can see you.`
+      );
+      return;
+    }
+
+    if (!form.avatar && photos[0] && photos[0].trim()) {
+      setField("avatar", photos[0].trim());
+    }
+
+    onNext();
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Photos</Text>
-      <Text style={styles.subtitle}>
-        Add at least <Text style={styles.bold}>2 photos</Text>.  
-        First photo becomes avatar (you can change it).
-      </Text>
+    <>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          isSmallScreen && styles.contentSmall,
+        ]}
+      >
+        <Text style={styles.title}>Add your photos</Text>
+        <Text style={styles.subtitle}>
+          Add at least {MIN_PHOTOS} clear photos. Tap a slot to choose from your
+          gallery. First one becomes your profile photo (you can change it).
+        </Text>
 
-      {/* Add new photo URL */}
-      <View style={styles.row}>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter image URL (Cloudinary / HTTPS)"
-          placeholderTextColor="#888"
-          value={pendingUrl}
-          onChangeText={setPendingUrl}
-        />
-        <TouchableOpacity style={styles.addBtn} onPress={submitPhoto}>
-          <Text style={styles.addText}>Add</Text>
-        </TouchableOpacity>
-      </View>
+              {photos.map((url, index) => {
+          const isAvatar = !!url.trim() && form.avatar === url;
+          const canRemoveThis = photos.length > MIN_PHOTOS && index >= MIN_PHOTOS;
 
-      {/* Photo Grid */}
-      {form.photos.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginTop: 6 }}
-        >
-          {form.photos.map((url) => {
-            const isAvatar = form.avatar === url;
-            return (
-              <View key={url} style={styles.photoCard}>
-                <Image
-                  source={{ uri: url }}
-                  style={[styles.photo, isAvatar && styles.avatarBorder]}
-                />
-
-                {/* Avatar label */}
-                {isAvatar && (
-                  <View style={styles.avatarTag}>
-                    <Text style={styles.avatarTagText}>Avatar</Text>
-                  </View>
-                )}
-
-                {/* Buttons */}
-                <View style={styles.btnRow}>
-                  {!isAvatar && (
-                    <TouchableOpacity
-                      style={styles.smallBtn}
-                      onPress={() => setAvatar(url)}
-                    >
-                      <Text style={styles.smallBtnText}>Set avatar</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={styles.smallBtn}
-                    onPress={() => removePhotoUrl(url)}
-                  >
-                    <Text style={styles.smallBtnText}>Remove</Text>
-                  </TouchableOpacity>
+          return (
+            <View key={index} style={styles.photoCard}>
+              <View style={styles.photoHeader}>
+                <View style={styles.photoIndex}>
+                  <Text style={styles.photoIndexText}>{index + 1}</Text>
                 </View>
+                {isAvatar && <Text style={styles.avatarTag}>Profile photo</Text>}
               </View>
-            );
-          })}
-        </ScrollView>
-      ) : (
-        <Text style={styles.emptyMsg}>No photos yet.</Text>
-      )}
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.imageBox,
+                  isAvatar && styles.imageBoxAvatar,
+                ]}
+                onPress={() => openUploaderForIndex(index)}
+              >
+                {url ? (
+                  <Image source={{ uri: url }} style={styles.imagePreview} />
+                ) : (
+                  <Text style={styles.imagePlaceholder}>
+                    Tap to choose from gallery
+                  </Text>
+                )}
+              </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.nextBtn, !canNext && styles.nextBtnDisabled]}
-          disabled={!canNext}
-          onPress={onNext}
-        >
-          <Text style={styles.nextText}>Next →</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+              <View style={styles.photoActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.avatarButton,
+                    isAvatar && styles.avatarButtonActive,
+                  ]}
+                  onPress={() => setAvatarFrom(url)}
+                >
+                  <Text
+                    style={[
+                      styles.avatarButtonText,
+                      isAvatar && styles.avatarButtonTextActive,
+                    ]}
+                  >
+                    {isAvatar ? "Avatar ✓" : "Make avatar"}
+                  </Text>
+                </TouchableOpacity>
+
+                {canRemoveThis && (
+                  <TouchableOpacity
+                    style={styles.removeButton}
+                    onPress={() => removeSlot(index)}
+                  >
+                    <Text style={styles.removeButtonText}>Remove</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          );
+        })}
+
+
+        {photos.length < MAX_PHOTOS && (
+          <TouchableOpacity style={styles.addSlotButton} onPress={addSlot}>
+            <Text style={styles.addSlotText}>+ Add another photo</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.footer}>
+          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.nextButton, !canNext && styles.nextButtonDisabled]}
+            onPress={handleNext}
+            disabled={!canNext}
+          >
+            <Text style={styles.nextText}>Next</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      <CloudinaryUploader
+        visible={uploaderVisible}
+        onUploaded={handleUploaded}
+        onClose={handleCloseUploader}
+      />
+    </>
   );
 }
 
-// =============================
-// 🎨 Styles
-// =============================
 const styles = StyleSheet.create({
-  container: {
-    paddingVertical: 8,
+  scroll: {
+    flex: 1,
   },
-  sectionTitle: {
-    fontSize: 18,
+  content: {
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  contentSmall: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  title: {
+    fontSize: 22,
     fontWeight: "700",
-  },
-  subtitle: {
-    fontSize: 13,
-    color: "#555",
-    marginTop: 4,
     marginBottom: 8,
   },
-  bold: { fontWeight: "700" },
-  row: {
-    flexDirection: "row",
-    gap: 6,
-    marginBottom: 10,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+  subtitle: {
     fontSize: 14,
+    color: "#666",
+    marginBottom: 16,
   },
-  addBtn: {
-    backgroundColor: "#ff2f6e",
-    paddingHorizontal: 14,
+   photoCard: {
+    borderRadius: 16,
+    padding: 10,
+    marginBottom: 12,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#f5d0de",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  photoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  photoIndex: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#ffe2ee",
+    alignItems: "center",
     justifyContent: "center",
-    borderRadius: 10,
+    marginRight: 8,
   },
-  addText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  photoCard: {
-    marginRight: 10,
-    position: "relative",
-  },
-  photo: {
-    width: 120,
-    height: 150,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#ddd",
-  },
-  avatarBorder: {
-    borderColor: "#ff2f6e",
+  photoIndexText: {
+    fontWeight: "700",
+    color: "#ff2f6e",
   },
   avatarTag: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    backgroundColor: "#ff2f6e",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  avatarTagText: {
-    color: "#fff",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#ffe2ee",
+    color: "#ff2f6e",
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "600",
   },
-  btnRow: {
-    position: "absolute",
-    bottom: 6,
-    left: 6,
-    right: 6,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  smallBtn: {
-    backgroundColor: "#ffffffbb",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
+  imageBox: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#f1f1f1",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#fafafa",
+    minHeight: 90,
+    justifyContent: "center",
   },
-  smallBtnText: {
-    fontSize: 10,
-    color: "#444",
+  imageBoxAvatar: {
+    borderColor: "#ff2f6e",
+    backgroundColor: "#fff5fa",
   },
-  emptyMsg: {
-    marginTop: 6,
-    fontSize: 13,
-    color: "#777",
+  imagePlaceholder: {
+    fontSize: 14,
+    color: "#999",
   },
-  footer: {
-    marginTop: 14,
+  imagePreview: {
+    width: "100%",
+    height: 140,
+    borderRadius: 10,
+    resizeMode: "cover",
+  },
+  photoActions: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 8,
   },
-  backBtn: {
+  avatarButton: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#ff4f81",
+    alignItems: "center",
+  },
+  avatarButtonActive: {
+    backgroundColor: "#ff4f81",
+  },
+  avatarButtonText: {
+    fontSize: 12,
+    color: "#ff4f81",
+    fontWeight: "600",
+  },
+  avatarButtonTextActive: {
+    color: "#fff",
+  },
+  removeButton: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeButtonText: {
+    fontSize: 12,
+    color: "#666",
+  },
+
+  addSlotButton: {
+    marginTop: 8,
+    marginBottom: 18,
+  },
+  addSlotText: {
+    fontSize: 14,
+    color: "#007aff",
+    fontWeight: "600",
+  },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 24,
+  },
+  backButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: "#ddd",
   },
   backText: {
     fontSize: 14,
-    color: "#444",
   },
-  nextBtn: {
-    paddingHorizontal: 16,
+  nextButton: {
+    paddingHorizontal: 24,
     paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#ff2f6e",
+    borderRadius: 999,
+    backgroundColor: "#ff4f81",
   },
-  nextBtnDisabled: {
-    backgroundColor: "#ccc",
+  nextButtonDisabled: {
+    opacity: 0.5,
   },
   nextText: {
+    fontSize: 14,
     color: "#fff",
-    fontWeight: "700",
+    fontWeight: "600",
   },
 });
+
+export default Step4Photos;

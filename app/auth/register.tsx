@@ -32,7 +32,8 @@ export default function RegisterScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const handleSendCode = async () => {
+const handleSendCode = async () => {
+  if (info) return; // 🚫 prevent regenerating OTP
     setError(null);
     setInfo(null);
 
@@ -48,7 +49,7 @@ export default function RegisterScreen() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email: email.trim() }),
+body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -71,61 +72,82 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleRegister = async () => {
-    setError(null);
-    setInfo(null);
+const handleRegister = async () => {
+  console.log("🚨 handleRegister called", {
+    email: email.trim().toLowerCase(),
+    code: code.trim(),
+  });
+  setError(null);
+  setInfo(null);
 
-    if (!email.trim() || !code.trim() || !password.trim()) {
-      setError("Email, verification code, and password are required.");
+  if (!email.trim() || !code.trim() || !password.trim()) {
+    setError("Email, verification code, and password are required.");
+    return;
+  }
+
+  setLoadingRegister(true);
+  try {
+    // ✅ STEP 1: VERIFY OTP
+console.log("🚨 CALLING /auth/verify-code");
+
+const verifyRes = await fetch(`${API_BASE}/auth/verify-code`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        code: code.trim(),
+      }),
+    });
+
+    const verifyData = await verifyRes.json().catch(() => ({}));
+
+    if (!verifyRes.ok || !verifyData.success) {
+      setError(verifyData?.error || "Invalid verification code.");
       return;
     }
 
-    setLoadingRegister(true);
-    try {
-      const res = await fetch(`${API_BASE}/auth/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          code: code.trim(),
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          password: password,
-        }),
-      });
+    // ✅ STEP 2: REGISTER USER (NO CODE HERE)
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        password: password,
+      }),
+    });
 
-      const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        const message =
-          data?.error || "Registration failed. Check your code and try again.";
-        setError(message);
-        return;
-      }
-
-      if (!data.token) {
-        setError("No token returned from server.");
-        console.warn("Register: missing token in response:", data);
-        return;
-      }
-
-      // Save token + user
-      await SecureStore.setItemAsync("RBZ_TOKEN", data.token);
-      if (data.user) {
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(data.user));
-      }
-
-      // Go straight to main app (tabs)
-      router.replace("/(tabs)");
-    } catch (err) {
-      console.error("register error:", err);
-      setError("Network error. Please try again.");
-    } finally {
-      setLoadingRegister(false);
+    if (!res.ok) {
+      setError(data?.error || "Registration failed.");
+      return;
     }
-  };
+
+    if (!data.token) {
+      setError("No token returned from server.");
+      return;
+    }
+
+    await SecureStore.setItemAsync("RBZ_TOKEN", data.token);
+    if (data.user) {
+      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(data.user));
+    }
+
+    router.replace("/(tabs)");
+  } catch (err) {
+    console.error("register error:", err);
+    setError("Network error. Please try again.");
+  } finally {
+    setLoadingRegister(false);
+  }
+};
+
 
   return (
     <KeyboardAvoidingView
@@ -142,7 +164,10 @@ export default function RegisterScreen() {
         placeholder="Email"
         placeholderTextColor="#999"
         value={email}
-        onChangeText={setEmail}
+onChangeText={(val) => {
+  setEmail(val);
+  setInfo(null); // ✅ allow resend if email changes
+}}
         autoCapitalize="none"
         keyboardType="email-address"
         autoCorrect={false}
@@ -175,18 +200,19 @@ export default function RegisterScreen() {
       />
 
       <View style={styles.codeRow}>
-        <TextInput
-          style={[styles.input, styles.codeInput]}
-          placeholder="Verification code"
-          placeholderTextColor="#999"
-          value={code}
-          onChangeText={setCode}
-          keyboardType="number-pad"
-        />
+       <TextInput
+  style={[styles.input, styles.codeInput]}
+  placeholder="Verification code"
+  value={code}
+  onChangeText={setCode}
+  keyboardType="number-pad"
+  maxLength={6} // ✅ critical
+/>
+
         <TouchableOpacity
           style={[styles.smallButton, loadingSend && { opacity: 0.7 }]}
           onPress={handleSendCode}
-          disabled={loadingSend}
+disabled={loadingSend || !!info}
         >
           {loadingSend ? (
             <ActivityIndicator color="#fff" />

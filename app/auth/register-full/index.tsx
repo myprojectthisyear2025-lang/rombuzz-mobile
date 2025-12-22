@@ -39,13 +39,17 @@
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+
 import React, { useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Image, // ADD THIS
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
 } from "react-native";
 
 import { API_BASE } from "../../../src/config/api";
@@ -53,9 +57,7 @@ import { API_BASE } from "../../../src/config/api";
 // Step components
 import Step1Basic from "./steps/Step1Basic";
 import Step2Prefs from "./steps/Step2Prefs";
-import Step3Interests from "./steps/Step3Interests";
 import Step4Photos from "./steps/Step4Photos";
-import Step5Optional from "./steps/Step5Optional";
 import Step6Summary from "./steps/Step6Summary";
 
 /* =========================
@@ -136,7 +138,8 @@ export type RegisterForm = {
 export default function RegisterFullScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ verifiedEmail?: string }>();
-
+const { width, height } = useWindowDimensions(); // Get screen dimensions
+  const isSmallScreen = height < 700; // Detect small screens
   const [email] = useState<string>(params.verifiedEmail || "");
   const [step, setStep] = useState<number>(1);
   const [busy, setBusy] = useState(false);
@@ -215,22 +218,25 @@ export default function RegisterFullScreen() {
     form.lookingFor &&
     form.interestedIn.length > 0;
 
-  const canNext2 =
+   const canNext2 =
     form.ageMin >= 18 &&
     form.ageMin <= form.ageMax &&
     form.ageMax <= 100 &&
-    form.distance >= 0 &&
-    form.distance <= 1000;
+    form.distance >= 1 &&
+    form.distance <= 100 &&
+    form.interests.length > 0 &&
+    form.interests.length <= 5;
 
-  const canNext3 =
-    form.interests.length > 0 && form.interests.length <= 5;
+  // At least 2 *real* photos (non-empty strings)
+  const canNext4 =
+    form.photos.filter((p) => p && p.trim().length > 0).length >= 2;
 
-  const canNext4 = form.photos.length >= 2;
 
   const progressPct = useMemo(
-    () => (step / 6) * 100,
+    () => (step / 4) * 100,
     [step]
   );
+
 
   const finish = async () => {
     setError("");
@@ -302,7 +308,7 @@ export default function RegisterFullScreen() {
             onNext={() => setStep(2)}
           />
         );
-      case 2:
+            case 2:
         return (
           <Step2Prefs
             form={form}
@@ -312,136 +318,185 @@ export default function RegisterFullScreen() {
             onBack={() => setStep(1)}
           />
         );
+
       case 3:
         return (
-          <Step3Interests
+          <Step4Photos
             form={form}
-            toggleInterestChip={toggleInterestChip}
-            canNext={!!canNext3}
+            setField={setField}
+            canNext={!!canNext4}
             onNext={() => setStep(4)}
             onBack={() => setStep(2)}
           />
         );
+
       case 4:
-        return (
-          <Step4Photos
-            form={form}
-            addPhotoUrl={addPhotoUrl}
-            removePhotoUrl={removePhotoUrl}
-            setAvatar={setAvatar}
-            canNext={!!canNext4}
-            onNext={() => setStep(5)}
-            onBack={() => setStep(3)}
-          />
-        );
-      case 5:
-        return (
-          <Step5Optional
-            form={form}
-            setField={setField}
-            onNext={() => setStep(6)}
-            onBack={() => setStep(4)}
-          />
-        );
-      case 6:
       default:
         return (
           <Step6Summary
             email={email}
             form={form}
             error={error}
-            onBack={() => setStep(5)}
+            onBack={() => setStep(4)}
             onFinish={finish}
             busy={busy}
           />
         );
+
     }
   };
+return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={[
+          styles.card,
+          isSmallScreen && styles.cardSmall, // Adjust for small screens
+        ]}>
+     {/* Header */}
+<View style={{ alignItems: "center", marginBottom: 10 }}>
+  <Image
+    source={require("../../../assets/images/logo.png")}
+    style={{ width: 70, height: 70, marginBottom: 6 }}
+    resizeMode="contain"
+  />
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        {/* Header */}
-        <Text style={styles.title}>Create your RomBuzz</Text>
-        <Text style={styles.subtitle}>Step {step} of 6</Text>
+  <Text style={[
+    styles.title,
+    isSmallScreen && styles.titleSmall
+  ]}>
+    Create your RomBuzz
+  </Text>
 
-        {/* Progress bar */}
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
-        </View>
+  <Text style={[
+    styles.subtitle,
+    isSmallScreen && styles.subtitleSmall
+  ]}>
+    Step {step} of 4
+  </Text>
+</View>
 
-        {busy && step !== 6 && (
-          <View style={styles.busyRow}>
-            <ActivityIndicator />
-            <Text style={styles.busyText}>Saving...</Text>
+
+          {/* Progress bar */}
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
           </View>
-        )}
 
-        {/* Body */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {renderStep()}
-        </ScrollView>
+          {busy && step !== 6 && (
+            <View style={styles.busyRow}>
+              <ActivityIndicator />
+              <Text style={styles.busyText}>Saving...</Text>
+            </View>
+          )}
+
+          {/* Body - Optimized for all screen sizes */}
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[
+              styles.scrollContent,
+              isSmallScreen && styles.scrollContentSmall
+            ]}
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          >
+            {renderStep()}
+          </ScrollView>
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 // =============================
-// 🎨 Styles
+// 🎨 Styles - Responsive for All Screens
 // =============================
 const styles = StyleSheet.create({
+  // Wrap everything in SafeAreaView for notches
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#ff2f6e",
+  },
   container: {
     flex: 1,
     backgroundColor: "#ff2f6e",
-    justifyContent: "center",
     paddingHorizontal: 16,
+    // REMOVED: justifyContent: "center" - Was causing issues
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
+  backgroundColor: "#fff",
+  borderRadius: 18,
+  paddingVertical: 10,        // ↓ reduced from 20
+  paddingHorizontal: 20,
+  width: "100%",
+  flex: 1,
+  marginTop: 4,               // ↓ reduced from 10
+  marginBottom: 4,            // ↓ reduced from 10
+
+    // Shadow for better visual separation
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardSmall: {
     paddingVertical: 16,
     paddingHorizontal: 16,
-    maxHeight: "90%",
+    marginTop: 8,
+    marginBottom: 8,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
     color: "#ff2f6e",
     textAlign: "center",
+    marginBottom: 4,
+  },
+  titleSmall: {
+    fontSize: 20,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: "#777",
     textAlign: "center",
-    marginTop: 4,
-    marginBottom: 8,
+    marginBottom: 16,
+  },
+  subtitleSmall: {
+    fontSize: 12,
+    marginBottom: 12,
   },
   progressTrack: {
-    height: 6,
+    height: 8,
     backgroundColor: "#ffe2ee",
     borderRadius: 999,
     overflow: "hidden",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   progressFill: {
     height: "100%",
     backgroundColor: "#ff2f6e",
   },
-  scroll: {
+  scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1, // Important for ScrollView to expand
+    paddingBottom: 30, // Extra padding for keyboard
+  },
+  scrollContentSmall: {
+    paddingBottom: 20,
   },
   busyRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    marginBottom: 6,
+    marginBottom: 12,
+    paddingVertical: 8,
   },
   busyText: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#777",
   },
 });
