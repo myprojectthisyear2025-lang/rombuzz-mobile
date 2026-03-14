@@ -1,6 +1,6 @@
 // ===========================================================
 // 📁 File: app/auth/forgot-password.tsx
-// 🎯 Purpose: RomBuzz Mobile Forgot Password Screen (send code)
+// 🎯 Purpose: RomBuzz Mobile Forgot Password (Send Reset Code)
 // ===========================================================
 
 import { useRouter } from "expo-router";
@@ -12,7 +12,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity
+  TouchableOpacity,
 } from "react-native";
 import { API_BASE } from "../../src/config/api";
 
@@ -37,26 +37,24 @@ export default function ForgotPasswordScreen() {
     try {
       const res = await fetch(`${API_BASE}/auth/forgot-password`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        const message =
-          data?.error || "Failed to send reset code. Please try again.";
-        setError(message);
+        setError(data?.error || "Failed to send reset code.");
         return;
       }
 
-      setInfo(
-        "If an account exists with that email, a reset code has been sent."
-      );
+      // ✅ Move to next screen (CODE + NEW PASSWORD)
+      router.push({
+        pathname: "../auth/reset-password",
+        params: { email: email.trim() },
+      });
     } catch (err) {
-      console.error("forgot-password error:", err);
+      console.error("Forgot password error:", err);
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
@@ -99,7 +97,7 @@ export default function ForgotPasswordScreen() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push("/auth/login")}>
+      <TouchableOpacity onPress={() => router.replace("/auth/login")}>
         <Text style={styles.link}>Back to Login</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
@@ -107,7 +105,7 @@ export default function ForgotPasswordScreen() {
 }
 
 // ===========================================================
-// 🎨 Styles
+// 🎨 Styles (RomBuzz)
 // ===========================================================
 const styles = StyleSheet.create({
   container: {
@@ -146,7 +144,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   buttonText: {
-    color: "white",
+    color: "#fff",
     fontSize: 16,
     textAlign: "center",
     fontWeight: "600",

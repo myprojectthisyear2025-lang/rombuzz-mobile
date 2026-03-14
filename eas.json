@@ -9,7 +9,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drcxu0mks",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
     },
@@ -17,7 +17,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drcxu0mks",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
     },
@@ -25,7 +25,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drcxu0mks",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
     }

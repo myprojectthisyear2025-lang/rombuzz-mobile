@@ -16,7 +16,9 @@
         "NSCameraUsageDescription": "RomBuzz needs access to your camera to take photos and MicroBuzz selfies.",
         "NSPhotoLibraryUsageDescription": "RomBuzz needs access to your gallery to upload photos.",
         "NSLocationWhenInUseUsageDescription": "RomBuzz needs your location for MicroBuzz radar and matching nearby users.",
-        "NSUserTrackingUsageDescription": "RomBuzz uses anonymous analytics to improve user experience."
+        "NSUserTrackingUsageDescription": "RomBuzz uses anonymous analytics to improve user experience.",
+        "NSMicrophoneUsageDescription": "RomBuzz needs access to your microphone for voice messages."
+
       }
     },
 
@@ -28,12 +30,19 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION"
-      ],
+  "permissions": [
+  "CAMERA",
+  "RECORD_AUDIO",
+
+  "READ_MEDIA_IMAGES",
+  "READ_MEDIA_VIDEO",
+
+  "READ_EXTERNAL_STORAGE",
+  "WRITE_EXTERNAL_STORAGE",
+
+  "ACCESS_FINE_LOCATION"
+],
+
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -44,11 +53,36 @@
       "favicon": "./assets/images/favicon.png"
     },
 
-    "plugins": [
-      "expo-dev-client",
-      "expo-router",
-      "expo-secure-store"
-    ],
+"plugins": [
+  "expo-dev-client",
+  "expo-router",
+  "expo-secure-store",
+
+  [
+    "expo-camera",
+    {
+      "cameraPermission": "Allow RomBuzz to access your camera for photos and videos."
+    }
+  ],
+
+  [
+    "expo-av",
+    {
+      "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
+    }
+  ],
+
+ [
+  "expo-media-library",
+  {
+    "photosPermission": "Allow RomBuzz to access your photos and videos.",
+    "savePhotosPermission": "Allow RomBuzz to save media to your device.",
+    "isAccessMediaLocationEnabled": true,
+        "requestAudioPermission": false
+
+  }
+]
+],
 
     "experiments": {
       "typedRoutes": true,

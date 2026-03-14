@@ -120,20 +120,33 @@ export type RegisterForm = {
   lastName: string;
   password: string;
   confirm: string;
+
+  // Basics
   gender: string;
   dob: string;
   lookingFor: string;
+  city: string;
+  height: string;
+
+  // Matching
   interestedIn: string[];
   ageMin: number;
   ageMax: number;
   distance: number;
   visibilityMode: string;
+
+  // Vibe
+  likes: string;
+  dislikes: string;
+
+  // Interests / media
   interests: string[];
   phone: string;
   voiceUrl: string;
   photos: string[];
   avatar: string;
 };
+
 
 export default function RegisterFullScreen() {
   const router = useRouter();
@@ -145,25 +158,34 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const [form, setForm] = useState<RegisterForm>({
-    firstName: "",
-    lastName: "",
-    password: "",
-    confirm: "",
-    gender: "",
-    dob: "",
-    lookingFor: "",
-    interestedIn: [],
-    ageMin: 18,
-    ageMax: 35,
-    distance: 25,
-    visibilityMode: "auto",
-    interests: [],
-    phone: "",
-    voiceUrl: "",
-    photos: [],
-    avatar: "",
-  });
+ const [form, setForm] = useState<RegisterForm>({
+  firstName: "",
+  lastName: "",
+  password: "",
+  confirm: "",
+
+  gender: "",
+  dob: "",
+  lookingFor: "",
+  city: "",
+  height: "",
+
+  interestedIn: [],
+  ageMin: 18,
+  ageMax: 35,
+  distance: 25,
+  visibilityMode: "auto",
+
+  likes: "",
+  dislikes: "",
+
+  interests: [],
+  phone: "",
+  voiceUrl: "",
+  photos: [],
+  avatar: "",
+});
+
 
   const setField = (key: keyof RegisterForm, value: any) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -253,26 +275,38 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
 
     setBusy(true);
     try {
-      const payload = {
-        email: email.trim(),
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        password: form.password,
-        gender: form.gender,
-        dob: form.dob,
-        lookingFor: form.lookingFor,
-        interestedIn: form.interestedIn,
-        preferences: {
-          ageRange: [form.ageMin, form.ageMax],
-          distanceMiles: form.distance,
-        },
-        visibilityMode: form.visibilityMode,
-        interests: form.interests,
-        avatar: form.avatar,
-        photos: form.photos,
-        phone: form.phone || "",
-        voiceUrl: form.voiceUrl || "",
-      };
+    const payload = {
+  email: email.trim(),
+  firstName: form.firstName.trim(),
+  lastName: form.lastName.trim(),
+  password: form.password,
+
+  // Basics
+  gender: form.gender,
+  dob: form.dob,
+  lookingFor: form.lookingFor,
+  city: form.city,
+  height: form.height,
+
+  // Matching
+  interestedIn: form.interestedIn,
+  preferences: {
+    ageRange: [form.ageMin, form.ageMax],
+    distanceMiles: form.distance,
+  },
+  visibilityMode: form.visibilityMode,
+
+  // Vibe
+  likes: form.likes,
+  dislikes: form.dislikes,
+
+  // Interests / media
+  interests: form.interests,
+  avatar: form.avatar,
+  photos: form.photos,
+  phone: form.phone || "",
+  voiceUrl: form.voiceUrl || "",
+};
 
       const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
       const { token, user } = res.data || {};
@@ -281,10 +315,14 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
         throw new Error("Registration failed. Invalid response.");
       }
 
-      await SecureStore.setItemAsync("RBZ_TOKEN", token);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
+    await SecureStore.setItemAsync("RBZ_TOKEN", token);
+await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
 
-      router.replace("/(tabs)");
+// ✅ Force exit auth stack + re-evaluate root layout
+router.replace("../(tabs)");
+router.reload();
+
+
     } catch (e: any) {
       setError(
         e.response?.data?.error ||

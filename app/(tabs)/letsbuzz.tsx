@@ -1,212 +1,125 @@
 /**
  * ============================================================================
- * 📁 File: app/letsbuzz.tsx
- * 🎯 RomBuzz Mobile — LetsBuzz (Posts & Reels)
+ * 📁 File: app/(tabs)/letsbuzz.tsx
+ * 🎯 Screen: LetsBuzz (2 tabs) → Posts + Reels
+ *
+ * Uses:
+ *  - <LetsBuzzPosts />
+ *  - <LetsBuzzReels />
  * ============================================================================
  */
 
-import { Feather, Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
-import { useRouter } from "expo-router";
-
-import React, { useEffect, useState } from "react";
-import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-
-/* 🎨 RomBuzz Palette */
-const COLORS = {
-  primary: "#b1123c",
-  secondary: "#d8345f",
-  accent: "#e9486a",
-  highlight: "#b5179e",
-  white: "#ffffff",
-  gray: "#6b7280",
-  light: "#f9fafb",
+import LetsBuzzPosts from "@/src/components/letsbuzz/LetsBuzzPosts";
+import LetsBuzzReels from "@/src/components/letsbuzz/LetsBuzzReels";
+import { LinearGradient } from "expo-linear-gradient";
+import { useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+const RBZ = {
+  c1: "#b1123c",
+  c2: "#d8345f",
+  c3: "#e9486a",
+  c4: "#b5179e",
+  bg: "#f5f5f8ff",
+  card: "rgba(255,255,255,0.06)",
+  border: "rgba(255,255,255,0.10)",
+  text: "rgba(9, 9, 9, 0.92)",
+  sub: "rgba(255,255,255,0.70)",
 };
 
-const API = "https://YOUR_BACKEND_URL/api"; // already matches your backend routes
+type TabKey = "posts" | "reels";
 
 export default function LetsBuzzScreen() {
-  const router = useRouter();
-  const [tab, setTab] = useState<"posts" | "reels">("posts");
-  const [feed, setFeed] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
+  const { post } = useLocalSearchParams<{ post?: string }>();
+
+  const [tab, setTab] = useState<TabKey>("posts");
 
   useEffect(() => {
-    loadFeed();
+    if (post) setTab("posts");
+  }, [post]);
+  const TabBar = useMemo(() => {
+    return (
+      <View style={styles.tabWrap}>
+        <LinearGradient
+          colors={[RBZ.c1, RBZ.c2, RBZ.c3, RBZ.c4]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.tabShell}
+        >
+          <TouchableOpacity
+            onPress={() => setTab("posts")}
+            activeOpacity={0.9}
+            style={[styles.tabBtn, tab === "posts" && styles.tabBtnActive]}
+          >
+            <Text style={[styles.tabText, tab === "posts" && styles.tabTextActive]}>Posts</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setTab("reels")}
+            activeOpacity={0.9}
+            style={[styles.tabBtn, tab === "reels" && styles.tabBtnActive]}
+          >
+            <Text style={[styles.tabText, tab === "reels" && styles.tabTextActive]}>Reels</Text>
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
+    );
   }, [tab]);
 
-  const loadFeed = async () => {
-    try {
-      setLoading(true);
-      const endpoint =
-        tab === "posts" ? "/buzz/feed" : "/buzz/reels";
-      const res = await fetch(API + endpoint, {
-        headers: { Authorization: "Bearer TOKEN" },
-      });
-      const data = await res.json();
-      setFeed(data.posts || []);
-    } catch (e) {
-      console.error("LetsBuzz feed error", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <View style={styles.container}>
-      {/* 🔝 Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Let’sBuzz</Text>
-        <View style={styles.tabs}>
-          <Tab label="Posts" active={tab === "posts"} onPress={() => setTab("posts")} />
-          <Tab label="Reels" active={tab === "reels"} onPress={() => setTab("reels")} />
-        </View>
-      </View>
+<View style={styles.safe}>
+  <View style={{ paddingTop: insets.top }}>
 
-      {loading ? (
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      ) : (
-        <FlatList
-          data={feed}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) =>
-            tab === "posts" ? (
-              <PostCard post={item} />
-            ) : (
-              <ReelCard post={item} />
-            )
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </View>
-  );
-}
-
-/* ===================== COMPONENTS ===================== */
-
-function Tab({ label, active, onPress }: any) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.tab,
-        active && { borderBottomColor: COLORS.primary },
-      ]}
-    >
-      <Text
-        style={[
-          styles.tabText,
-          active && { color: COLORS.primary },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function PostCard({ post }: any) {
-  return (
-    <View style={styles.card}>
       {/* Header */}
-      <View style={styles.row}>
-        <Image source={{ uri: post.user.avatar }} style={styles.avatar} />
-        <Text style={styles.name}>{post.user.firstName}</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Let&apos;sBuzz</Text>
       </View>
 
-      {/* Media */}
-      {post.mediaUrl ? (
-        <Image source={{ uri: post.mediaUrl }} style={styles.media} />
-      ) : null}
+      {TabBar}
+  </View>
 
-      {/* Actions */}
-      <View style={styles.actions}>
-        <Ionicons name="heart-outline" size={24} color={COLORS.primary} />
-        <Ionicons name="chatbubble-outline" size={22} color={COLORS.primary} />
-        <Feather name="send" size={22} color={COLORS.primary} />
+         {/* Body */}
+      <View style={{ flex: 1 }}>
+        {tab === "posts" ? (
+          <LetsBuzzPosts targetPostId={post ? String(post) : undefined} />
+        ) : (
+          <LetsBuzzReels targetPostId={post ? String(post) : undefined} />
+        )}
       </View>
 
-      {/* Counts */}
-      <Text style={styles.count}>
-        {post.likes?.length || 0} likes · {post.comments?.length || 0} comments
-      </Text>
-
-      {/* Text */}
-      {post.text ? <Text style={styles.caption}>{post.text}</Text> : null}
     </View>
   );
 }
-
-function ReelCard({ post }: any) {
-  return (
-    <View style={styles.reel}>
-      <Video
-        source={{ uri: post.mediaUrl }}
-        style={styles.reelVideo}
-  resizeMode={ResizeMode.COVER}
-        shouldPlay
-        isLooping
-      />
-
-      <View style={styles.reelActions}>
-        <Ionicons name="heart" size={28} color={COLORS.white} />
-        <Ionicons name="chatbubble" size={26} color={COLORS.white} />
-        <Feather name="send" size={26} color={COLORS.white} />
-      </View>
-    </View>
-  );
-}
-
-/* ===================== STYLES ===================== */
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.light },
-  header: {
-    padding: 16,
-    backgroundColor: COLORS.white,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: COLORS.primary,
-    marginBottom: 12,
-  },
-  tabs: { flexDirection: "row", gap: 20 },
-  tab: {
-    paddingBottom: 6,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  tabText: { fontSize: 16, fontWeight: "700", color: COLORS.gray },
+  safe: { flex: 1, backgroundColor: RBZ.c1 },
 
-  card: {
-    backgroundColor: COLORS.white,
-    marginBottom: 16,
-    padding: 12,
-  },
-  row: { flexDirection: "row", alignItems: "center", gap: 10 },
-  avatar: { width: 36, height: 36, borderRadius: 18 },
-  name: { fontWeight: "700", color: COLORS.primary },
-  media: { width: "100%", height: 280, borderRadius: 12, marginVertical: 10 },
-  actions: { flexDirection: "row", gap: 16, marginVertical: 6 },
-  count: { color: COLORS.gray, fontSize: 13 },
-  caption: { marginTop: 4, fontSize: 14 },
+  header: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10 },
+  title: { color: "#fff", fontSize: 22, fontWeight: "900" },
+  subtitle: { color: RBZ.sub, marginTop: 4, fontWeight: "800" },
 
-  reel: { height: 520, backgroundColor: "#000" },
-  reelVideo: { width: "100%", height: "100%" },
-  reelActions: {
-    position: "absolute",
-    right: 12,
-    bottom: 80,
-    gap: 18,
+  tabWrap: { paddingHorizontal: 14, paddingBottom: 10 },
+  tabShell: {
+    borderRadius: 18,
+    padding: 3,
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabBtnActive: {
+    backgroundColor: "rgba(0,0,0,0.28)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  tabText: { color: "rgba(255,255,255,0.85)", fontWeight: "900" },
+  tabTextActive: { color: "#fff" },
 });

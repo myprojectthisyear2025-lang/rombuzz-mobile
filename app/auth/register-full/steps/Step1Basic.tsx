@@ -446,14 +446,15 @@ export default function Step1Basic({
 
               {/* Weekday labels */}
               <View style={styles.calendarWeekRow}>
-                {["S", "M", "T", "W", "T", "F", "S"].map((label) => (
-                  <Text
-                    key={label}
-                    style={[styles.calendarDayText, styles.calendarWeekday]}
-                  >
-                    {label}
-                  </Text>
-                ))}
+            {["S", "M", "T", "W", "T", "F", "S"].map((label, idx) => (
+                <Text
+                  key={`${label}-${idx}`}
+                  style={[styles.calendarDayText, styles.calendarWeekday]}
+                >
+                  {label}
+                </Text>
+              ))}
+
               </View>
 
               {/* Calendar days */}
