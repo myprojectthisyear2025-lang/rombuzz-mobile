@@ -7,8 +7,8 @@
 import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { rbzFetch } from "./_rbzApi";
-import { Card, RBZ, ScreenShell, SectionTitle, SmallText } from "./_ui";
+import { Card, RBZ, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
+import { rbzFetch } from "../../../src/lib/_rbzApi";
 
 export default function AccountSettings() {
   const [me, setMe] = useState<any>(null);

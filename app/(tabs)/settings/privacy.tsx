@@ -5,7 +5,7 @@
  * ============================================================================
  */
 import React, { useState } from "react";
-import { Card, ScreenShell, SectionTitle, SmallText, ToggleRow } from "./_ui";
+import { Card, ScreenShell, SectionTitle, SmallText, ToggleRow } from "../../../src/components/settings/_ui";
 
 export default function PrivacySettings() {
   const [incognito, setIncognito] = useState(false);

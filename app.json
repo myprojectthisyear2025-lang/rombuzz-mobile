@@ -8,9 +8,8 @@
     "scheme": "rombuzzmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
     "ios": {
-      "bundleIdentifier": "com.rombuzz.app",
+      "bundleIdentifier": "com.rombuzz.app.dev",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "RomBuzz needs access to your camera to take photos and MicroBuzz selfies.",
@@ -18,89 +17,82 @@
         "NSLocationWhenInUseUsageDescription": "RomBuzz needs your location for MicroBuzz radar and matching nearby users.",
         "NSUserTrackingUsageDescription": "RomBuzz uses anonymous analytics to improve user experience.",
         "NSMicrophoneUsageDescription": "RomBuzz needs access to your microphone for voice messages."
-
       }
     },
-
     "android": {
-      "package": "com.rombuzz.app",
+      "package": "com.rombuzz.app.dev",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/applogo.png"
       },
-  "permissions": [
-  "CAMERA",
-  "RECORD_AUDIO",
-
-  "READ_MEDIA_IMAGES",
-  "READ_MEDIA_VIDEO",
-
-  "READ_EXTERNAL_STORAGE",
-  "WRITE_EXTERNAL_STORAGE",
-
-  "ACCESS_FINE_LOCATION"
-],
-
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ],
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
-
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-
-"plugins": [
-  "expo-dev-client",
-  "expo-router",
-  "expo-secure-store",
-
-  [
-    "expo-camera",
-    {
-      "cameraPermission": "Allow RomBuzz to access your camera for photos and videos."
-    }
-  ],
-
-  [
-    "expo-av",
-    {
-      "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
-    }
-  ],
-
- [
-  "expo-media-library",
-  {
-    "photosPermission": "Allow RomBuzz to access your photos and videos.",
-    "savePhotosPermission": "Allow RomBuzz to save media to your device.",
-    "isAccessMediaLocationEnabled": true,
-        "requestAudioPermission": false
-
-  }
-]
-],
-
+    "plugins": [
+      "expo-dev-client",
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow RomBuzz to access your camera for photos and videos."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow RomBuzz to access your photos and videos.",
+          "savePhotosPermission": "Allow RomBuzz to save media to your device.",
+          "isAccessMediaLocationEnabled": true,
+          "requestAudioPermission": false
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "router": {},
-      "eas": {
-        "projectId": "403274b4-8881-4326-9995-eb281aa10fd3"
-      },
-
       "googleAndroidClientId": "579443399527-q29pu29jhor729m3tr8rr73ai4j3og4k.apps.googleusercontent.com",
       "googleIosClientId": "579443399527-g3ufrp6bbm69k7422ci7ag4p4ebmp6hp.apps.googleusercontent.com",
       "googleWebClientId": "579443399527-3q3lpblalkiqces1d0etdgjfj301b75l.apps.googleusercontent.com",
-
-      "cloudinaryCloudName": null,
-      "cloudinaryPreset": null
-    }
+      "cloudinaryCloudName": {},
+      "cloudinaryPreset": {},
+      "eas": {
+        "projectId": "27a4d5ea-b3cf-4554-aaf4-b1f9e0dbb467"
+      }
+    },
+    "owner": "rombuzz100"
   }
 }

@@ -8,7 +8,7 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React from "react";
 import { Alert } from "react-native";
-import { Card, NavRow, ScreenShell, SectionTitle, SmallText } from "./_ui";
+import { Card, NavRow, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
 
 export default function SettingsHome() {
   const router = useRouter();

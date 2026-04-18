@@ -151,9 +151,30 @@ const params = useLocalSearchParams<{
 }>();
 const insets = useSafeAreaInsets();
 
- const peerId = String(params.peerId || "");
-const peerName = String(params.name || "Chat");
-const peerAvatar = String(params.avatar || "https://i.pravatar.cc/200?img=12");
+const peerId = String(params.peerId || "");
+
+// route-param fallback only
+const routePeerName = String(params.name || "").trim();
+const routePeerAvatar = String(params.avatar || "").trim();
+
+// real peer profile state
+const [peerProfile, setPeerProfile] = useState<{
+  firstName?: string;
+  lastName?: string;
+  avatar?: string;
+} | null>(null);
+
+const peerName = (
+  [peerProfile?.firstName, peerProfile?.lastName].filter(Boolean).join(" ").trim() ||
+  routePeerName ||
+  "Chat"
+);
+
+const peerAvatar =
+  peerProfile?.avatar ||
+  routePeerAvatar ||
+  "https://i.pravatar.cc/200?img=12";
+
 /* ============================================================
    🔔 ACTIVE CHAT SIGNAL (for unread suppression + reordering)
 ============================================================ */
@@ -483,7 +504,7 @@ const lastMyMsgId = useMemo(() => {
   return null;
 }, [messages, myId]);
 
-  // Load me
+    // Load me
   useEffect(() => {
     (async () => {
       const raw = await SecureStore.getItemAsync("RBZ_USER");
@@ -491,11 +512,47 @@ const lastMyMsgId = useMemo(() => {
     })();
   }, []);
 
+  // Load real peer profile so header works even when route params are missing
+  useEffect(() => {
+    if (!peerId) return;
+
+    let alive = true;
+
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+        if (!token) return;
+
+        const r = await fetch(`${API_BASE}/users/${peerId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const j = await r.json().catch(() => ({}));
+        const u = j?.user || null;
+
+        if (!alive || !u) return;
+
+        setPeerProfile({
+          firstName: String(u.firstName || "").trim(),
+          lastName: String(u.lastName || "").trim(),
+          avatar: String(u.avatar || "").trim(),
+        });
+      } catch (e) {
+        console.log("❌ peer profile load failed", e);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [peerId]);
+
   // ✅ Track keyboard open/closed so we can remove extra bottom gaps
   useEffect(() => {
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
     const showSub = Keyboard.addListener(showEvt, () => {
       setKeyboardOpen(true);
 
@@ -784,7 +841,7 @@ s.on("typing", onTyping);
 s.on("chat:ephemeral:expired", onEphemeralExpired);
 
   })();
-
+  
   return () => {
     alive = false;
     if (!s) return;
@@ -1483,12 +1540,16 @@ const reactTo = async (m: Msg, emoji: string) => {
           <Ionicons name="chevron-back" size={22} color={RBZ.white} />
         </Pressable>
 
-       {/* Peer header (tap avatar/name -> thread info tab) */}
+         {/* Peer header (tap avatar/name -> thread info tab) */}
           <Pressable
             onPress={() =>
               router.push({
                 pathname: "/chat/thread-info/[peerId]" as any,
-                params: { peerId, name: peerName, avatar: peerAvatar },
+                params: {
+                  peerId,
+                  name: headerName,
+                  avatar: peerAvatar,
+                },
               })
             }
             style={styles.peerInfo}
@@ -1503,7 +1564,6 @@ const reactTo = async (m: Msg, emoji: string) => {
               </Text>
             </View>
           </Pressable>
-
 
                      <View style={styles.topActions}>
           <Pressable

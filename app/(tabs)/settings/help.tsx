@@ -6,7 +6,7 @@
  */
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Card, RBZ, ScreenShell, SectionTitle } from "./_ui";
+import { Card, RBZ, ScreenShell, SectionTitle } from "../../../src/components/settings/_ui";
 
 function Q({ q, a }: { q: string; a: string }) {
   return (

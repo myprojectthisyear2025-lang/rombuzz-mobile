@@ -2,6 +2,8 @@
  * ============================================================================
  * 📁 File: src/components/letsbuzz/LetsBuzzPosts.tsx
  * 🎯 Purpose: LetsBuzz → Posts tab (matched users image posts)
+ * 
+ * 🎨 Design: Clean, modern feed with Instagram/Twitter aesthetic
  * ============================================================================
  */
 
@@ -12,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
   Image,
   Modal,
@@ -27,6 +30,8 @@ import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
 import { useLetsBuzzActions } from "./LetsBuzzActions";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
 /* -------------------------------------------------------------------------- */
 /* Types */
 /* -------------------------------------------------------------------------- */
@@ -35,6 +40,7 @@ type BuzzUser = {
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  username?: string;
 };
 
 type BuzzPost = {
@@ -53,18 +59,41 @@ type BuzzPost = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Theme */
+/* Theme - Clean modern palette */
 /* -------------------------------------------------------------------------- */
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  card: "rgba(255,255,255,0.06)",
-  border: "rgba(255,255,255,0.10)",
-  text: "rgba(255,255,255,0.92)",
-  sub: "rgba(255,255,255,0.70)",
-  dark: "#0a0a0f",
+const COLORS = {
+  primary: "#FF385C",
+  background: "#FFFFFF",
+  surface: "#F8F9FA",
+  card: "#FFFFFF",
+  text: {
+    primary: "#1A1A1A",
+    secondary: "#666876",
+    tertiary: "#8E94A7",
+    light: "#FFFFFF",
+  },
+  border: "#E9ECEF",
+  overlay: "rgba(0,0,0,0.02)",
+  shadow: "#000000",
+};
+
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+};
+
+const TYPOGRAPHY = {
+  h1: { fontSize: 28, fontWeight: "700" as const, lineHeight: 34 },
+  h2: { fontSize: 22, fontWeight: "700" as const, lineHeight: 28 },
+  h3: { fontSize: 18, fontWeight: "600" as const, lineHeight: 24 },
+  body1: { fontSize: 16, fontWeight: "400" as const, lineHeight: 22 },
+  body2: { fontSize: 14, fontWeight: "400" as const, lineHeight: 20 },
+  caption: { fontSize: 12, fontWeight: "500" as const, lineHeight: 16 },
+  button: { fontSize: 14, fontWeight: "600" as const, lineHeight: 20 },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -87,6 +116,24 @@ function stripCaptionTags(caption: any) {
     .replace(/\b(?:kind|scope|intent):[^\s]+/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function formatTimestamp(timestamp: any): string {
+  if (!timestamp) return "";
+  
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -173,7 +220,7 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
 
       const raw: any[] = Array.isArray(j?.items) ? j.items : [];
 
-       const list: BuzzPost[] = raw
+      const list: BuzzPost[] = raw
         .map((p: any): BuzzPost => {
           const mediaId = String(p?.id || p?._id || "");
           const caption = String(p?.caption || "");
@@ -193,7 +240,8 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
           };
         })
         .filter((p) => !!p.id && !!p.userId && !!p.mediaUrl);
-         const photosOnly = list.filter((p) => {
+        
+      const photosOnly = list.filter((p) => {
         const source = raw.find(
           (x: any) => String(x?.id || x?._id || "") === String(p.id)
         );
@@ -235,6 +283,11 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
         })
       );
 
+      // Sort by newest first
+      hydrated.sort((a, b) => {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
       setPosts(hydrated);
     } catch (e) {
       console.log("LetsBuzzPosts load error:", e);
@@ -275,27 +328,48 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
   /* ----------------------------- Render ----------------------------- */
   const renderPost = ({ item }: { item: BuzzPost }) => {
     const u: BuzzUser = item.user || {};
-    const fullName = `${u.firstName || ""} ${u.lastName || ""}`.trim() || "User";
-
+    const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || "User";
+    const avatarUrl = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=FF385C&color=fff&size=100`;
+    const timestamp = formatTimestamp(item.createdAt);
     const giftTotal = giftTotalByPostRef.current[item.id] ?? 0;
+    const commentCount = getKnownCommentCount(item.id) || item.commentsCount || 0;
 
     return (
       <View style={styles.card}>
         {/* Header */}
-        <Pressable
-          onPress={() => router.push(`/view-profile?userId=${item.userId}` as any)}
-          style={styles.headerRow}
-        >
-          <Image
-            source={{ uri: u.avatar || "https://via.placeholder.com/120" }}
-            style={styles.avatar}
-          />
-          <Text style={styles.name}>{fullName}</Text>
-          <Ionicons name="chevron-forward" size={18} color={RBZ.sub} />
-        </Pressable>
+        <View style={styles.cardHeader}>
+          <TouchableOpacity
+            onPress={() => router.push(`/view-profile?userId=${item.userId}` as any)}
+            style={styles.userInfo}
+            activeOpacity={0.7}
+          >
+            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+            <View>
+              <Text style={styles.userName}>{fullName}</Text>
+              <Text style={styles.timestamp}>{timestamp}</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.moreButton} activeOpacity={0.7}>
+            <Ionicons name="ellipsis-horizontal" size={20} color={COLORS.text.tertiary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Caption */}
+        {!!item.text && (
+          <Text style={styles.caption} numberOfLines={3}>
+            {item.text}
+          </Text>
+        )}
 
         {/* Media */}
-        <Pressable onPress={() => setFullscreenPost(item)}>
+        <Pressable 
+          onPress={() => setFullscreenPost(item)}
+          style={({ pressed }) => [
+            styles.mediaContainer,
+            pressed && styles.mediaPressed
+          ]}
+        >
           <Image
             source={{ uri: item.mediaUrl }}
             style={styles.media}
@@ -303,60 +377,76 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
           />
         </Pressable>
 
-        {/* Actions */}
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.actionBtn}
+        {/* Action Buttons - Keeping original functionality (gift instead of like) */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity 
+            style={styles.actionButton}
             onPress={() => openGiftPicker(item)}
             onLongPress={() => openGiftInsights(item)}
             delayLongPress={350}
+            activeOpacity={0.7}
           >
-            <Ionicons name="gift" size={18} color="#fff" />
+            <Ionicons name="gift-outline" size={22} color={COLORS.text.secondary} />
             <Text style={styles.actionText}>
               Gift {giftTotal > 0 ? `· ${giftTotal}` : ""}
             </Text>
           </TouchableOpacity>
 
-                   <TouchableOpacity style={styles.actionBtn} onPress={() => openComments(item)}>
-            <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => openComments(item)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="chatbubble-outline" size={21} color={COLORS.text.secondary} />
             <Text style={styles.actionText}>
-              Comment
-              {(() => {
-                const live = getKnownCommentCount(item.id);
-                const fallback = Number(item.commentsCount || 0);
-                const c = live > 0 ? live : fallback;
-                return c > 0 ? ` · ${c}` : "";
-              })()}
+              Comment{commentCount > 0 ? ` · ${commentCount}` : ""}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionBtn} onPress={() => shareToOwner(item)}>
-            <Ionicons name="paper-plane" size={18} color="#fff" />
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => shareToOwner(item)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="paper-plane-outline" size={21} color={COLORS.text.secondary} />
             <Text style={styles.actionText}>Share</Text>
           </TouchableOpacity>
         </View>
-
-        {!!item.text && <Text style={styles.caption}>{item.text}</Text>}
       </View>
     );
   };
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={{ color: RBZ.sub, marginTop: 10 }}>Loading posts…</Text>
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading posts…</Text>
+      </View>
+    );
+  }
+
+  if (posts.length === 0) {
+    return (
+      <View style={styles.centerContainer}>
+        <View style={styles.emptyIconContainer}>
+          <Ionicons name="images-outline" size={48} color={COLORS.text.tertiary} />
+        </View>
+        <Text style={styles.emptyTitle}>No posts yet</Text>
+        <Text style={styles.emptyText}>
+          Posts from your matches will appear here
+        </Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.container}>
       <FlatList
         ref={listRef}
         data={posts}
         keyExtractor={(p) => p.id}
         renderItem={renderPost}
+        showsVerticalScrollIndicator={false}
         onScrollToIndexFailed={(info) => {
           setTimeout(() => {
             try {
@@ -369,14 +459,15 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
           }, 350);
         }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+          />
         }
-        contentContainerStyle={{ padding: 14, paddingBottom: 120 }}
-        ListEmptyComponent={
-          <View style={styles.center}>
-            <Text style={{ color: RBZ.sub }}>No matched posts yet.</Text>
-          </View>
-        }
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
       {/* Fullscreen Image Viewer */}
@@ -390,15 +481,13 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
           style={styles.fullscreenBackdrop}
           onPress={() => setFullscreenPost(null)}
         >
-          <View style={styles.fullscreenTopBar} pointerEvents="box-none">
-            <TouchableOpacity
-              style={styles.fullscreenBackBtn}
-              onPress={() => setFullscreenPost(null)}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.fullscreenCloseBtn}
+            onPress={() => setFullscreenPost(null)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="close" size={24} color={COLORS.text.light} />
+          </TouchableOpacity>
 
           {!!fullscreenPost?.mediaUrl && (
             <Image
@@ -420,101 +509,152 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
 /* Styles */
 /* -------------------------------------------------------------------------- */
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-
-  card: {
-    backgroundColor: RBZ.card,
-    borderWidth: 1,
-    borderColor: RBZ.border,
-    borderRadius: 18,
-    overflow: "hidden",
-    marginBottom: 14,
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
   },
-
-  headerRow: {
+  centerContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.xl,
+  },
+  loadingText: {
+    ...TYPOGRAPHY.body2,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.lg,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORS.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.lg,
+  },
+  emptyTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text.primary,
+    marginBottom: SPACING.sm,
+  },
+  emptyText: {
+    ...TYPOGRAPHY.body2,
+    color: COLORS.text.tertiary,
+    textAlign: "center",
+  },
+  listContent: {
+    paddingVertical: SPACING.lg,
+  },
+  separator: {
+    height: SPACING.lg,
+  },
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    marginHorizontal: SPACING.lg,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    overflow: "hidden",
+  },
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    padding: 12,
+    justifyContent: "space-between",
+    padding: SPACING.lg,
   },
-
+  userInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
   avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+  },
+  userName: {
+    ...TYPOGRAPHY.body1,
+    fontWeight: "600",
+    color: COLORS.text.primary,
+    marginBottom: 2,
+  },
+  timestamp: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.tertiary,
+  },
+  moreButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-  },
-
-  name: {
-    flex: 1,
-    color: "#fff",
-    fontWeight: "800",
-    fontSize: 14,
-  },
-
-  media: {
-    width: "100%",
-    aspectRatio: 4 / 5,
-  },
-
-  actionsRow: {
-    flexDirection: "row",
-    gap: 8,
-    padding: 10,
-  },
-
-  actionBtn: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    borderRadius: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
   },
-
-  actionText: {
-    color: "#fff",
-    fontWeight: "800",
-    fontSize: 12,
-  },
-
   caption: {
-    color: RBZ.text,
-    padding: 12,
-    lineHeight: 18,
+    ...TYPOGRAPHY.body2,
+    color: COLORS.text.primary,
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.md,
   },
-
+  mediaContainer: {
+    width: "100%",
+    aspectRatio: 1,
+    backgroundColor: COLORS.surface,
+  },
+  mediaPressed: {
+    opacity: 0.95,
+  },
+  media: {
+    width: "100%",
+    height: "100%",
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    marginTop: SPACING.sm,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 20,
+  },
+  actionText: {
+    ...TYPOGRAPHY.button,
+    color: COLORS.text.secondary,
+  },
   fullscreenBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.96)",
     justifyContent: "center",
     alignItems: "center",
   },
-
-  fullscreenTopBar: {
+  fullscreenCloseBtn: {
     position: "absolute",
     top: 54,
-    left: 16,
-    right: 16,
+    right: 20,
     zIndex: 20,
-  },
-
-  fullscreenBackBtn: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
   },
-
   fullscreenImage: {
-    width: "100%",
+    width: SCREEN_WIDTH,
     height: "100%",
   },
 });

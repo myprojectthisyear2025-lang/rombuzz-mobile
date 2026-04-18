@@ -74,7 +74,7 @@ export default function LoginScreen() {
    * 🔐 Email / Password Login → POST /auth/login
    * ------------------------------------------------------------
    */
-  const handleLogin = async () => {
+   const handleLogin = async () => {
     setError(null);
 
     if (!email.trim() || !password.trim()) {
@@ -83,17 +83,26 @@ export default function LoginScreen() {
     }
 
     setLoading(true);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
     try {
+      console.log("🔐 Login request →", `${API_BASE}/auth/login`);
+
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        signal: controller.signal,
         body: JSON.stringify({
           email: email.trim(),
           password: password,
         }),
       });
+
+      clearTimeout(timeout);
 
       let data: any = {};
       try {
@@ -101,6 +110,9 @@ export default function LoginScreen() {
       } catch {
         data = {};
       }
+
+      console.log("✅ Login response status:", res.status);
+      console.log("✅ Login response body:", data);
 
       // Handle "no account" case - navigate to start screen
       if (data.status === "no_account") {
@@ -135,10 +147,17 @@ export default function LoginScreen() {
       console.log("Login successful, navigating to home");
       router.replace("/(tabs)/homepage");
 
-    } catch (err) {
+      } catch (err: any) {
+      clearTimeout(timeout);
       console.error("Login network error:", err);
-      setError("Network error. Please try again.");
+
+      if (err?.name === "AbortError") {
+        setError("Login request timed out. Backend is taking too long.");
+      } else {
+        setError("Network error. Please try again.");
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   };

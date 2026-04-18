@@ -81,6 +81,7 @@ export default function ChatCameraModal({
   const recordingRef = useRef(false);
   const [videoPendingPreview, setVideoPendingPreview] = useState(false);
   const videoPromiseRef = useRef<Promise<any> | null>(null);
+  const camReadyRef = useRef(false);
   const [recordingReady, setRecordingReady] = useState(false); // 🆕 Track if camera is ready
   const [camReady, setCamReady] = useState(false); // 🆕 Track CameraView readiness
   const startTimeRef = useRef<number | null>(null); // 🆕 Timestamp when recording started
@@ -138,6 +139,7 @@ const visibilityLabel = () => {
     recordingRef.current = false;
     setRecordingReady(false); // 🆕 Reset ready state
     setCamReady(false);
+    camReadyRef.current = false;
     startTimeRef.current = null;
 
     setPreview(null);
@@ -187,6 +189,8 @@ const startVideo = async () => {
   const ok = await ensurePerm();
   if (!ok) return;
 
+  setCamReady(false);
+  camReadyRef.current = false;
   setCameraMode("video");
   recordingRef.current = true;
   setRecording(true);
@@ -201,10 +205,10 @@ const startVideo = async () => {
   try {
     // Wait for CameraView to report ready (up to ~2s)
     await new Promise<void>((resolve) => {
-      if (camReady) return resolve();
+      if (camReadyRef.current) return resolve();
       let settled = false;
       const check = setInterval(() => {
-        if (camReady && !settled) {
+        if (camReadyRef.current && !settled) {
           settled = true;
           clearInterval(check);
           clearTimeout(to);
@@ -446,10 +450,14 @@ const formatTime = (secs: number) => {
           {!preview ? (
                <CameraView
                 ref={camRef}
+                key={`camera-${cameraMode}-${facing}`}
                 style={StyleSheet.absoluteFill}
                 facing={facing}
                 mode={cameraMode}
-                onCameraReady={() => setCamReady(true)}
+                onCameraReady={() => {
+                  camReadyRef.current = true;
+                  setCamReady(true);
+                }}
               />
               ) : (
             <View style={StyleSheet.absoluteFill}>

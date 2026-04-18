@@ -6,8 +6,8 @@
  */
 import React, { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput } from "react-native";
-import { rbzFetch } from "./_rbzApi";
-import { Card, RBZ, ScreenShell, SectionTitle, SmallText } from "./_ui";
+import { Card, RBZ, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
+import { rbzFetch } from "../../../src/lib/_rbzApi";
 
 export default function SecuritySettings() {
   const [oldPw, setOldPw] = useState("");

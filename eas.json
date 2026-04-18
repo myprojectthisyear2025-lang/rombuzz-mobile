@@ -16,6 +16,9 @@
 
     "preview": {
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"

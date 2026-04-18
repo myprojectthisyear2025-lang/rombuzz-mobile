@@ -11,21 +11,28 @@
 
 import LetsBuzzPosts from "@/src/components/letsbuzz/LetsBuzzPosts";
 import LetsBuzzReels from "@/src/components/letsbuzz/LetsBuzzReels";
-import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  bg: "#f5f5f8ff",
-  card: "rgba(255,255,255,0.06)",
-  border: "rgba(255,255,255,0.10)",
-  text: "rgba(9, 9, 9, 0.92)",
-  sub: "rgba(255,255,255,0.70)",
+
+// Clean, modern color palette
+const COLORS = {
+  primary: "#FF385C", // Rombuzz signature color (used sparingly)
+  background: "#FFFFFF",
+  surface: "#F8F9FA",
+  text: {
+    primary: "#1A1A1A",
+    secondary: "#666876",
+    tertiary: "#8E94A7",
+  },
+  border: "#E9ECEF",
+  tab: {
+    inactive: "#8E94A7",
+    active: "#FF385C",
+  },
+  white: "#FFFFFF",
 };
 
 type TabKey = "posts" | "reels";
@@ -39,87 +46,138 @@ export default function LetsBuzzScreen() {
   useEffect(() => {
     if (post) setTab("posts");
   }, [post]);
+
   const TabBar = useMemo(() => {
     return (
-      <View style={styles.tabWrap}>
-        <LinearGradient
-          colors={[RBZ.c1, RBZ.c2, RBZ.c3, RBZ.c4]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.tabShell}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          onPress={() => setTab("posts")}
+          activeOpacity={0.7}
+          style={[styles.tabButton, tab === "posts" && styles.tabButtonActive]}
         >
-          <TouchableOpacity
-            onPress={() => setTab("posts")}
-            activeOpacity={0.9}
-            style={[styles.tabBtn, tab === "posts" && styles.tabBtnActive]}
-          >
-            <Text style={[styles.tabText, tab === "posts" && styles.tabTextActive]}>Posts</Text>
-          </TouchableOpacity>
+          <Ionicons 
+            name={tab === "posts" ? "newspaper" : "newspaper-outline"} 
+            size={22} 
+            color={tab === "posts" ? COLORS.tab.active : COLORS.tab.inactive} 
+          />
+          <Text style={[
+            styles.tabText, 
+            tab === "posts" && styles.tabTextActive
+          ]}>
+            Posts
+          </Text>
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => setTab("reels")}
-            activeOpacity={0.9}
-            style={[styles.tabBtn, tab === "reels" && styles.tabBtnActive]}
-          >
-            <Text style={[styles.tabText, tab === "reels" && styles.tabTextActive]}>Reels</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+        <TouchableOpacity
+          onPress={() => setTab("reels")}
+          activeOpacity={0.7}
+          style={[styles.tabButton, tab === "reels" && styles.tabButtonActive]}
+        >
+          <Ionicons 
+            name={tab === "reels" ? "play-circle" : "play-circle-outline"} 
+            size={22} 
+            color={tab === "reels" ? COLORS.tab.active : COLORS.tab.inactive} 
+          />
+          <Text style={[
+            styles.tabText, 
+            tab === "reels" && styles.tabTextActive
+          ]}>
+            Reels
+          </Text>
+        </TouchableOpacity>
+
+        {/* Active indicator */}
+        <View style={[
+          styles.activeIndicator,
+          { left: tab === "posts" ? "12.5%" : "62.5%" }
+        ]} />
       </View>
     );
   }, [tab]);
 
   return (
-<View style={styles.safe}>
-  <View style={{ paddingTop: insets.top }}>
-
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Let&apos;sBuzz</Text>
+      <View style={[
+        styles.header,
+        { paddingTop: insets.top + 12 }
+      ]}>
+        <Text style={styles.title}>Let'sBuzz</Text>
       </View>
 
       {TabBar}
-  </View>
 
-         {/* Body */}
-      <View style={{ flex: 1 }}>
+      {/* Body */}
+      <View style={styles.content}>
         {tab === "posts" ? (
           <LetsBuzzPosts targetPostId={post ? String(post) : undefined} />
         ) : (
           <LetsBuzzReels targetPostId={post ? String(post) : undefined} />
         )}
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: RBZ.c1 },
-
-  header: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "900" },
-  subtitle: { color: RBZ.sub, marginTop: 4, fontWeight: "800" },
-
-  tabWrap: { paddingHorizontal: 14, paddingBottom: 10 },
-  tabShell: {
-    borderRadius: 18,
-    padding: 3,
-    flexDirection: "row",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  tabBtn: {
+  container: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 15,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: COLORS.background,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: COLORS.primary, // Changed to red
+    letterSpacing: -0.5,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: COLORS.background,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    position: "relative",
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 12,
+    gap: 8,
+    borderRadius: 12,
   },
-  tabBtnActive: {
-    backgroundColor: "rgba(0,0,0,0.28)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+  tabButtonActive: {
+    backgroundColor: "transparent",
   },
-  tabText: { color: "rgba(255,255,255,0.85)", fontWeight: "900" },
-  tabTextActive: { color: "#fff" },
+  tabText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.tab.inactive,
+  },
+  tabTextActive: {
+    color: COLORS.tab.active,
+    fontWeight: "600",
+  },
+  activeIndicator: {
+    position: "absolute",
+    bottom: 0,
+    width: 60,
+    height: 3,
+    backgroundColor: COLORS.primary,
+    borderRadius: 3,
+    transform: [{ translateX: -30 }], // Half of width to center
+  },
+  content: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+  },
 });
