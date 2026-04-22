@@ -30,6 +30,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -100,8 +101,18 @@ const decodeCached = (m: any) => {
     }
   })();
 
-  // sig changes if message text/deleted/edited/reactions changes
-  const sig = `${String(m?.text || "")}|${String(m?.deleted || "")}|${String(m?.edited || "")}|${reactionsSig}`;
+  const replySig = (() => {
+    try {
+      return JSON.stringify(m?.replyTo || null);
+    } catch {
+      return "";
+    }
+  })();
+
+  const pinSig = `${String(m?.pinned || "")}|${String(m?.pinnedAt || "")}|${String(m?.pinnedBy || "")}|${String(m?.action || "")}|${String(m?.actorId || "")}|${String(m?.actorName || "")}|${String(m?.pinnedTargetId || "")}`;
+
+  // sig changes if message text/deleted/edited/seen/reactions/replyTo/pin state changes
+  const sig = `${String(m?.text || "")}|${String(m?.deleted || "")}|${String(m?.edited || "")}|${String(m?.seen || "")}|${reactionsSig}|${replySig}|${pinSig}`;
 
   const hit = decodedCacheRef.current.get(id);
   if (hit && hit.sig === sig) return hit.val;
@@ -122,7 +133,9 @@ type Msg = {
   to: string;
   text?: string;
   type?: string;
+  action?: string;
   time?: any;
+  createdAt?: any;
 
   edited?: boolean;
   seen?: boolean; // ✅ add this
@@ -130,8 +143,29 @@ type Msg = {
   deleted?: boolean;
   reactions?: Record<string, string>;
   ephemeral?: { mode?: string };
+  replyTo?: ReplySnapshot | null;
   _temp?: boolean;
   roomId?: string;
+  url?: string | null;
+  mediaType?: string | null;
+  mediaUrl?: string | null;
+  system?: boolean;
+  pinned?: boolean;
+  pinnedAt?: any;
+  pinnedBy?: string | null;
+  actorId?: string | null;
+  actorName?: string | null;
+  pinnedTargetId?: string | null;
+};
+
+type ReplySnapshot = {
+  id: string;
+  from: string;
+  type?: string;
+  text?: string;
+  url?: string | null;
+  mediaType?: string | null;
+  deleted?: boolean;
 };
 
 function dedupeById(list: Msg[]) {
@@ -141,6 +175,238 @@ function dedupeById(list: Msg[]) {
   }
   return Array.from(map.values());
 }
+
+const mergeReplySnapshot = (existing: Msg, incoming: Msg): Msg => ({
+  ...existing,
+  ...incoming,
+  replyTo: incoming?.replyTo || existing?.replyTo || undefined,
+});
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const getPreviewText = (value: any, fallback = "Message") => {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return fallback;
+  return text.length > 90 ? `${text.slice(0, 87).trimEnd()}...` : text;
+};
+
+const getReplyKind = (value: any) => {
+  const decoded = maybeDecode(value);
+
+  if (decoded?.deleted) return "deleted";
+  if (decoded?.mediaType === "audio") return "audio";
+  if (decoded?.mediaType === "video" || decoded?.type === "share_reel") return "video";
+  if (
+    decoded?.mediaType === "image" ||
+    decoded?.type === "share_post" ||
+    (decoded?.type === "media" && decoded?.url)
+  ) {
+    return "image";
+  }
+  if (decoded?.type === "media" || decoded?.url || decoded?.mediaUrl) return "attachment";
+  return "text";
+};
+
+const getReplyPreviewText = (reply?: ReplySnapshot | null) => {
+  if (!reply) return "";
+
+  const decoded = maybeDecode({
+    text: reply.text || "",
+    type: reply.type || "text",
+    url: reply.url || null,
+    mediaType: reply.mediaType || null,
+    deleted: !!reply.deleted,
+  });
+
+  const kind = getReplyKind(decoded);
+
+  if (kind === "deleted") return "Original message unavailable";
+  if (kind === "audio") return "Voice message";
+  if (kind === "video") return "Video";
+  if (kind === "image") return "Photo";
+  if (kind === "attachment") return "Attachment";
+  return getPreviewText(decoded?.text, "Message");
+};
+
+const buildReplySnapshot = (message: any): ReplySnapshot | null => {
+  if (!message?.id) return null;
+
+  const decoded = maybeDecode(message);
+  const kind = getReplyKind(decoded);
+  const fallbackUrl =
+    decoded?.url ||
+    decoded?.mediaUrl ||
+    null;
+
+  return {
+    id: String(decoded.id),
+    from: String(decoded.from || ""),
+    type:
+      kind === "audio" || kind === "video" || kind === "image" || kind === "attachment"
+        ? decoded?.type || "media"
+        : decoded?.type || "text",
+    text: kind === "text" ? String(decoded?.text || "") : "",
+    url: fallbackUrl ? String(fallbackUrl) : null,
+    mediaType:
+      decoded?.mediaType === "image" ||
+      decoded?.mediaType === "video" ||
+      decoded?.mediaType === "audio"
+        ? decoded.mediaType
+        : kind === "video"
+          ? "video"
+          : kind === "image"
+            ? "image"
+            : kind === "audio"
+              ? "audio"
+              : null,
+    deleted: !!decoded?.deleted,
+  };
+};
+
+const exactDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+const exactTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+const toMs = (ts: any): number | null => {
+  if (ts == null || ts === "") return null;
+
+  if (ts instanceof Date) {
+    const ms = ts.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  if (typeof ts === "number") {
+    if (!Number.isFinite(ts)) return null;
+    return ts < 1e12 ? ts * 1000 : ts;
+  }
+
+  if (typeof ts === "string") {
+    const trimmed = ts.trim();
+    if (!trimmed) return null;
+
+    const asNum = Number(trimmed);
+    if (Number.isFinite(asNum)) {
+      return asNum < 1e12 ? asNum * 1000 : asNum;
+    }
+
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const formatExactMessageTime = (ts: any) => {
+  const ms = toMs(ts);
+  if (!ms) return "";
+
+  const d = new Date(ms);
+  return `${exactDateFormatter.format(d)} • ${exactTimeFormatter.format(d)}`;
+};
+
+function SwipeReplyRow({
+  children,
+  isMine,
+  disabled,
+  onReply,
+  style,
+}: {
+  children: React.ReactNode;
+  isMine: boolean;
+  disabled?: boolean;
+  onReply: () => void;
+  style?: any;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const triggeredRef = useRef(false);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          if (disabled) return false;
+
+          const { dx, dy } = gesture;
+          const intentionalHorizontal = Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2;
+          if (!intentionalHorizontal) return false;
+
+          return isMine ? dx < 0 : dx > 0;
+        },
+        onPanResponderGrant: () => {
+          triggeredRef.current = false;
+        },
+        onPanResponderMove: (_, gesture) => {
+          const next = isMine
+            ? clamp(gesture.dx, -82, 0)
+            : clamp(gesture.dx, 0, 82);
+          translateX.setValue(next);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          const crossed = isMine ? gesture.dx <= -56 : gesture.dx >= 56;
+          if (crossed && !triggeredRef.current) {
+            triggeredRef.current = true;
+            onReply();
+          }
+
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 6,
+            speed: 18,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 6,
+            speed: 18,
+          }).start();
+        },
+      }),
+    [disabled, isMine, onReply, translateX]
+  );
+
+  const iconOpacity = translateX.interpolate({
+    inputRange: isMine ? [-82, -22, 0] : [0, 22, 82],
+    outputRange: isMine ? [1, 0.35, 0] : [0, 0.35, 1],
+    extrapolate: "clamp",
+  });
+
+  const iconScale = translateX.interpolate({
+    inputRange: isMine ? [-82, 0] : [0, 82],
+    outputRange: [1, 0.86],
+    extrapolate: "clamp",
+  });
+
+  return (
+    <Animated.View
+      style={[style, styles.swipeReplyRow, { transform: [{ translateX }] }]}
+      {...(!disabled ? panResponder.panHandlers : {})}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.swipeReplyIconWrap,
+          isMine ? styles.swipeReplyIconWrapMine : styles.swipeReplyIconWrapPeer,
+          { opacity: iconOpacity, transform: [{ scale: iconScale }] },
+        ]}
+      >
+        <Ionicons name="arrow-undo" size={16} color={RBZ.white} />
+      </Animated.View>
+      {children}
+    </Animated.View>
+  );
+}
+
 export default function ChatWindowMobile() {
   const router = useRouter();
 const params = useLocalSearchParams<{
@@ -164,11 +430,27 @@ const [peerProfile, setPeerProfile] = useState<{
   avatar?: string;
 } | null>(null);
 
-const peerName = (
-  [peerProfile?.firstName, peerProfile?.lastName].filter(Boolean).join(" ").trim() ||
-  routePeerName ||
-  "Chat"
-);
+const [me, setMe] = useState<any>(null);
+const [nickname, setNickname] = useState("");
+
+const profileFullName = [peerProfile?.firstName, peerProfile?.lastName]
+  .filter(Boolean)
+  .join(" ")
+  .trim();
+
+const hasBothProfileNames =
+  !!String(peerProfile?.firstName || "").trim() &&
+  !!String(peerProfile?.lastName || "").trim();
+
+const routeName = String(routePeerName || "").trim();
+const nicknameLabel = String(nickname || "").trim();
+
+const peerName =
+  (hasBothProfileNames ? profileFullName : "") ||
+  routeName ||
+  profileFullName ||
+  String(peerProfile?.firstName || "").trim() ||
+  "Chat";
 
 const peerAvatar =
   peerProfile?.avatar ||
@@ -202,10 +484,8 @@ useEffect(() => {
     } catch {}
   };
 }, [peerId]);
-
-const [me, setMe] = useState<any>(null);
-const [nickname, setNickname] = useState("");
-const headerName = nickname.trim() ? nickname.trim() : peerName;
+const headerName = nicknameLabel || peerName || "Chat";
+const headerSubtitle =   "Private conversation";
 
 const nickKey = (meId: string, pid: string) =>
   meId && pid ? `RBZ_nick_${meId}_${pid}` : "";
@@ -227,6 +507,14 @@ const [replyIdeasOpen, setReplyIdeasOpen] = useState(false);
 const [replyIdeasLoading, setReplyIdeasLoading] = useState(false);
 const [replyIdeasError, setReplyIdeasError] = useState("");
 const [replyIdeas, setReplyIdeas] = useState<Array<{ id: string; tone: string; text: string }>>([]);
+const [visibleTimestamp, setVisibleTimestamp] = useState("");
+const [replyingTo, setReplyingTo] = useState<ReplySnapshot | null>(null);
+const replyingSenderLabel = replyingTo
+  ? String(replyingTo.from) === String(myId)
+    ? "You"
+    : peerName
+  : "";
+const replyingPreviewText = replyingTo ? getReplyPreviewText(replyingTo) : "";
 // ➕ Attach modal
 const [plusOpen, setPlusOpen] = useState(false);
 
@@ -245,6 +533,8 @@ const [heartBurstId, setHeartBurstId] = useState<string | null>(null);
 const heartAnim = useRef(new Animated.Value(0)).current;
 const lastTapRef = useRef<Record<string, number>>({});
 const singleTapTimerRef = useRef<Record<string, any>>({});
+const timestampHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const DOUBLE_TAP_MS = 260;
 
 const getMaxViews = (m: any): 1 | 2 | undefined => {
   const mv = m?.ephemeral?.maxViews;
@@ -290,12 +580,42 @@ const consumeEphemeralView = async (m: any) => {
 
     const j = await r.json().catch(() => ({}));
 
-    // if server already expired it, we also update instantly (socket will also sync)
-  if (j?.viewsLeft === 0) {
-  // media removal will be handled by socket event
-  closeViewer();
-}
+    if (typeof j?.viewsLeft === "number") {
+      setMediaViews((prev) => ({
+        ...prev,
+        [String(m.id)]: Number(j.viewsLeft),
+      }));
+    }
 
+    if (j?.viewsLeft === 0) {
+      const deadId = String(m.id);
+
+      setExpiredMedia((prev) => ({
+        ...prev,
+        [deadId]: true,
+      }));
+
+      setMessages((prev) => {
+        const filtered = prev.filter((msg) => String(msg?.id) !== deadId);
+
+        if (j?.systemMessage?.id) {
+          return dedupeById([
+            ...filtered,
+            {
+              ...j.systemMessage,
+              system: true,
+            },
+          ]);
+        }
+
+        return dedupeById(filtered);
+      });
+
+      closeViewer();
+      return;
+    }
+
+    closeViewer();
   } catch (e) {
     console.log("❌ consumeEphemeralView failed", e);
   }
@@ -323,32 +643,72 @@ const triggerHeartBurst = (m: any) => {
   });
 };
 
-const handleMediaTap = (m: any) => {
-  const k = getMediaKey(m);
-  const now = Date.now();
-  const last = lastTapRef.current[k] || 0;
+const showTimestampForMessage = (m: Msg) => {
+  const formatted = formatExactMessageTime(m?.createdAt ?? m?.time);
+  if (!formatted) return;
 
-  // double tap window
-  if (now - last < 260) {
-    lastTapRef.current[k] = 0;
-    if (singleTapTimerRef.current[k]) {
-      clearTimeout(singleTapTimerRef.current[k]);
-      singleTapTimerRef.current[k] = null;
-    }
+  setVisibleTimestamp(formatted);
 
-    // ✅ double tap => ❤️ + burst
-    reactTo(m, "❤️");
-    triggerHeartBurst(m);
+  if (timestampHideTimerRef.current) {
+    clearTimeout(timestampHideTimerRef.current);
+  }
+
+  timestampHideTimerRef.current = setTimeout(() => {
+    setVisibleTimestamp("");
+    timestampHideTimerRef.current = null;
+  }, 2000);
+};
+
+const reactLove = (m: Msg) => {
+  const myReaction = m?.reactions?.[String(myId)];
+  if (myReaction === "❤️") return;
+
+  reactTo(m, "❤️");
+  triggerHeartBurst(m);
+};
+
+const handleMessageTap = (
+  item: Msg,
+  decodedMessage: any,
+  options?: {
+    singleTapAction?: () => void;
+    enableDoubleTapLove?: boolean;
+  }
+) => {
+  const tapKey = String(decodedMessage?.id || item?.id || "");
+  if (!tapKey) {
+    options?.singleTapAction?.();
     return;
   }
 
-  lastTapRef.current[k] = now;
+  const now = Date.now();
+  const last = lastTapRef.current[tapKey] || 0;
 
-  // single tap delayed => fullscreen
-  singleTapTimerRef.current[k] = setTimeout(() => {
-    singleTapTimerRef.current[k] = null;
-    openViewer(m);
-  }, 260);
+  if (options?.enableDoubleTapLove && now - last <= DOUBLE_TAP_MS) {
+    lastTapRef.current[tapKey] = 0;
+
+    if (singleTapTimerRef.current[tapKey]) {
+      clearTimeout(singleTapTimerRef.current[tapKey]);
+      singleTapTimerRef.current[tapKey] = null;
+    }
+
+    reactLove(item);
+    return;
+  }
+
+  lastTapRef.current[tapKey] = now;
+
+  if (!options?.singleTapAction) return;
+
+  if (singleTapTimerRef.current[tapKey]) {
+    clearTimeout(singleTapTimerRef.current[tapKey]);
+  }
+
+  singleTapTimerRef.current[tapKey] = setTimeout(() => {
+    singleTapTimerRef.current[tapKey] = null;
+    lastTapRef.current[tapKey] = 0;
+    options.singleTapAction?.();
+  }, DOUBLE_TAP_MS);
 };
 
 // typing / read receipts
@@ -411,6 +771,7 @@ const onSeen = (payload: any) => {
   // message action sheet
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMsg, setSheetMsg] = useState<Msg | null>(null);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   // edit mode
   const [editId, setEditId] = useState<string | null>(null);
@@ -419,6 +780,8 @@ const onSeen = (payload: any) => {
 const flatRef = useRef<FlatList>(null);
 const focusMsgId = String(params.focusMsgId || "");
 const [highlightId, setHighlightId] = useState<string>("");
+const highlightTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+const pendingFocusIdRef = useRef<string>("");
 // ⬆️⬇️ Scroll helpers (top / bottom buttons)
 const [showScrollBtns, setShowScrollBtns] = useState(false);
 const scrollHideTimer = useRef<any>(null);
@@ -468,29 +831,81 @@ const scrollToTop = () => {
 };
 
 // ✅ Dynamic bottom padding:
-// - smaller when keyboard is open (removes empty gap)
-// - larger when keyboard is closed (keeps last bubble visible above composer)
+// keep just enough room for the last message to clear the composer
+const COMPOSER_BASE_HEIGHT = 58;
+const EDIT_CHIP_HEIGHT = editId ? 38 : 0;
+
 const LIST_BOTTOM_PAD = keyboardOpen
-  ? Math.max(8, inputHeight + (editId ? 54 : 42)) // ✅ tight when keyboard open
-  : 96 + insets.bottom; // ✅ safe spacing when keyboard closed
+  ? Math.max(4, inputHeight + EDIT_CHIP_HEIGHT + 14)
+  : COMPOSER_BASE_HEIGHT + EDIT_CHIP_HEIGHT + 4;
+const highlightMessage = (id: string) => {
+  setHighlightId(String(id));
+
+  if (highlightTimeoutsRef.current[String(id)]) {
+    clearTimeout(highlightTimeoutsRef.current[String(id)]);
+  }
+
+  highlightTimeoutsRef.current[String(id)] = setTimeout(() => {
+    setHighlightId((prev) => (prev === String(id) ? "" : prev));
+    if (pendingFocusIdRef.current === String(id)) {
+      pendingFocusIdRef.current = "";
+    }
+    delete highlightTimeoutsRef.current[String(id)];
+  }, 1800);
+};
+
+const tryScrollToMessage = (id: string, animated = true) => {
+  const idx = messages.findIndex((m) => String(m?.id) === String(id));
+  if (idx < 0) return false;
+
+  pendingFocusIdRef.current = String(id);
+  flatRef.current?.scrollToIndex({
+    index: idx,
+    animated,
+    viewPosition: 0.5,
+  });
+
+  highlightMessage(String(id));
+  return true;
+};
+
 const scrollToMessage = (id: string) => {
   if (!id) return;
+
+  pendingFocusIdRef.current = String(id);
 
   const idx = messages.findIndex((m) => String(m?.id) === String(id));
   if (idx < 0) return;
 
-  // try a couple times (FlatList sometimes isn't ready immediately)
-  const tryScroll = (attempt: number) => {
-    try {
-      flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
-      setHighlightId(String(id));
-      setTimeout(() => setHighlightId(""), 1200);
-    } catch {
-      if (attempt < 3) setTimeout(() => tryScroll(attempt + 1), 220);
-    }
-  };
+  try {
+    flatRef.current?.scrollToIndex({
+      index: idx,
+      animated: true,
+      viewPosition: 0.5,
+    });
+    highlightMessage(String(id));
+  } catch {}
+};
 
-  tryScroll(0);
+const handleScrollToIndexFailed = (info: {
+  index: number;
+  highestMeasuredFrameIndex: number;
+  averageItemLength: number;
+}) => {
+  const pendingId = pendingFocusIdRef.current || focusMsgId;
+  if (!pendingId) return;
+
+  const averageLen = Number(info?.averageItemLength || 0);
+  const fallbackOffset = averageLen > 0 ? averageLen * info.index : 0;
+
+  flatRef.current?.scrollToOffset({
+    offset: Math.max(0, fallbackOffset),
+    animated: false,
+  });
+
+  setTimeout(() => {
+    tryScrollToMessage(String(pendingId), true);
+  }, 260);
 };
 
 const mine = (m: any) => String(m?.from) === String(myId);
@@ -585,6 +1000,22 @@ useEffect(() => {
   })();
 }, [myId, peerId]);
 
+useEffect(() => {
+  return () => {
+    if (timestampHideTimerRef.current) {
+      clearTimeout(timestampHideTimerRef.current);
+    }
+
+    Object.values(highlightTimeoutsRef.current).forEach((timer) => {
+      if (timer) clearTimeout(timer);
+    });
+
+    Object.values(singleTapTimerRef.current).forEach((timer) => {
+      if (timer) clearTimeout(timer);
+    });
+  };
+}, []);
+
 
   // Load messages
   useEffect(() => {
@@ -601,7 +1032,7 @@ useEffect(() => {
         const data = await r.json();
         const list = Array.isArray(data) ? data : [];
 
-        setMessages(list);
+        setMessages(dedupeById(list));
       } catch {
         setMessages([]);
       } finally {
@@ -733,11 +1164,12 @@ const onIncoming = (raw: any) => {
         m._temp &&
         String(m.from) === String(msg.from) &&
         String(m.to) === String(msg.to) &&
-        String(m.text) === String(msg.text)
+        String(m.text) === String(msg.text) &&
+        String(m.replyTo?.id || "") === String(msg.replyTo?.id || "")
     );
 
     if (tempIndex !== -1) {
-      next[tempIndex] = msg;
+      next[tempIndex] = mergeReplySnapshot(next[tempIndex], msg);
     } else {
       next.push(msg);
     }
@@ -756,9 +1188,45 @@ const onIncoming = (raw: any) => {
 };
 
   const onEdited = (payload: any) => {
-    const msg = maybeDecode(payload?.message || payload);
-    if (!msg?.id) return;
-    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
+    const rawMsg = payload?.message || payload;
+    const messageId =
+      payload?.id ||
+      payload?.msgId ||
+      payload?.messageId ||
+      payload?.message?.id ||
+      rawMsg?.id ||
+      rawMsg?.msgId ||
+      rawMsg?.messageId;
+
+    if (!messageId) return;
+
+    const normalizedPatch = maybeDecode(
+      rawMsg && typeof rawMsg === "object"
+        ? {
+            ...rawMsg,
+            id: String(messageId),
+            text:
+              rawMsg?.text ??
+              payload?.text ??
+              payload?.message?.text,
+            edited:
+              rawMsg?.edited ??
+              payload?.edited ??
+              payload?.message?.edited ??
+              true,
+          }
+        : {
+            id: String(messageId),
+            text: payload?.text,
+            edited: payload?.edited ?? true,
+          }
+    );
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        String(m.id) === String(messageId) ? { ...m, ...normalizedPatch } : m
+      )
+    );
   };
 
    const onDeleted = (payload: any) => {
@@ -774,11 +1242,43 @@ const onIncoming = (raw: any) => {
     setMessages((prev) => prev.filter((m) => String(m.id) !== String(id)));
   };
 
-  const onReacted = (payload: any) => {
+ const onReacted = (payload: any) => {
     const msg = maybeDecode(payload?.message || payload);
     if (!msg?.id) return;
     setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
   };
+ const onPinned = (payload: any) => {
+  const rawMsg = payload?.message || payload;
+  const systemMessage = payload?.systemMessage || null;
+  const nextPinned = !!(rawMsg?.pinned ?? payload?.pinned);
+  const messageId =
+    payload?.id ||
+    payload?.msgId ||
+    payload?.messageId ||
+    rawMsg?.id;
+
+  if (!messageId) return;
+
+  setMessages((prev) =>
+    dedupeById([
+      ...prev.map((m) =>
+        String(m.id) === String(messageId)
+          ? {
+              ...m,
+              pinned: nextPinned,
+              pinnedAt: rawMsg?.pinnedAt ?? null,
+              pinnedBy: rawMsg?.pinnedBy ?? null,
+            }
+          : m
+      ),
+      ...(systemMessage?.id ? [systemMessage] : []),
+    ])
+  );
+
+  if (systemMessage?.id) {
+    settleToLatest(true);
+  }
+};
  const onEphemeralExpired = (payload: any) => {
   const expiredId =
     payload?.msgId || payload?.messageId || payload?.id || payload;
@@ -833,8 +1333,10 @@ s.on("message", onIncoming);
     s.on("message:delete", onDeleted);
     s.on("chat:delete", onDeleted);
 
-   s.on("message:react", onReacted);
+s.on("message:react", onReacted);
 s.on("chat:react", onReacted);
+s.on("message:pin", onPinned);
+s.on("chat:pin", onPinned);
 s.on("message:seen", onSeen);
 s.on("chat:seen", onSeen);
 s.on("typing", onTyping);
@@ -859,8 +1361,10 @@ s.off("message", onIncoming);
     s.off("message:delete", onDeleted);
     s.off("chat:delete", onDeleted);
 
-   s.off("message:react", onReacted);
+s.off("message:react", onReacted);
 s.off("chat:react", onReacted);
+s.off("message:pin", onPinned);
+s.off("chat:pin", onPinned);
 s.off("message:seen", onSeen);
 s.off("chat:seen", onSeen);
 s.off("typing", onTyping);
@@ -898,16 +1402,39 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [focusMsgId, loading, messages.length]);
 
+useEffect(() => {
+  const pendingId = pendingFocusIdRef.current;
+  if (!pendingId) return;
+  if (loading) return;
+  if (!messages.length) return;
+
+  requestAnimationFrame(() => {
+    tryScrollToMessage(String(pendingId), false);
+  });
+}, [loading, messages.length]);
+
 const openSheet = (m: Msg) => {
+  setEmojiPickerOpen(false);
   setSheetMsg(m);
   setSheetOpen(true);
 };
 
 
   const closeSheet = () => {
+    setEmojiPickerOpen(false);
     setSheetOpen(false);
     setSheetMsg(null);
   };
+
+const startReplying = (message: Msg) => {
+  const snapshot = buildReplySnapshot(message);
+  if (!snapshot) return;
+
+  setEditId(null);
+  setReplyingTo(snapshot);
+  setComposerExpanded(true);
+  setComposerActionsOpen(false);
+};
 
 const applyReplyIdea = (ideaText: string) => {
   const next = String(ideaText || "").trim();
@@ -1055,10 +1582,81 @@ const reactTo = async (m: Msg, emoji: string) => {
   } catch {}
 };
 
+const togglePinMessage = async (m: Msg) => {
+  if (!m?.id || !myId) return;
+
+  const mid = String(m.id);
+  const nextPinned = !m?.pinned;
+  const optimisticPinnedAt = nextPinned ? new Date().toISOString() : null;
+  const optimisticPinnedBy = nextPinned ? String(myId) : null;
+
+  setMessages((prev) =>
+    prev.map((x) =>
+      String(x.id) === mid
+        ? {
+            ...x,
+            pinned: nextPinned,
+            pinnedAt: optimisticPinnedAt,
+            pinnedBy: optimisticPinnedBy,
+          }
+        : x
+    )
+  );
+
+  closeSheet();
+
+  try {
+    const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+    const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/${mid}/pin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ pinned: nextPinned }),
+    });
+
+    const j = await r.json().catch(() => ({}));
+    const serverMsg: Msg | null = j?.message || null;
+
+    if (!r.ok || !serverMsg?.id) {
+      throw new Error(j?.error || "Could not update pinned state.");
+    }
+
+    setMessages((prev) =>
+      prev.map((x) =>
+        String(x.id) === mid
+          ? {
+              ...x,
+              pinned: !!serverMsg.pinned,
+              pinnedAt: serverMsg.pinnedAt ?? null,
+              pinnedBy: serverMsg.pinnedBy ?? null,
+            }
+          : x
+      )
+    );
+  } catch (e: any) {
+    setMessages((prev) =>
+      prev.map((x) =>
+        String(x.id) === mid
+          ? {
+              ...x,
+              pinned: !!m?.pinned,
+              pinnedAt: m?.pinnedAt ?? null,
+              pinnedBy: m?.pinnedBy ?? null,
+            }
+          : x
+      )
+    );
+    Alert.alert("Pin failed", e?.message || "Try again");
+  }
+};
+
 
 
   const startEdit = (m: Msg) => {
     const dec = maybeDecode(m);
+    setReplyingTo(null);
     setEditId(m.id);
     setText(String(dec?.text || ""));
     closeSheet();
@@ -1108,17 +1706,21 @@ const reactTo = async (m: Msg, emoji: string) => {
   // optimistic local
   const tempId = `temp_media_${Date.now()}`;
 
-  const temp: Msg = {
+    const currentReply = replyingTo;
+
+    const temp: Msg = {
     id: tempId,
     from: myId,
     to: peerId,
     text: encodePayload(payloadObj),
     type: "media",
     time: new Date().toISOString(),
+    replyTo: currentReply,
     _temp: true,
   };
 
   setMessages((p) => [...p, temp]);
+  setReplyingTo(null);
 
   // ✅ keep latest media visible above composer too
   settleToLatest(true);
@@ -1132,7 +1734,10 @@ const reactTo = async (m: Msg, emoji: string) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ text: encodePayload(payloadObj) }),
+      body: JSON.stringify({
+        text: encodePayload(payloadObj),
+        replyTo: currentReply || undefined,
+      }),
     });
 
     const j = await r.json();
@@ -1140,7 +1745,11 @@ const reactTo = async (m: Msg, emoji: string) => {
 
      if (serverMsg?.id) {
       setMessages((prev) =>
-        dedupeById(prev.map((m) => (m.id === tempId ? serverMsg : m)))
+        dedupeById(
+          prev.map((m) =>
+            m.id === tempId ? mergeReplySnapshot(m, serverMsg) : m
+          )
+        )
       );
 
       // ✅ settle again after temp replacement
@@ -1158,6 +1767,12 @@ const reactTo = async (m: Msg, emoji: string) => {
     if (!trimmed || !myId || !peerId) return;
 
     const isEditing = !!editId;
+    const currentReply = replyingTo;
+    const editingId = editId ? String(editId) : null;
+    const originalMessage = editingId
+      ? messages.find((m) => String(m.id) === editingId)
+      : null;
+    const originalText = String(maybeDecode(originalMessage as any)?.text || "");
 
     // optimistic
     const tempId = `temp_${Date.now()}`;
@@ -1169,9 +1784,11 @@ const reactTo = async (m: Msg, emoji: string) => {
         text: trimmed,
         type: "text",
         time: new Date().toISOString(),
+        replyTo: currentReply,
         _temp: true,
       };
       setMessages((p) => [...p, temp]);
+      setReplyingTo(null);
 
       // ✅ force the newest outgoing message above the composer
       settleToLatest(true);
@@ -1186,50 +1803,65 @@ const reactTo = async (m: Msg, emoji: string) => {
       const token = await SecureStore.getItemAsync("RBZ_TOKEN");
 
     if (isEditing) {
-    const editingId = String(editId);
+      if (!editingId) return;
 
-    // ✅ optimistic local update (instant)
-    setMessages((prev) =>
-    prev.map((m) =>
-      String(m.id) === editingId
-        ? { ...m, text: trimmed, edited: true }
-        : m
-    )
-  );
+      // ✅ optimistic local update (instant)
+      setMessages((prev) =>
+        prev.map((m) =>
+          String(m.id) === editingId
+            ? { ...m, text: trimmed, edited: true }
+            : m
+        )
+      );
 
-  const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/${editingId}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ text: trimmed }),
-  });
+      const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/${editingId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ text: trimmed }),
+      });
 
-  const j = await r.json();
+      const j = await r.json().catch(() => ({}));
 
-  if (!j?.ok) {
-    Alert.alert("Edit failed", j?.error || "Try again");
-  } else {
-    // ✅ if server returns the updated message, sync it
-    const serverMsg: Msg | null = j?.message || null;
-   if (serverMsg?.id) {
-  setMessages((prev) =>
-    dedupeById(prev.map((m) => (m.id === tempId ? serverMsg : m)))
-  );
-}
+      if (!r.ok || !j?.ok) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            String(m.id) === editingId
+              ? { ...m, text: originalText, edited: !!originalMessage?.edited }
+              : m
+          )
+        );
+        Alert.alert("Edit failed", j?.error || "Try again");
+        return;
+      }
 
-  }
+      const serverMsg: Msg | null = j?.message || null;
+      if (serverMsg?.id) {
+        setMessages((prev) =>
+          dedupeById(
+            prev.map((m) =>
+              String(m.id) === String(serverMsg.id)
+                ? { ...m, ...serverMsg }
+                : m
+            )
+          )
+        );
+      }
 
-  setEditId(null);
-  return;
-}
+      setEditId(null);
+      return;
+    }
 
 
       const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ text: trimmed }),
+        body: JSON.stringify({
+          text: trimmed,
+          replyTo: currentReply || undefined,
+        }),
       });
 
       const j = await r.json();
@@ -1237,15 +1869,30 @@ const reactTo = async (m: Msg, emoji: string) => {
          const serverMsg: Msg | null = j?.message || null;
       if (serverMsg?.id) {
         setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? serverMsg : m))
+          dedupeById(
+            prev.map((m) =>
+              m.id === tempId ? mergeReplySnapshot(m, serverMsg) : m
+            )
+          )
         );
 
         // ✅ second settle after optimistic temp gets replaced
         settleToLatest(true);
       }
     } catch {
-      // rollback temp (optional)
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      if (isEditing && editingId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            String(m.id) === editingId
+              ? { ...m, text: originalText, edited: !!originalMessage?.edited }
+              : m
+          )
+        );
+        Alert.alert("Edit failed", "Try again");
+      } else {
+        // rollback temp (optional)
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }
     }
   };
   const formatReactions = (reactions?: Record<string, string>) => {
@@ -1276,28 +1923,132 @@ const reactTo = async (m: Msg, emoji: string) => {
     typeof m?.mediaUrl === "string" &&
     !!String(m.mediaUrl).trim();
 
-  const isShared = isSharedPost || isSharedReel;
+ const isShared = isSharedPost || isSharedReel;
 
   // basic media handling (web uses ::RBZ:: payload)
-  const isMedia = !isShared && (m?.type === "media" || !!m?.url);
+ const isMedia = !isShared && (m?.type === "media" || !!m?.url);
   const isAudio = m?.mediaType === "audio";
-  const reactLine = formatReactions(m?.reactions);
+ const reactLine = formatReactions(m?.reactions);
+  const canSwipeReply = !m?.deleted && !m?._temp && !m?.system;
+  const isPinnedMessage = !!m?.pinned && !m?.deleted && !m?._temp;
+  const isPlainTextMessage =
+    m?.type === "text" &&
+    !m?.deleted &&
+    typeof m?.text === "string" &&
+    !m.text.startsWith(RBZ_TAG);
+  const replyPreviewText = getReplyPreviewText(m?.replyTo);
+  const replySenderLabel = m?.replyTo
+    ? String(m.replyTo.from) === String(myId)
+      ? "You"
+      : headerName
+    : "";
+  const renderReplyQuote = (replyId?: string | null, insideBubble = false) => {
+    if (!m?.replyTo) return null;
+
+    const targetReplyId = String(replyId || m.replyTo?.id || "").trim();
+
+    const quoteContent = (
+      <>
+        <View style={styles.replyQuoteAccent} />
+        <View style={styles.replyQuoteContent}>
+          <Text
+            style={[
+              styles.replyQuoteSender,
+              isMine ? styles.replyQuoteSenderMine : styles.replyQuoteSenderPeer,
+            ]}
+            numberOfLines={1}
+          >
+            {replySenderLabel}
+          </Text>
+          <Text
+            style={[
+              styles.replyQuoteText,
+              isMine ? styles.replyQuoteTextMine : styles.replyQuoteTextPeer,
+            ]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {replyPreviewText}
+          </Text>
+        </View>
+      </>
+    );
+
+    const quoteStyle = [
+      styles.replyQuote,
+      insideBubble ? styles.replyQuoteInside : styles.replyQuoteStandalone,
+      isMine ? styles.replyQuoteMine : styles.replyQuotePeer,
+    ];
+
+    if (!targetReplyId) {
+      return <View style={quoteStyle}>{quoteContent}</View>;
+    }
+
+    return (
+      <Pressable onPress={() => scrollToMessage(targetReplyId)} style={quoteStyle}>
+        {quoteContent}
+      </Pressable>
+    );
+  };
+
+  if (m?.system || m?.type === "system_pin") {
+    const isPinAction = String(m?.action || "pin") === "unpin" ? "unpinned" : "pinned";
+    const actorLabel = String(m?.actorName || "").trim() || "Someone";
+    const systemText =
+      m?.type === "system_pin"
+        ? String(m?.actorId) === String(myId)
+          ? `You ${isPinAction} a message`
+          : `${actorLabel} ${isPinAction} a message`
+        : String(m?.text || "");
+
+    return (
+      <View style={styles.systemRow}>
+        <View style={[styles.systemBubble, m?.type === "system_pin" ? styles.systemBubbleAction : null]}>
+          <Text style={styles.systemText}>{systemText}</Text>
+          {m?.type === "system_pin" ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/chat/pinned/[peerId]" as any,
+                  params: {
+                    peerId,
+                    name: headerName,
+                    avatar: peerAvatar,
+                  },
+                })
+              }
+              hitSlop={8}
+              style={styles.systemActionBtn}
+            >
+              <Text style={styles.systemActionText}>View pinned</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
 
   return (
-<View
+<SwipeReplyRow
+  isMine={isMine}
+  disabled={!canSwipeReply}
+  onReply={() => startReplying(item)}
   style={[
     styles.bubbleRow,
     isMine ? styles.rowMine : styles.rowPeer,
-    String(item.id) === String(highlightId) ? styles.focusRing : null,
   ]}
 >
     {/* ✅ Tiny clickable avatar before received messages */}
-    {!isMine ? (
+      {!isMine ? (
       <Pressable
         onPress={() =>
           router.push({
            pathname: "/view-profile",
-            params: { userId: peerId },
+            params: {
+              userId: peerId,
+              fromChat: "1",
+              returnTo: `/chat/${peerId}`,
+            },
           })
         }
         style={styles.tinyAvatarBtn}
@@ -1310,91 +2061,212 @@ const reactTo = async (m: Msg, emoji: string) => {
 {/* ✅ CONTENT (media = no bubble, text = bubble) */}
 <View
   style={[
-    styles.msgWrap,
-    isMine ? styles.msgWrapMine : styles.msgWrapPeer,
-    reactLine ? styles.msgWrapWithReact : null,
+    styles.messageColumn,
+    isMine ? styles.messageColumnMine : styles.messageColumnPeer,
   ]}
 >
-    {isAudio ? (
-    <AudioBubble uri={m.url} isMine={isMine} />
-  ) : isMedia ? (
-    isExpired(m) ? null : (
-      <Pressable
-        onPress={() => handleMediaTap(m)}
-        onLongPress={() => openSheet(item)}
-        style={[
-          styles.mediaWrap,
-          isMine ? styles.mediaMine : styles.mediaPeer,
-        ]}
-      >
-          
-        {m.mediaType === "video" ? (
-          <Video
-            source={{ uri: m.url }}
-            style={[styles.mediaThumb, getMaxViews(m) && styles.mediaBlur]}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-          />
-        ) : (
-          <Image
-            source={{ uri: m.url }}
-            style={[styles.mediaThumb, getMaxViews(m) && styles.mediaBlur]}
-            resizeMode="cover"
-          />
-        )}
+  {isPinnedMessage ? (
+    <Pressable
+      onPress={() => scrollToMessage(String(m.id))}
+      hitSlop={8}
+      style={[
+        styles.pinnedMetaRow,
+        isMine ? styles.pinnedMetaRowMine : styles.pinnedMetaRowPeer,
+      ]}
+    >
+      <Ionicons name="pin" size={12} color={RBZ.c2} style={styles.pinnedMetaIcon} />
+      <Text style={styles.pinnedMetaText}>Pinned</Text>
+    </Pressable>
+  ) : null}
 
-        {/* ✅ Center play badge for chat videos */}
-        {m.mediaType === "video" ? (
-          <View style={styles.videoPlayOverlay} pointerEvents="none">
-            <View style={styles.videoPlayBadge}>
-              <Ionicons name="play" size={22} color={RBZ.white} />
+  {m?.edited && !m?.deleted ? (
+    <View
+      style={[
+        styles.editedRow,
+        isMine ? styles.editedRowMine : styles.editedRowPeer,
+      ]}
+    >
+      <Text style={styles.editedRowText}>Edited</Text>
+    </View>
+  ) : null}
+
+  <View
+    style={[
+      styles.msgWrap,
+      isMine ? styles.msgWrapMine : styles.msgWrapPeer,
+      reactLine ? styles.msgWrapWithReact : null,
+      String(item.id) === String(highlightId) ? styles.msgWrapHighlight : null,
+    ]}
+  >
+      {!isPlainTextMessage ? renderReplyQuote(m?.replyTo?.id, false) : null}
+      {isAudio ? (
+      <AudioBubble uri={m.url} isMine={isMine} />
+    ) : isMedia ? (
+      isExpired(m) ? null : (
+        <Pressable
+          onPress={() =>
+            handleMessageTap(item, m, {
+              singleTapAction: () => openViewer(m),
+              enableDoubleTapLove: true,
+            })
+          }
+          onLongPress={() => openSheet(item)}
+          style={[
+            styles.mediaWrap,
+            isMine ? styles.mediaMine : styles.mediaPeer,
+          ]}
+        >
+            
+                 {m.mediaType === "video" ? (
+            <Video
+              source={{ uri: m.url }}
+              style={[styles.mediaThumb, getMaxViews(m) && styles.mediaBlur]}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={false}
+              isMuted={!!m.muted}
+            />
+          ) : (
+            <Image
+              source={{ uri: m.url }}
+              style={[styles.mediaThumb, getMaxViews(m) && styles.mediaBlur]}
+              resizeMode="cover"
+            />
+          )}
+
+          {/* ✅ Center play badge for chat videos */}
+          {m.mediaType === "video" ? (
+            <View style={styles.videoPlayOverlay} pointerEvents="none">
+              <View style={styles.videoPlayBadge}>
+                <Ionicons name="play" size={22} color={RBZ.white} />
+              </View>
             </View>
-          </View>
-        ) : null}
+          ) : null}
 
-        {/* 🔒 Blur overlay for view-once / twice */}
-        {getMaxViews(m) ? (
-          <View style={styles.mediaOverlay} pointerEvents="none">
-            <Ionicons name="eye" size={28} color={RBZ.white} />
-            <Text style={styles.mediaOverlayText}>Tap to view</Text>
-          </View>
-        ) : null}
+          {/* 🔒 Blur overlay for view-once / twice */}
+          {getMaxViews(m) ? (
+            <View style={styles.mediaOverlay} pointerEvents="none">
+              <Ionicons name="eye" size={28} color={RBZ.white} />
+              <Text style={styles.mediaOverlayText}>Tap to view</Text>
+            </View>
+          ) : null}
 
-        {getMaxViews(m) ? (
-          <View style={styles.viewBadge}>
-            <Ionicons name="eye" size={14} color={RBZ.white} />
-            <Text style={styles.viewBadgeText}>
-              {getMaxViews(m) === 1 ? "View once" : "View twice"}
+          {getMaxViews(m) ? (
+            <View style={styles.viewBadge}>
+              <Ionicons name="eye" size={14} color={RBZ.white} />
+              <Text style={styles.viewBadgeText}>
+                {getMaxViews(m) === 1 ? "View once" : "View twice"}
+              </Text>
+            </View>
+          ) : null}
+
+          {heartBurstId === getMediaKey(m) ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.heartBurst,
+                {
+                  opacity: heartAnim,
+                  transform: [
+                    {
+                      scale: heartAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.6, 1.35],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Ionicons name="heart" size={76} color="#ff2d55" />
+            </Animated.View>
+          ) : null}
+        </Pressable>
+      )
+    ) : isShared ? (
+      m?.deleted ? (
+        <Pressable
+          onLongPress={() => openSheet(item)}
+          style={{
+            alignSelf: "flex-start",
+            maxWidth: BUBBLE_MAX_W,
+            flexShrink: 0,
+            overflow: "visible",
+          }}
+        >
+          <View style={[styles.bubble, isMine ? styles.mine : styles.peer]}>
+            <Text style={[styles.msgText, isMine ? styles.mineText : styles.peerText]}>
+              This message was unsent
             </Text>
           </View>
-        ) : null}
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={() =>
+            handleMessageTap(item, m, {
+              singleTapAction: () =>
+                openViewer({
+                  id: String(m?.id || ""),
+                  url: String(m?.mediaUrl || ""),
+                  mediaType: isSharedReel ? "video" : "image",
+                }),
+              enableDoubleTapLove: true,
+            })
+          }
+          onLongPress={() => openSheet(item)}
+          style={[
+            styles.mediaWrap,
+            isMine ? styles.mediaMine : styles.mediaPeer,
+          ]}
+        >
+        
+          {isSharedReel ? (
+            <Video
+              source={{ uri: String(m?.mediaUrl || "") }}
+              style={styles.mediaThumb}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={false}
+              isMuted
+            />
+          ) : (
+            <Image
+              source={{ uri: String(m?.mediaUrl || "") }}
+              style={styles.mediaThumb}
+              resizeMode="cover"
+            />
+          )}
 
-        {heartBurstId === getMediaKey(m) ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.heartBurst,
-              {
-                opacity: heartAnim,
-                transform: [
-                  {
-                    scale: heartAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1.35],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <Ionicons name="heart" size={76} color="#ff2d55" />
-          </Animated.View>
-        ) : null}
-      </Pressable>
-    )
-  ) : isShared ? (
-    m?.deleted ? (
+          {/* ✅ Extra visual cue so reels look like videos immediately */}
+          {isSharedReel ? (
+            <View style={styles.videoPlayOverlay} pointerEvents="none">
+              <View style={styles.videoPlayBadge}>
+                <Ionicons name="play" size={22} color={RBZ.white} />
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.mediaOverlay} pointerEvents="none">
+            <Ionicons
+              name={isSharedReel ? "play-circle-outline" : "images-outline"}
+              size={28}
+              color={RBZ.white}
+            />
+            <Text style={styles.mediaOverlayText}>
+              {isSharedReel ? "Shared reel" : "Shared post"}
+            </Text>
+            <Text style={styles.mediaOverlayText}>Tap to open</Text>
+          </View>
+        </Pressable>
+      )
+    ) : (
       <Pressable
+        onPress={() => {
+          handleMessageTap(item, m, {
+            singleTapAction: isPlainTextMessage
+              ? () => showTimestampForMessage(item)
+              : undefined,
+            enableDoubleTapLove: isPlainTextMessage,
+          });
+        }}
         onLongPress={() => openSheet(item)}
         style={{
           alignSelf: "flex-start",
@@ -1404,113 +2276,41 @@ const reactTo = async (m: Msg, emoji: string) => {
         }}
       >
         <View style={[styles.bubble, isMine ? styles.mine : styles.peer]}>
+          {renderReplyQuote(m?.replyTo?.id, true)}
           <Text style={[styles.msgText, isMine ? styles.mineText : styles.peerText]}>
-            This message was unsent
+            {m?.deleted ? "This message was unsent" : String(m?.text || "")}
           </Text>
         </View>
       </Pressable>
-    ) : (
+    )}
+
+     {/* ✅ Reaction pill hangs on bubble edge */}
+    {reactLine ? (
       <Pressable
-        onPress={() =>
-          openViewer({
-            id: String(m?.id || ""),
-            url: String(m?.mediaUrl || ""),
-            mediaType: isSharedReel ? "video" : "image",
-          })
-        }
-        onLongPress={() => openSheet(item)}
+        onPress={() => {
+          // ✅ remove ONLY my reaction (toggle off)
+          const myEmoji = (m?.reactions && myId) ? m.reactions[String(myId)] : null;
+          if (!myEmoji) return;
+          reactTo(item, myEmoji); // reactTo already toggles: same emoji => remove
+        }}
+        hitSlop={10}
         style={[
-          styles.mediaWrap,
-          isMine ? styles.mediaMine : styles.mediaPeer,
+          styles.reactionPill,
+          isMine ? styles.reactionPillMine : styles.reactionPillPeer,
         ]}
       >
-      
-        {isSharedReel ? (
-          <Video
-            source={{ uri: String(m?.mediaUrl || "") }}
-            style={styles.mediaThumb}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-            isMuted
-          />
-        ) : (
-          <Image
-            source={{ uri: String(m?.mediaUrl || "") }}
-            style={styles.mediaThumb}
-            resizeMode="cover"
-          />
-        )}
-
-        {/* ✅ Extra visual cue so reels look like videos immediately */}
-        {isSharedReel ? (
-          <View style={styles.videoPlayOverlay} pointerEvents="none">
-            <View style={styles.videoPlayBadge}>
-              <Ionicons name="play" size={22} color={RBZ.white} />
-            </View>
-          </View>
-        ) : null}
-
-        <View style={styles.mediaOverlay} pointerEvents="none">
-          <Ionicons
-            name={isSharedReel ? "play-circle-outline" : "images-outline"}
-            size={28}
-            color={RBZ.white}
-          />
-          <Text style={styles.mediaOverlayText}>
-            {isSharedReel ? "Shared reel" : "Shared post"}
-          </Text>
-          <Text style={styles.mediaOverlayText}>Tap to open</Text>
-        </View>
+        <Text style={styles.reactText}>{reactLine}</Text>
       </Pressable>
-    )
-  ) : (
-    <Pressable
-      onLongPress={() => openSheet(item)}
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: BUBBLE_MAX_W,
-        flexShrink: 0,
-        overflow: "visible",
-      }}
-    >
-      <View style={[styles.bubble, isMine ? styles.mine : styles.peer]}>
-        <Text style={[styles.msgText, isMine ? styles.mineText : styles.peerText]}>
-          {m?.deleted ? "This message was unsent" : String(m?.text || "")}
-        </Text>
-      </View>
-    </Pressable>
-  )}
+    ) : null}
+  </View>
 
-   {/* ✅ Reaction pill hangs on bubble edge */}
-  {reactLine ? (
-    <Pressable
-      onPress={() => {
-        // ✅ remove ONLY my reaction (toggle off)
-        const myEmoji = (m?.reactions && myId) ? m.reactions[String(myId)] : null;
-        if (!myEmoji) return;
-        reactTo(item, myEmoji); // reactTo already toggles: same emoji => remove
-      }}
-      hitSlop={10}
-      style={[
-        styles.reactionPill,
-        isMine ? styles.reactionPillMine : styles.reactionPillPeer,
-      ]}
-    >
-      <Text style={styles.reactText}>{reactLine}</Text>
-    </Pressable>
+  {isMine && String(m?.id) === String(lastMyMsgId) ? (
+    <View style={[styles.statusRow, styles.statusRowMine]}>
+      <Text style={styles.statusLabel}>{m?.seen ? "Seen" : "Sent"}</Text>
+    </View>
   ) : null}
 </View>
-
-
-      {/* ✅ Meta under message: Edited + Seen/Sent */}
-      <View style={[styles.metaRow, isMine ? styles.metaMine : styles.metaPeer]}>
-        {m?.edited && !m?.deleted ? <Text style={styles.metaLabel}>Edited</Text> : null}
-
-        {isMine && String(m?.id) === String(lastMyMsgId) ? (
-          <Text style={styles.metaLabel}>{m?.seen ? "Seen" : "Sent"}</Text>
-        ) : null}
-      </View>
-      </View>
+</SwipeReplyRow>
 
     );
   };
@@ -1560,7 +2360,7 @@ const reactTo = async (m: Msg, emoji: string) => {
                 {headerName}
               </Text>
               <Text style={styles.peerSub} numberOfLines={1}>
-                {typing ? "typing…" : "RomBuzz chat"}
+                {headerSubtitle}
               </Text>
             </View>
           </Pressable>
@@ -1650,6 +2450,7 @@ const reactTo = async (m: Msg, emoji: string) => {
                   setShowScrollBtns(false);
                 }, 900);
               }}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
                       />
           </View>
         )}
@@ -1663,15 +2464,44 @@ const reactTo = async (m: Msg, emoji: string) => {
           </View>
         ) : null}
 
+        {visibleTimestamp ? (
+          <View pointerEvents="none" style={[styles.timestampPillWrap, { bottom: 66 + insets.bottom }]}>
+            <View style={styles.timestampPill}>
+              <Text style={styles.timestampPillText}>{visibleTimestamp}</Text>
+            </View>
+          </View>
+        ) : null}
+
         <View
           style={[
             styles.composer,
             {
-              marginBottom: keyboardOpen ? 8 : 0,
-              paddingBottom: keyboardOpen ? 2 : Math.max(8, insets.bottom),
+              marginBottom: 0,
+              paddingBottom: Math.max(2, insets.bottom > 0 ? insets.bottom - 4 : 2),
             },
           ]}
         >
+          {replyingTo ? (
+            <View style={styles.replyComposerBar}>
+              <View style={styles.replyComposerAccent} />
+              <View style={styles.replyComposerBody}>
+                <Text style={styles.replyComposerLabel} numberOfLines={1}>
+                  Replying to {replyingSenderLabel}
+                </Text>
+                <Text style={styles.replyComposerText} numberOfLines={2}>
+                  {replyingPreviewText}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setReplyingTo(null)}
+                hitSlop={10}
+                style={styles.replyComposerClose}
+              >
+                <Ionicons name="close" size={16} color={RBZ.gray} />
+              </Pressable>
+            </View>
+          ) : null}
+
           {editId ? (
             <View style={styles.editChip}>
               <Ionicons name="pencil" size={14} color={RBZ.white} />
@@ -1809,7 +2639,7 @@ const reactTo = async (m: Msg, emoji: string) => {
           </View>
         </View>
 
-        {showScrollBtns ? (
+           {showScrollBtns ? (
           <View
             pointerEvents="box-none"
             style={[
@@ -1856,7 +2686,6 @@ const reactTo = async (m: Msg, emoji: string) => {
   visible={cameraOpen}
   onClose={() => setCameraOpen(false)}
   onCaptured={async (items) => {
-    // Only one item for now
     const item = items[0];
     if (!item) return;
 
@@ -1867,26 +2696,34 @@ const reactTo = async (m: Msg, emoji: string) => {
       );
 
       const maxViews =
-  item.visibility === "once" ? 1 : item.visibility === "twice" ? 2 : undefined;
+        item.visibility === "once"
+          ? 1
+          : item.visibility === "twice"
+            ? 2
+            : 0;
 
-await sendMediaPayload({
-  type: "media",
-  url,
-  mediaType: item.mediaType,
+      const payloadObj = {
+        type: "media",
+        url,
+        mediaType: item.mediaType,
+        muted: item.mediaType === "video" ? !!item.previewMuted : false,
+        ephemeral:
+          maxViews > 0
+            ? {
+                mode: item.visibility,
+                maxViews,
+              }
+            : undefined,
+        overlayText: item.overlayText || "",
+      };
 
-  // ✅ visibility mode used by your existing getMaxViews()
-  ephemeral: maxViews ? { maxViews, mode: item.visibility } : undefined,
-
-  // ✅ preview tools payload
-  overlayText: item.overlayText || "",
-  drawing: item.drawing || undefined,
-});
-
-    } catch {
-      Alert.alert("Camera", "Failed to send photo");
-    } 
-    finally {
-      setCameraOpen(false);
+      await sendMediaPayload(payloadObj);
+    } catch (e: any) {
+      Alert.alert(
+        "Camera",
+        e?.message || `Failed to send ${item.mediaType === "video" ? "video" : "photo"}`
+      );
+        throw e;
     }
   }}
 />
@@ -1896,12 +2733,13 @@ await sendMediaPayload({
   visible={viewerOpen}
   uri={viewerMsg?.url || ""}
   mediaType={viewerMsg?.mediaType === "video" ? "video" : "image"}
+  muted={viewerMsg?.mediaType === "video" ? !!viewerMsg?.muted : false}
   maxViews={getMaxViews(viewerMsg)}
   allowDownload={!IS_EXPO_GO && !getMaxViews(viewerMsg)}
   onClose={() => {
-    // ✅ consume ONLY when viewer is closed
     if (viewerMsg && getMaxViews(viewerMsg)) {
       consumeEphemeralView(viewerMsg);
+      return;
     }
     closeViewer();
   }}
@@ -1989,12 +2827,27 @@ await sendMediaPayload({
 
       {/* Action Sheet */}
       <Modal visible={sheetOpen} transparent animationType="fade" onRequestClose={closeSheet}>
-        <Pressable style={styles.sheetOverlay} onPress={closeSheet}>
+        <Pressable
+          style={[
+            styles.sheetOverlay,
+            {
+              paddingTop: Math.max(20, insets.top + 12),
+              paddingBottom: Math.max(20, insets.bottom + 12),
+            },
+          ]}
+          onPress={closeSheet}
+        >
           <Pressable style={styles.sheet} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>Message</Text>
+            <Text style={styles.sheetTitle}>
+              {sheetMsg
+                ? `${mine(sheetMsg) ? "Sent" : "Received"} • ${formatExactMessageTime(
+                    sheetMsg?.createdAt ?? sheetMsg?.time
+                  )}`
+                : "Message"}
+            </Text>
 
             <View style={styles.emojiRow}>
-              {["❤️", "😂", "😮", "😢", "🔥"].map((e) => (
+              {["❤️", "😂", "😮", "😢", "🔥", "😡"].map((e) => (
                 <Pressable
                   key={e}
                   style={styles.emojiBtn}
@@ -2003,6 +2856,16 @@ await sendMediaPayload({
                   <Text style={{ fontSize: 20 }}>{e}</Text>
                 </Pressable>
               ))}
+
+              <Pressable
+                style={styles.emojiBtn}
+                onPress={() => {
+                  if (!sheetMsg) return;
+                  setEmojiPickerOpen(true);
+                }}
+              >
+                <Ionicons name="add" size={20} color={RBZ.ink} />
+              </Pressable>
             </View>
 
             <View style={styles.sheetDivider} />
@@ -2012,6 +2875,17 @@ await sendMediaPayload({
                 <Pressable style={styles.sheetItem} onPress={() => startEdit(sheetMsg)}>
                   <Ionicons name="pencil-outline" size={18} color={RBZ.ink} />
                   <Text style={styles.sheetItemText}>Edit</Text>
+                </Pressable>
+
+                <Pressable style={styles.sheetItem} onPress={() => togglePinMessage(sheetMsg)}>
+                  <Ionicons
+                    name={sheetMsg?.pinned ? "bookmark" : "bookmark-outline"}
+                    size={18}
+                    color={RBZ.ink}
+                  />
+                  <Text style={styles.sheetItemText}>
+                    {sheetMsg?.pinned ? "Unpin message" : "Pin message"}
+                  </Text>
                 </Pressable>
 
                 <Pressable
@@ -2025,6 +2899,43 @@ await sendMediaPayload({
                 >
                   <Ionicons name="trash-outline" size={18} color={RBZ.ink} />
                   <Text style={styles.sheetItemText}>Unsend for all</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.sheetItem}
+                  onPress={() => {
+                    closeSheet();
+                    Alert.alert("Report", "Message report flow will be wired next.");
+                  }}
+                >
+                  <Ionicons name="flag-outline" size={18} color={RBZ.c1} />
+                  <Text style={[styles.sheetItemText, { color: RBZ.c1 }]}>Report</Text>
+                </Pressable>
+              </>
+            ) : null}
+
+            {sheetMsg && !mine(sheetMsg) ? (
+              <>
+                <Pressable style={styles.sheetItem} onPress={() => togglePinMessage(sheetMsg)}>
+                  <Ionicons
+                    name={sheetMsg?.pinned ? "bookmark" : "bookmark-outline"}
+                    size={18}
+                    color={RBZ.ink}
+                  />
+                  <Text style={styles.sheetItemText}>
+                    {sheetMsg?.pinned ? "Unpin message" : "Pin message"}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.sheetItem}
+                  onPress={() => {
+                    closeSheet();
+                    Alert.alert("Report", "Message report flow will be wired next.");
+                  }}
+                >
+                  <Ionicons name="flag-outline" size={18} color={RBZ.c1} />
+                  <Text style={[styles.sheetItemText, { color: RBZ.c1 }]}>Report</Text>
                 </Pressable>
               </>
             ) : null}
@@ -2046,6 +2957,43 @@ await sendMediaPayload({
             <Pressable style={[styles.sheetItem, { justifyContent: "center" }]} onPress={closeSheet}>
               <Text style={[styles.sheetItemText, { color: RBZ.c2, fontWeight: "900" }]}>Close</Text>
             </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={emojiPickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEmojiPickerOpen(false)}
+      >
+        <Pressable style={styles.emojiPickerOverlay} onPress={() => setEmojiPickerOpen(false)}>
+          <Pressable style={styles.emojiPickerSheet} onPress={() => {}}>
+            <View style={styles.emojiPickerHeader}>
+              <Text style={styles.emojiPickerTitle}>More Reactions</Text>
+              <Pressable onPress={() => setEmojiPickerOpen(false)} style={styles.emojiPickerClose}>
+                <Ionicons name="close" size={18} color={RBZ.ink} />
+              </Pressable>
+            </View>
+
+            <View style={styles.emojiPickerGrid}>
+              {[
+                "👍", "👎", "👏", "🙌", "😍", "🥰", "😘", "🤔", "🤯", "😭",
+                "😴", "😎", "🤝", "🙏", "🎉", "💯", "👀", "🤍", "💜", "🫶",
+              ].map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={styles.emojiPickerBtn}
+                  onPress={() => {
+                    if (!sheetMsg) return;
+                    setEmojiPickerOpen(false);
+                    reactTo(sheetMsg, emoji);
+                  }}
+                >
+                  <Text style={styles.emojiPickerBtnText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -2088,6 +3036,31 @@ bubbleRow: {
   overflow: "visible",
 },
 
+swipeReplyRow: {
+  position: "relative",
+},
+
+swipeReplyIconWrap: {
+  position: "absolute",
+  top: "50%",
+  marginTop: -15,
+  width: 30,
+  height: 30,
+  borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: RBZ.c1,
+  zIndex: 1,
+},
+
+swipeReplyIconWrapMine: {
+  right: 8,
+},
+
+swipeReplyIconWrapPeer: {
+  left: 8,
+},
+
 
   rowMine: {
   justifyContent: "flex-end",
@@ -2126,15 +3099,15 @@ seenLabel: { marginTop: 6, fontSize: 12, color: RBZ.gray, alignSelf: "flex-end" 
   borderTopWidth: 1,
   borderTopColor: RBZ.line,
   paddingHorizontal: 10,
-  paddingTop: 6,
-  paddingBottom: 8,
+  paddingTop: 4,
+  paddingBottom: 2,
   flexShrink: 0,
 },
 
 typingBarWrap: {
   paddingHorizontal: 12,
-  paddingTop: 6,
-  paddingBottom: 4,
+  paddingTop: 2,
+  paddingBottom: 1,
   backgroundColor: RBZ.soft,
 },
 
@@ -2176,6 +3149,55 @@ typingBarText: {
     marginBottom: 8,
   },
   editChipText: { color: RBZ.white, fontWeight: "900", fontSize: 12 },
+
+ replyComposerBar: {
+  flexDirection: "row",
+  alignItems: "stretch",
+  gap: 10,
+  backgroundColor: RBZ.soft,
+  borderWidth: 1,
+  borderColor: RBZ.line,
+  borderRadius: 16,
+  paddingHorizontal: 10,
+  paddingVertical: 10,
+  marginBottom: 8,
+},
+
+replyComposerAccent: {
+  width: 4,
+  alignSelf: "stretch",
+  borderRadius: 999,
+  backgroundColor: RBZ.c2,
+},
+
+replyComposerBody: {
+  flex: 1,
+  minWidth: 0,
+  justifyContent: "center",
+},
+
+replyComposerLabel: {
+  fontSize: 11,
+  lineHeight: 14,
+  fontWeight: "900",
+  color: RBZ.c2,
+},
+
+replyComposerText: {
+  marginTop: 3,
+  fontSize: 12,
+  lineHeight: 16,
+  fontWeight: "700",
+  color: RBZ.ink,
+},
+
+replyComposerClose: {
+  width: 24,
+  height: 24,
+  borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+},
 
  composerRow: {
   flexDirection: "row",
@@ -2242,7 +3264,7 @@ cameraBtn: {
   sheetOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
     padding: 12,
   },
   sheet: {
@@ -2253,7 +3275,7 @@ cameraBtn: {
     borderColor: RBZ.line,
   },
   sheetTitle: { fontSize: 14, fontWeight: "900", color: RBZ.ink, marginBottom: 8 },
-  emojiRow: { flexDirection: "row", gap: 10, paddingBottom: 8 },
+  emojiRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingBottom: 8 },
   emojiBtn: {
     width: 44,
     height: 44,
@@ -2263,6 +3285,60 @@ cameraBtn: {
     backgroundColor: RBZ.soft,
     borderWidth: 1,
     borderColor: RBZ.line,
+  },
+  emojiPickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+  },
+  emojiPickerSheet: {
+    backgroundColor: RBZ.white,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderColor: RBZ.line,
+  },
+  emojiPickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  emojiPickerTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: RBZ.ink,
+  },
+  emojiPickerClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: RBZ.soft,
+    borderWidth: 1,
+    borderColor: RBZ.line,
+  },
+  emojiPickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  emojiPickerBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: RBZ.soft,
+    borderWidth: 1,
+    borderColor: RBZ.line,
+  },
+  emojiPickerBtnText: {
+    fontSize: 24,
   },
   tinyAvatarBtn: {
   width: 26,
@@ -2280,16 +3356,92 @@ tinyAvatar: {
   borderRadius: 13,
 },
 
-metaRow: {
-  flexDirection: "row",
-  gap: 10,
-  marginTop: 6,
+messageColumn: {
+  maxWidth: BUBBLE_MAX_W + 24,
+  flexShrink: 1,
 },
-metaMine: { alignSelf: "flex-end" },
-metaPeer: { alignSelf: "flex-start" },
+messageColumnMine: {
+  alignItems: "flex-end",
+},
+messageColumnPeer: {
+  alignItems: "flex-start",
+},
 
-metaLabel: {
-  fontSize: 12,
+editedRow: {
+  marginBottom: 4,
+  paddingHorizontal: 6,
+},
+editedRowMine: {
+  alignSelf: "flex-end",
+},
+editedRowPeer: {
+  alignSelf: "flex-start",
+},
+editedRowText: {
+  fontSize: 11,
+  lineHeight: 13,
+  fontWeight: "800",
+  color: RBZ.gray,
+},
+
+pinnedMetaRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  alignSelf: "stretch",
+  gap: 6,
+  marginBottom: 6,
+  paddingHorizontal: 8,
+  paddingVertical: 5,
+  borderRadius: 999,
+  backgroundColor: "rgba(216,52,95,0.08)",
+  borderWidth: 1,
+  borderColor: "rgba(216,52,95,0.14)",
+},
+pinnedMetaRowMine: {
+  alignSelf: "flex-end",
+},
+pinnedMetaRowPeer: {
+  alignSelf: "flex-start",
+},
+pinnedMetaIcon: {
+  marginLeft: 0,
+},
+pinnedMetaText: {
+  fontSize: 11,
+  lineHeight: 13,
+  fontWeight: "900",
+  color: RBZ.c2,
+},
+
+pinBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 6,
+  alignSelf: "flex-start",
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+  backgroundColor: "rgba(216,52,95,0.10)",
+  borderWidth: 1,
+  borderColor: "rgba(216,52,95,0.16)",
+},
+pinBadgeText: {
+  fontSize: 11,
+  lineHeight: 13,
+  fontWeight: "900",
+  color: RBZ.c2,
+},
+
+statusRow: {
+  marginTop: 4,
+  paddingHorizontal: 4,
+},
+statusRowMine: {
+  alignSelf: "flex-end",
+},
+statusLabel: {
+  fontSize: 11,
+  lineHeight: 13,
   color: RBZ.gray,
   fontWeight: "700",
 },
@@ -2305,9 +3457,94 @@ msgWrapMine: {
 msgWrapPeer: {
   alignSelf: "flex-start",
 },
-// add space under the bubble ONLY when reaction exists (so it doesn't collide with meta row)
+msgWrapHighlight: {
+  borderWidth: 1.5,
+  borderColor: "rgba(216,52,95,0.55)",
+  backgroundColor: "rgba(216,52,95,0.08)",
+  borderRadius: 18,
+  padding: 4,
+},
+// add space under the bubble ONLY when reaction exists (so it doesn't collide with status row)
 msgWrapWithReact: {
-  marginBottom: 14,
+  marginBottom: 16,
+},
+
+replyQuote: {
+  width: "100%",
+  minWidth: Math.min(BUBBLE_MAX_W - 24, 176),
+  flexDirection: "row",
+  alignItems: "stretch",
+  gap: 10,
+  borderRadius: 14,
+  overflow: "hidden",
+},
+
+replyQuoteStandalone: {
+  alignSelf: "stretch",
+  marginBottom: 8,
+  paddingHorizontal: 10,
+  paddingVertical: 10,
+  borderWidth: 1,
+},
+
+replyQuoteInside: {
+  alignSelf: "stretch",
+  width: "100%",
+  marginBottom: 8,
+  paddingHorizontal: 10,
+  paddingVertical: 10,
+},
+
+replyQuoteMine: {
+  backgroundColor: "rgba(255,255,255,0.14)",
+  borderColor: "rgba(255,255,255,0.18)",
+},
+
+replyQuotePeer: {
+  backgroundColor: "rgba(177,18,60,0.06)",
+  borderColor: "rgba(177,18,60,0.10)",
+},
+
+replyQuoteAccent: {
+  width: 4,
+  borderRadius: 999,
+  backgroundColor: RBZ.c2,
+},
+
+replyQuoteContent: {
+  flex: 1,
+  minWidth: 0,
+  justifyContent: "center",
+  paddingRight: 2,
+},
+
+replyQuoteSender: {
+  fontSize: 11,
+  lineHeight: 14,
+  fontWeight: "900",
+},
+
+replyQuoteSenderMine: {
+  color: "rgba(255,255,255,0.92)",
+},
+
+replyQuoteSenderPeer: {
+  color: RBZ.c2,
+},
+
+replyQuoteText: {
+  marginTop: 3,
+  fontSize: 13,
+  lineHeight: 17,
+  fontWeight: "700",
+},
+
+replyQuoteTextMine: {
+  color: "rgba(255,255,255,0.96)",
+},
+
+replyQuoteTextPeer: {
+  color: RBZ.ink,
 },
 
 // ✅ Rombuzz-style reaction pill (overlapping bubble edge)
@@ -2419,12 +3656,9 @@ heartBurst: {
   alignItems: "center",
   justifyContent: "center",
 },
-focusRing: {
-  borderWidth: 2,
-  borderColor: "rgba(181,23,158,0.55)", // RBZ c4 glow
-  backgroundColor: "rgba(181,23,158,0.06)",
-  borderRadius: 18,
-  padding: 4,
+systemRow: {
+  alignItems: "center",
+  marginBottom: 8,
 },
 systemBubble: {
   paddingHorizontal: 12,
@@ -2434,16 +3668,62 @@ systemBubble: {
   borderWidth: 1,
   borderColor: "rgba(0,0,0,0.10)",
 },
+systemBubbleAction: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 10,
+},
 systemText: {
   fontSize: 12,
   fontWeight: "800",
   color: RBZ.gray,
+},
+systemActionBtn: {
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+  backgroundColor: "rgba(216,52,95,0.10)",
+  borderWidth: 1,
+  borderColor: "rgba(216,52,95,0.18)",
+},
+systemActionText: {
+  fontSize: 11,
+  fontWeight: "900",
+  color: RBZ.c2,
 },
 scrollBtnsWrap: {
   position: "absolute",
   right: 14,
   gap: 10,
   alignItems: "center",
+},
+
+timestampPillWrap: {
+  position: "absolute",
+  left: 16,
+  right: 16,
+  alignItems: "center",
+  zIndex: 40,
+},
+
+timestampPill: {
+  maxWidth: "92%",
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 999,
+  backgroundColor: "rgba(17,24,39,0.88)",
+  shadowColor: "#000",
+  shadowOpacity: 0.18,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 6,
+},
+
+timestampPillText: {
+  color: RBZ.white,
+  fontSize: 12,
+  lineHeight: 16,
+  fontWeight: "800",
 },
 
 scrollBtn: {

@@ -42,7 +42,8 @@
         "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
@@ -57,19 +58,30 @@
       "expo-router",
       "expo-secure-store",
       [
-        "expo-camera",
+        "expo-notifications",
         {
-          "cameraPermission": "Allow RomBuzz to access your camera for photos and videos."
+          "icon": "./assets/images/logo.png",
+          "color": "#b1123c",
+          "defaultChannel": "default"
         }
       ],
-      [
-        "expo-av",
-        {
-          "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
-        }
-      ],
-      [
-        "expo-media-library",
+      
+     [
+  "expo-camera",
+  {
+    "cameraPermission": "Allow RomBuzz to access your camera for photos and videos.",
+    "microphonePermission": "Allow RomBuzz to access your microphone for video recording.",
+    "recordAudioAndroid": true
+  }
+],
+[
+  "expo-av",
+  {
+    "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
+  }
+],
+[
+  "expo-media-library",
         {
           "photosPermission": "Allow RomBuzz to access your photos and videos.",
           "savePhotosPermission": "Allow RomBuzz to save media to your device.",

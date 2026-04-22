@@ -1,20 +1,7 @@
 /**
  * ============================================================
- * 📁 File: app/chat/thread-info/[peerId].tsx
- * 🎯 Screen: RomBuzz — Chat “Tab” / Thread Info (matched-only UX)
- *
- * What this screen does:
- *  - Opens from chat header (tap name/avatar)
- *  - Shows avatar + name (tap → View Profile screen)
- *  - CTA row: Meet-in-the-middle, Gift, Video Call
- *  - Chat utilities:
- *      - Nickname (persistent, immediate)
- *      - Shared media grid (from room messages)
- *      - Pinned messages (v1 placeholder)
- *      - Shared gifts (v1 placeholder)
- *      - Alert tone (persistent)
- *      - Block / Report
- *      - Delete chat (hides chat from list, persistent)
+ * File: app/chat/thread-info/[peerId].tsx
+ * Screen: RomBuzz Chat Thread Info
  * ============================================================
  */
 
@@ -37,6 +24,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "@/src/config/api";
+import { getSocket } from "@/src/lib/socket";
 
 const RBZ = {
   c1: "#b1123c",
@@ -71,6 +59,7 @@ async function getJSON(key: string, fallback: any) {
     return fallback;
   }
 }
+
 async function setJSON(key: string, val: any) {
   try {
     await SecureStore.setItemAsync(key, JSON.stringify(val));
@@ -97,19 +86,18 @@ export default function ThreadInfo() {
   const myId = useMemo(() => String(me?.id || me?._id || ""), [me]);
   const roomId = useMemo(() => makeRoomId(myId, peerId), [myId, peerId]);
 
-  const [nickname, setNickname] = useState("");        // saved value
-const [draftNick, setDraftNick] = useState("");      // editable value
-const [editingNick, setEditingNick] = useState(false);
+  const [nickname, setNickname] = useState("");
+  const [draftNick, setDraftNick] = useState("");
+  const [editingNick, setEditingNick] = useState(false);
 
-const displayName = nickname.trim() ? nickname.trim() : baseName;
-
+  const displayName = nickname.trim() ? nickname.trim() : baseName;
 
   const [tone, setTone] = useState<"default" | "soft" | "loud">("default");
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
+  const [pinnedCount, setPinnedCount] = useState(0);
 
-  // Load me + settings
   useEffect(() => {
     (async () => {
       const raw = await SecureStore.getItemAsync("RBZ_USER");
@@ -119,73 +107,55 @@ const displayName = nickname.trim() ? nickname.trim() : baseName;
   }, []);
 
   useEffect(() => {
-  if (!myId || !peerId) return;
+    if (!myId || !peerId) return;
 
-  const nk = nickKey(myId, peerId);
-  const tk = toneKey(myId, peerId);
-  if (!nk || !tk) return;
+    const nk = nickKey(myId, peerId);
+    const tk = toneKey(myId, peerId);
+    if (!nk || !tk) return;
 
-  (async () => {
-    const n = (await SecureStore.getItemAsync(nk)) || "";
-    setNickname(n);
-    setDraftNick(n);
+    (async () => {
+      const n = (await SecureStore.getItemAsync(nk)) || "";
+      setNickname(n);
+      setDraftNick(n);
 
+      const t = (await SecureStore.getItemAsync(tk)) as any;
+      if (t === "soft" || t === "loud" || t === "default") setTone(t);
+    })();
+  }, [myId, peerId]);
 
-    const t = (await SecureStore.getItemAsync(tk)) as any;
-    if (t === "soft" || t === "loud" || t === "default") setTone(t);
-  })();
-}, [myId, peerId]);
+  const confirmNickname = async () => {
+    if (!myId || !peerId) return;
 
+    const next = draftNick.trim();
+    setNickname(next);
+    setEditingNick(false);
 
-  // Persist nickname
-const confirmNickname = async () => {
-  if (!myId || !peerId) return;
+    const key = nickKey(myId, peerId);
+    if (!key) return;
 
-  const next = draftNick.trim();
-  setNickname(next);
-  setEditingNick(false);
+    await SecureStore.setItemAsync(key, next);
+    globalThis.dispatchEvent?.(
+      new CustomEvent("rbz:nickname:update", {
+        detail: { peerId, nickname: next },
+      })
+    );
+  };
 
-  const key = nickKey(myId, peerId);
-  if (!key) return;
+  const cancelNickname = () => {
+    setDraftNick(nickname);
+    setEditingNick(false);
+  };
 
-  await SecureStore.setItemAsync(key, next);
-  globalThis.dispatchEvent?.(
-  new CustomEvent("rbz:nickname:update", {
-    detail: {
-      peerId,
-      nickname: next,
-    },
-  })
-);
-
-
-  // 🔔 notify chat screens instantly
-  globalThis.dispatchEvent?.(
-    new CustomEvent("rbz:nickname:update", {
-      detail: { peerId, nickname: next },
-    })
-  );
-};
-
-
-const cancelNickname = () => {
-  setDraftNick(nickname);
-  setEditingNick(false);
-};
-
-  // Persist tone
   const saveTone = async (next: "default" | "soft" | "loud") => {
-  if (!myId || !peerId) return;
-  setTone(next);
+    if (!myId || !peerId) return;
+    setTone(next);
 
-  const key = toneKey(myId, peerId);
-  if (!key) return;
+    const key = toneKey(myId, peerId);
+    if (!key) return;
 
-  await SecureStore.setItemAsync(key, next);
-};
+    await SecureStore.setItemAsync(key, next);
+  };
 
-
-  // Shared media from chat room messages
   const loadMedia = async () => {
     if (!myId || !peerId) return;
     setLoadingMedia(true);
@@ -197,24 +167,29 @@ const cancelNickname = () => {
       const data = await r.json();
 
       const list = Array.isArray(data) ? data : [];
-     const picked = list
-      .map((m: any): MediaItem | null => {
-        const id = String(m?.id || m?._id || "");
-        const url = String(m?.url || m?.mediaUrl || "");
-        const type = String(m?.type || "");
-        const isMedia = type === "media" || !!url;
+      const picked = list
+        .map((m: any): MediaItem | null => {
+          const id = String(m?.id || m?._id || "");
+          const url = String(m?.url || m?.mediaUrl || "");
+          const type = String(m?.type || "");
+          const isMedia = type === "media" || !!url;
 
-        if (!id || !isMedia || !url) return null;
-        return { id, url };
-      })
-      .filter((x): x is MediaItem => x !== null)
-      .slice(-60)
-      .reverse();
+          if (!id || !isMedia || !url) return null;
+          return { id, url };
+        })
+        .filter((x): x is MediaItem => x !== null)
+        .slice(-60)
+        .reverse();
 
+      const pinned = list.filter(
+        (m: any) => !!m?.pinned && !m?.deleted && !m?._temp
+      ).length;
 
       setMedia(picked);
+      setPinnedCount(pinned);
     } catch {
       setMedia([]);
+      setPinnedCount(0);
     } finally {
       setLoadingMedia(false);
     }
@@ -223,23 +198,49 @@ const cancelNickname = () => {
   useEffect(() => {
     if (!myId || !peerId) return;
     loadMedia();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myId, peerId]);
 
-  const openViewProfile = () => {
-    // If user came from chat thread info, they should always be allowed to view
+  useEffect(() => {
+    if (!roomId) return;
+
+    let alive = true;
+    let s: any;
+
+    const onPin = (payload: any) => {
+      const nextRoomId = String(payload?.roomId || "");
+      if (nextRoomId && nextRoomId !== roomId) return;
+      loadMedia();
+    };
+
+    (async () => {
+      s = await getSocket();
+      if (!alive || !s) return;
+      s.on("message:pin", onPin);
+      s.on("chat:pin", onPin);
+    })();
+
+    return () => {
+      alive = false;
+      if (!s) return;
+      s.off("message:pin", onPin);
+      s.off("chat:pin", onPin);
+    };
+  }, [roomId, myId, peerId]);
+
+   const openViewProfile = () => {
     router.push({
       pathname: "/(tabs)/view-profile" as any,
-      params: { userId: peerId, fromChat: "1" },
+      params: {
+        userId: peerId,
+        fromChat: "1",
+        returnTo: `/chat/${peerId}`,
+      },
     });
   };
 
-
-  // BLOCK / UNBLOCK (uses your backend users.js)
   const blockUser = async () => {
     try {
       const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      // ⚠️ Your backend defines the exact path in users.js. If your path differs, tell me and I’ll adjust.
       const r = await fetch(`${API_BASE}/users/blocks/${peerId}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -268,19 +269,16 @@ const cancelNickname = () => {
   };
 
   const reportUser = async () => {
-    // Keeping this v1-safe: UI now, wire backend once you confirm your report endpoint.
     Alert.alert("Report sent", "Thanks. We’ll review this report.");
   };
 
-  // Delete chat = hide from chat list (for me)
   const deleteChatForMe = async () => {
     if (!myId || !peerId) return;
 
-   const k = hiddenKey(myId);
-if (!k) return;
+    const k = hiddenKey(myId);
+    if (!k) return;
 
-const hidden: string[] = await getJSON(k, []);
-
+    const hidden: string[] = await getJSON(k, []);
     const next = Array.from(new Set([...(hidden || []), peerId]));
     await setJSON(k, next);
 
@@ -348,60 +346,58 @@ const hidden: string[] = await getJSON(k, []);
           <Ionicons name="ellipsis-horizontal" size={20} color={RBZ.white} />
         </Pressable>
       </LinearGradient>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
       >
-        {/* Identity block */}
         <View style={styles.card}>
-        <Pressable onPress={openViewProfile} style={styles.identity}>
-          <Image source={{ uri: avatar }} style={styles.bigAvatar} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name} numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Text style={styles.sub} numberOfLines={1}>
-              RomBuzz chat • matched
-            </Text>
+          <Pressable onPress={openViewProfile} style={styles.identity}>
+            <Image source={{ uri: avatar }} style={styles.bigAvatar} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text style={styles.sub} numberOfLines={1}>
+                RomBuzz Match
+              </Text>
+            </View>
+            <Ionicons name="open-outline" size={18} color={RBZ.c4} />
+          </Pressable>
+
+          <View style={styles.actionsRow}>
+            <ActionBtn
+              icon="navigate-outline"
+              label="Meet"
+              onPress={() =>
+                router.push({
+                  pathname: "/meet-in-middle/[peerId]" as any,
+                  params: { peerId, name: baseName, avatar },
+                })
+              }
+            />
+            <ActionBtn
+              icon="gift-outline"
+              label="Gift"
+              onPress={() => Alert.alert("Gifts", "Open gifts flow")}
+            />
+            <ActionBtn
+              icon="videocam-outline"
+              label="Video"
+              onPress={() => Alert.alert("Video call", "Start video call")}
+            />
           </View>
-          <Ionicons name="open-outline" size={18} color={RBZ.c4} />
-        </Pressable>
-
-        {/* CTA row */}
-              <View style={styles.actionsRow}>
-          <ActionBtn
-            icon="navigate-outline"
-            label="Meet"
-            onPress={() =>
-              router.push({
-                pathname: "/meet-in-middle/[peerId]" as any,
-                params: { peerId, name: baseName, avatar },
-              })
-            }
-          />
-          <ActionBtn
-            icon="gift-outline"
-            label="Gift"
-            onPress={() => Alert.alert("Gifts", "Open gifts flow")}
-          />
-          <ActionBtn
-            icon="videocam-outline"
-            label="Video"
-            onPress={() => Alert.alert("Video call", "Start video call")}
-          />
         </View>
-      </View>
 
-      {/* Nickname */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Nickname</Text>
-        <Text style={styles.sectionHint}>
-          Only you see this name in your chat list & header.
-        </Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Nickname</Text>
+          <Text style={styles.sectionHint}>
+            Only you see this name in your chat list & header.
+          </Text>
 
-        <View style={styles.nickRow}>
-          <Ionicons name="pricetag-outline" size={18} color={RBZ.c4} />
-          <TextInput
+          <View style={styles.nickRow}>
+            <Ionicons name="pricetag-outline" size={18} color={RBZ.c4} />
+            <TextInput
               value={draftNick}
               onFocus={() => setEditingNick(true)}
               onChangeText={setDraftNick}
@@ -410,114 +406,120 @@ const hidden: string[] = await getJSON(k, []);
               style={styles.nickInput}
             />
 
-        {editingNick ? (
-  <View style={{ flexDirection: "row", gap: 6 }}>
-    <Pressable onPress={cancelNickname} style={styles.cancelBtn}>
-      <Ionicons name="close" size={16} color={RBZ.white} />
-    </Pressable>
-    <Pressable onPress={confirmNickname} style={styles.okBtn}>
-      <Ionicons name="checkmark" size={16} color={RBZ.white} />
-    </Pressable>
-  </View>
-) : (
-  !!nickname.trim() && (
-    <Pressable
-      onPress={() => {
-        setDraftNick("");
-        setEditingNick(true);
-      }}
-      style={styles.clearBtn}
-    >
-      <Ionicons name="close" size={16} color={RBZ.white} />
-    </Pressable>
-  )
-)}
-
+            {editingNick ? (
+              <View style={{ flexDirection: "row", gap: 6 }}>
+                <Pressable onPress={cancelNickname} style={styles.cancelBtn}>
+                  <Ionicons name="close" size={16} color={RBZ.white} />
+                </Pressable>
+                <Pressable onPress={confirmNickname} style={styles.okBtn}>
+                  <Ionicons name="checkmark" size={16} color={RBZ.white} />
+                </Pressable>
+              </View>
+            ) : (
+              !!nickname.trim() && (
+                <Pressable
+                  onPress={() => {
+                    setDraftNick("");
+                    setEditingNick(true);
+                  }}
+                  style={styles.clearBtn}
+                >
+                  <Ionicons name="close" size={16} color={RBZ.white} />
+                </Pressable>
+              )
+            )}
+          </View>
         </View>
-      </View>
 
- {/* Shared media (clickable only) */}
-<Pressable
-  onPress={() =>
-    router.push({
-      pathname: "/chat/shared-media/[peerId]" as any,
-      params: { peerId, name: baseName, avatar },
-    })
-  }
-  style={styles.card}
->
-  <View style={styles.row}>
-    <View style={styles.rowIcon}>
-      <Ionicons name="images-outline" size={18} color={RBZ.c4} />
-    </View>
-
-    <View style={{ flex: 1 }}>
-      <Text style={styles.rowTitle}>Shared Content</Text>
-      <Text style={styles.rowSub}>Tap to view shared media & purchased</Text>
-    </View>
-
-    <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
-  </View>
-</Pressable>
-
-
-      {/* Alert tone */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Alert Tone</Text>
-        <View style={styles.tonesRow}>
-          {(["default", "soft", "loud"] as const).map((t) => {
-            const active = tone === t;
-            return (
-              <Pressable
-                key={t}
-                onPress={() => saveTone(t)}
-                style={[styles.toneChip, active ? styles.toneChipActive : null]}
-              >
-                <Text style={[styles.toneText, active ? { color: RBZ.white } : null]}>
-                  {t.toUpperCase()}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Utilities */}
-      <View style={[styles.card, { paddingBottom: 14 + insets.bottom }]}>
-        <Row
-          icon="bookmark-outline"
-          title="Pinned messages"
-          sub="Coming in v2 (we’ll wire backend/local pins)"
-          onPress={() => Alert.alert("Pinned messages", "Coming soon")}
-        />
-        <Row
-          icon="sparkles-outline"
-          title="Shared gifts"
-          sub="Coming in v2"
-          onPress={() => Alert.alert("Shared gifts", "Coming soon")}
-        />
-
-        <View style={styles.hr} />
-
-        <Row icon="ban-outline" title="Block" sub="Stop this user from contacting you" onPress={blockUser} />
-        <Row icon="checkmark-circle-outline" title="Unblock" sub="Allow messages again" onPress={unblockUser} />
-
-        <Row icon="flag-outline" title="Report" sub="Tell us what happened" onPress={reportUser} danger />
-
-        <Row
-          icon="trash-outline"
-          title="Delete chat"
-          sub="Removes from your list (for you only)"
+        <Pressable
           onPress={() =>
-            Alert.alert("Delete chat", "Remove this chat from your list?", [
-              { text: "Cancel", style: "cancel" },
-              { text: "Delete", style: "destructive", onPress: deleteChatForMe },
-            ])
+            router.push({
+              pathname: "/chat/shared-media/[peerId]" as any,
+              params: { peerId, name: baseName, avatar },
+            })
           }
-          danger
-        />
-      </View>
-        </ScrollView>
+          style={styles.card}
+        >
+          <View style={styles.row}>
+            <View style={styles.rowIcon}>
+              <Ionicons name="images-outline" size={18} color={RBZ.c4} />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Shared Content</Text>
+              <Text style={styles.rowSub}>Tap to view shared media & purchased</Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
+          </View>
+        </Pressable>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Alert Tone</Text>
+          <View style={styles.tonesRow}>
+            {(["default", "soft", "loud"] as const).map((t) => {
+              const active = tone === t;
+              return (
+                <Pressable
+                  key={t}
+                  onPress={() => saveTone(t)}
+                  style={[styles.toneChip, active ? styles.toneChipActive : null]}
+                >
+                  <Text style={[styles.toneText, active ? { color: RBZ.white } : null]}>
+                    {t.toUpperCase()}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.card, { paddingBottom: 14 + insets.bottom }]}>
+          <Row
+            icon="bookmark-outline"
+            title="Pinned messages"
+            sub={
+              pinnedCount === 0
+                ? "No pinned messages yet"
+                : pinnedCount === 1
+                  ? "1 pinned message"
+                  : `${pinnedCount} pinned messages`
+            }
+            onPress={() =>
+              router.push({
+                pathname: "/chat/pinned/[peerId]" as any,
+                params: { peerId, name: baseName, avatar },
+              })
+            }
+          />
+          <Row
+            icon="sparkles-outline"
+            title="Shared gifts"
+            sub="Coming in v2"
+            onPress={() => Alert.alert("Shared gifts", "Coming soon")}
+          />
+
+          <View style={styles.hr} />
+
+          <Row icon="ban-outline" title="Block" sub="Stop this user from contacting you" onPress={blockUser} />
+          <Row icon="checkmark-circle-outline" title="Unblock" sub="Allow messages again" onPress={unblockUser} />
+
+          <Row icon="flag-outline" title="Report" sub="Tell us what happened" onPress={reportUser} danger />
+
+          <Row
+            icon="trash-outline"
+            title="Delete chat"
+            sub="Removes from your list (for you only)"
+            onPress={() =>
+              Alert.alert("Delete chat", "Remove this chat from your list?", [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete", style: "destructive", onPress: deleteChatForMe },
+              ])
+            }
+            danger
+          />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -576,20 +578,8 @@ const styles = StyleSheet.create({
   },
   actionLabel: { fontSize: 12, fontWeight: "900", color: RBZ.ink },
 
-  sectionTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sectionTitle: { fontSize: 14, fontWeight: "900", color: RBZ.ink },
   sectionHint: { marginTop: 6, fontSize: 12, color: RBZ.gray, fontWeight: "700" },
-
-  pillBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: RBZ.c4,
-    paddingHorizontal: 10,
-    height: 30,
-    borderRadius: 999,
-  },
-  pillText: { color: RBZ.white, fontWeight: "900", fontSize: 12 },
 
   nickRow: {
     marginTop: 10,
@@ -612,10 +602,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  emptyText: { marginTop: 10, color: RBZ.gray, fontWeight: "700" },
-  mediaTile: { flex: 1, aspectRatio: 1, borderRadius: 14, overflow: "hidden", backgroundColor: RBZ.soft },
-  mediaImg: { width: "100%", height: "100%" },
 
   tonesRow: { flexDirection: "row", gap: 10, marginTop: 10 },
   toneChip: {
@@ -646,20 +632,19 @@ const styles = StyleSheet.create({
   rowSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: RBZ.gray },
 
   okBtn: {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  backgroundColor: RBZ.c3,
-  alignItems: "center",
-  justifyContent: "center",
-},
-cancelBtn: {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  backgroundColor: RBZ.gray,
-  alignItems: "center",
-  justifyContent: "center",
-},
-
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    backgroundColor: RBZ.c3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    backgroundColor: RBZ.gray,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

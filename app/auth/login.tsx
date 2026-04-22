@@ -13,7 +13,6 @@
  */
 
 import axios from "axios";
-import * as AuthSession from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import Constants from "expo-constants";
 
@@ -162,20 +161,16 @@ export default function LoginScreen() {
     }
   };
 
-  /**
+    /**
    * ------------------------------------------------------------
    * ⚡ Google Login (Expo AuthSession) → POST /auth/google
    * ------------------------------------------------------------
    */
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: "rombuzzmobile",
-  });
-
   const [request, response, promptAsync] = Google.useAuthRequest({
     androidClientId: Constants.expoConfig?.extra?.googleAndroidClientId,
     iosClientId: Constants.expoConfig?.extra?.googleIosClientId,
     webClientId: Constants.expoConfig?.extra?.googleWebClientId,
-    redirectUri,
+    scopes: ["openid", "profile", "email"],
   });
 
   useEffect(() => {

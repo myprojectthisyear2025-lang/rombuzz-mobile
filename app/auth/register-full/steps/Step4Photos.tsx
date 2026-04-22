@@ -60,11 +60,17 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
   const [uploaderVisible, setUploaderVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
+  const sanitizePhotoUrls = (items: string[]) =>
+    items
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .slice(0, MAX_PHOTOS);
+
   const syncPhotos = (next: string[]) => {
     // Ensure we don't exceed MAX_PHOTOS
     const trimmed = next.slice(0, MAX_PHOTOS);
     setPhotos(trimmed);
-    setField("photos", trimmed);
+    setField("photos", sanitizePhotoUrls(trimmed));
 
     // If no avatar yet but we have a non-empty first photo, make it avatar
     if (!form.avatar && trimmed[0] && trimmed[0].trim()) {

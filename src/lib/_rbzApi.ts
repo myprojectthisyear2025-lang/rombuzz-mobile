@@ -5,8 +5,7 @@
  * ============================================================================
  */
 import * as SecureStore from "expo-secure-store";
-import { API_BASE } from "../../../src/config/api";
-
+import { API_BASE } from "../config/api";
 export async function rbzFetch<T = any>(
   path: string,
   opts: {

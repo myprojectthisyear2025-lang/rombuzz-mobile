@@ -60,7 +60,7 @@ type MediaItem = {
   type: "image" | "video";
   caption?: string;
   privacy?: "public" | "private";
-  createdAt?: number;
+  createdAt?: any;
 };
 
 type PublishScope = "public" | "matches" | "private";
@@ -91,6 +91,56 @@ function inferScope(item: MediaItem): PublishScope {
   if (hasTag(item.caption, "scope:private")) return "private";
   if (hasTag(item.caption, "scope:public")) return "public";
   return item.privacy === "private" ? "private" : "public";
+}
+
+function toCreatedAtMs(value: any): number | null {
+  if (value == null || value === "") return null;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const asNumber = Number(trimmed);
+    if (Number.isFinite(asNumber)) return asNumber;
+
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  return null;
+}
+
+function sortMediaNewestFirst(items: MediaItem[]) {
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      createdAtMs: toCreatedAtMs(item?.createdAt),
+    }))
+    .sort((a, b) => {
+      const aHasCreatedAt = a.createdAtMs != null;
+      const bHasCreatedAt = b.createdAtMs != null;
+
+      if (aHasCreatedAt && bHasCreatedAt && a.createdAtMs !== b.createdAtMs) {
+        return (b.createdAtMs as number) - (a.createdAtMs as number);
+      }
+
+      if (aHasCreatedAt !== bHasCreatedAt) {
+        return aHasCreatedAt ? -1 : 1;
+      }
+
+      return a.index - b.index;
+    })
+    .map(({ item }) => item);
 }
 
 function MediaPreview({
@@ -190,12 +240,12 @@ const [viewerOpen, setViewerOpen] = useState(false);
 const [activeIndex, setActiveIndex] = useState<number>(0);
 
  const photos = useMemo(
-  () => localMedia.filter((m) => inferKind(m) === "photo"),
+  () => sortMediaNewestFirst(localMedia.filter((m) => inferKind(m) === "photo")),
   [localMedia]
 );
 
 const reels = useMemo(
-  () => localMedia.filter((m) => inferKind(m) === "reel"),
+  () => sortMediaNewestFirst(localMedia.filter((m) => inferKind(m) === "reel")),
   [localMedia]
 );
 

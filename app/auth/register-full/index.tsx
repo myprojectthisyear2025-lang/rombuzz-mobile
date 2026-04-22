@@ -254,11 +254,36 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
     form.photos.filter((p) => p && p.trim().length > 0).length >= 2;
 
 
-  const progressPct = useMemo(
+   const progressPct = useMemo(
     () => (step / 4) * 100,
     [step]
   );
 
+  const saveSignupPhotosToGallery = async (token: string, photos: string[]) => {
+    const cleanPhotos = Array.from(
+      new Set((photos || []).map((p) => String(p || "").trim()).filter(Boolean))
+    );
+
+    for (const url of cleanPhotos) {
+      try {
+        await axios.post(
+          `${API_BASE}/upload-media`,
+          {
+            fileUrl: url,
+            type: "image",
+            caption: "kind:photo scope:public intent:letsbuzz",
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      } catch (err) {
+        console.log("❌ saveSignupPhotosToGallery failed for:", url, err);
+      }
+    }
+  };
 
   const finish = async () => {
     setError("");
@@ -308,20 +333,24 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   voiceUrl: form.voiceUrl || "",
 };
 
-      const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
+        const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
       const { token, user } = res.data || {};
 
       if (!token || !user) {
         throw new Error("Registration failed. Invalid response.");
       }
 
-    await SecureStore.setItemAsync("RBZ_TOKEN", token);
-await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
+      // ✅ Save signup photos into gallery media so they appear in:
+      //    - Gallery → Photos
+      //    - LetsBuzz → Posts
+      await saveSignupPhotosToGallery(token, form.photos);
 
-// ✅ Force exit auth stack + re-evaluate root layout
-router.replace("../(tabs)");
-router.reload();
+      await SecureStore.setItemAsync("RBZ_TOKEN", token);
+      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
 
+      // ✅ Force exit auth stack + re-evaluate root layout
+      router.replace("../(tabs)");
+      router.reload();
 
     } catch (e: any) {
       setError(

@@ -150,6 +150,32 @@ function computeCompletion(u: any) {
 }
 
 
+function normalizeImageUrl(value: any) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function extractImageUrl(entry: any) {
+  if (typeof entry === "string") return normalizeImageUrl(entry);
+  if (typeof entry?.url === "string") return entry.url.trim();
+  return "";
+}
+
+function uniqueImageUrls(...lists: any[][]) {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  for (const list of lists) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const url = extractImageUrl(item);
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      urls.push(url);
+    }
+  }
+
+  return urls;
+}
+
 async function getTokenOrThrow() {
   const t = await SecureStore.getItemAsync("RBZ_TOKEN");
   if (!t) throw new Error("RBZ_TOKEN missing");
@@ -824,23 +850,17 @@ const [form, setForm] = useState<ProfileForm>({
 
   const avatarUri = useMemo(() => {
     return (
-      user?.avatar ||
-      user?.avatarUrl ||
-      user?.photoUrl ||
-      user?.profilePic ||
-      user?.photos?.[0] ||
-      user?.media?.[0] ||
+      normalizeImageUrl(user?.avatar) ||
+      normalizeImageUrl(user?.avatarUrl) ||
+      normalizeImageUrl(user?.photoUrl) ||
+      normalizeImageUrl(user?.profilePic) ||
+      uniqueImageUrls(user?.photos, user?.media)[0] ||
       ""
     );
   }, [user]);
 
   const mediaList: string[] = useMemo(() => {
-    const a = Array.isArray(user?.media) ? user.media : [];
-    const b = Array.isArray(user?.photos) ? user.photos : [];
-    // merge unique
-    const set = new Set<string>();
-    [...a, ...b].forEach((x) => typeof x === "string" && set.add(x));
-    return Array.from(set);
+    return uniqueImageUrls(user?.media, user?.photos);
   }, [user]);
 
   const posts = useMemo(() => {
@@ -1622,19 +1642,73 @@ setEditTarget(null);
 )}
  </View>
 
-
        {/* GALLERY TAB */}
 {tab === "gallery" && (
   <GallerySection
     ownerId={String(user?.id || user?._id || "")}
-    media={(Array.isArray(user?.media) ? user.media : []).map((m: any) => ({
-      id: String(m.id || m.url),
-      url: String(m.url),
-      type: m.type === "video" ? "video" : "image",
-      caption: m.caption || "",
-      privacy: m.privacy,
-      createdAt: m.createdAt,
-    }))}
+    media={[
+      ...uniqueImageUrls(user?.photos)
+        .map((url: string, index: number) => ({
+          id: `signup-photo-${index}-${url}`,
+          url,
+          type: "image" as const,
+          caption: "kind:photo scope:public intent:viewprofile",
+          privacy: "public" as const,
+          createdAt: 0,
+        })),
+
+          ...(Array.isArray(user?.media) ? user.media : [])
+        .map(
+          (
+            m: any
+          ):
+            | {
+                id: string;
+                url: string;
+                type: "image" | "video";
+                caption: string;
+                privacy: any;
+                createdAt: any;
+              }
+            | null => {
+            const url = extractImageUrl(m);
+            if (!url) return null;
+
+            return {
+              id: String(m.id || url),
+              url,
+              type: m.type === "video" ? "video" : "image",
+              caption: m.caption || "",
+              privacy: m.privacy,
+              createdAt: m.createdAt,
+            };
+          }
+        )
+        .filter(
+          (
+            item:
+              | {
+                  id: string;
+                  url: string;
+                  type: "image" | "video";
+                  caption: string;
+                  privacy: any;
+                  createdAt: any;
+                }
+              | null
+          ): item is {
+            id: string;
+            url: string;
+            type: "image" | "video";
+            caption: string;
+            privacy: any;
+            createdAt: any;
+          } => item !== null
+        ),
+    ].filter(
+      (item, index, arr) =>
+        arr.findIndex((x) => String(x.url) === String(item.url)) === index
+    )}
     uploading={uploading}
     setUploading={setUploading}
     apiFetch={apiFetch}

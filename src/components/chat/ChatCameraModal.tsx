@@ -1,35 +1,38 @@
 /**
  * ============================================================
  * 📁 File: src/components/chat/ChatCameraModal.tsx
- * 🎯 Purpose: Standalone chat camera (replaces camera inside + modal)
+ * 🎯 Purpose: Modern chat camera modal for photo + video
  *
- * Used by:
- *  - app/chat/[peerId].tsx
- *
- * What it does:
- *  - Photo capture (button)
- *  - Video record (button, auto-stops at 60s)
- *  - Preview before sending
- *  - Visibility modes: keep / view once / view twice
- *  - Text overlay
- *  - Draw canvas (no extra deps)
- *  - Video trim (REAL preview trim: start/end + loop segment)
- *
- * Returns:
- *  - onCaptured([{ uri, mediaType, visibility, overlayText, drawing, trim }])
+ * Features:
+ *  - Photo capture
+ *  - Video recording up to 60 seconds
+ *  - Stop video anytime after recording starts
+ *  - Reliable preview for both photo and video
+ *  - Front/back camera switch
+ *  - Flash mode: off / on / auto / screen
+ *  - Torch toggle (back camera)
+ *  - Zoom controls
+ *  - View once / view twice / keep in chat
+ *  - Text overlay + simple drawing overlay
+ *  - Retake and send actions
  * ============================================================
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video, } from "expo-av";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import React, { useMemo, useRef, useState } from "react";
+import { ResizeMode, Video } from "expo-av";
+import {
+  CameraView,
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from "expo-camera";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
   Modal,
   PanResponder,
   Pressable,
+  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
@@ -43,23 +46,37 @@ const RBZ = {
   c4: "#b5179e",
   white: "#ffffff",
   ink: "#111827",
+  glass: "rgba(0,0,0,0.34)",
+  glassSoft: "rgba(255,255,255,0.10)",
+  border: "rgba(255,255,255,0.16)",
 };
 
 type Visibility = "keep" | "once" | "twice";
+type MediaType = "image" | "video";
+type FlashMode = "off" | "on" | "auto";
+type CaptureTab = "picture" | "video";
 
 type DrawPoint = { x: number; y: number };
 type Stroke = { id: string; points: DrawPoint[] };
 
+type PreviewState = {
+  uri: string;
+  mediaType: MediaType;
+} | null;
+
 export type ChatCameraCapturedItem = {
   uri: string;
-  mediaType: "image" | "video";
+  mediaType: MediaType;
   visibility: Visibility;
+  previewMuted?: boolean;
   overlayText?: string;
   drawing?: {
     strokes: Stroke[];
   };
-
 };
+const MAX_VIDEO_SECONDS = 60;
+const MIN_RECORD_MS = 350;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function ChatCameraModal({
   visible,
@@ -68,913 +85,1018 @@ export default function ChatCameraModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onCaptured: (items: ChatCameraCapturedItem[]) => void;
+  onCaptured: (items: ChatCameraCapturedItem[]) => void | Promise<void>;
 }) {
-  const [perm, requestPerm] = useCameraPermissions();
+  const [cameraPerm, requestCameraPerm] = useCameraPermissions();
+  const [micPerm, requestMicPerm] = useMicrophonePermissions();
+
   const camRef = useRef<CameraView | null>(null);
+  const mountedRef = useRef(true);
+  const recordPromiseRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
+  const recordStartedAtRef = useRef<number | null>(null);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopRequestedRef = useRef(false);
+  const stoppingRef = useRef(false);
 
-  const [facing, setFacing] = useState<"back" | "front">("back");
-  const [busy, setBusy] = useState(false);
+    const [camReady, setCamReady] = useState(false);
+  const [active, setActive] = useState(true);
+  const [facing, setFacing] = useState<"front" | "back">("back");
+  const [captureTab, setCaptureTab] = useState<CaptureTab>("picture");
+  const [flash, setFlash] = useState<FlashMode>("off");
+  const [torchOn, setTorchOn] = useState(false);
+  const [zoom, setZoom] = useState(0);
+  const [mirrorFront, setMirrorFront] = useState(true);
 
- // 🎥 video recording
-  const [recording, setRecording] = useState(false);
-  const recordingRef = useRef(false);
-  const [videoPendingPreview, setVideoPendingPreview] = useState(false);
-  const videoPromiseRef = useRef<Promise<any> | null>(null);
-  const camReadyRef = useRef(false);
-  const [recordingReady, setRecordingReady] = useState(false); // 🆕 Track if camera is ready
-  const [camReady, setCamReady] = useState(false); // 🆕 Track CameraView readiness
-  const startTimeRef = useRef<number | null>(null); // 🆕 Timestamp when recording started
+  const [takingPhoto, setTakingPhoto] = useState(false);
+  const [startingVideo, setStartingVideo] = useState(false);
+    const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [sending, setSending] = useState(false);
 
-  //photo
-  const [cameraMode, setCameraMode] = useState<"picture" | "video">("picture");
-// ⏱ recording timer (seconds)
-const [recordSecs, setRecordSecs] = useState(0);
-const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // preview
-  const [preview, setPreview] = useState<{ uri: string; mediaType: "image" | "video" } | null>(
-    null
-  );
-
-  //gift picker
-  const [showGiftPicker, setShowGiftPicker] = useState(false);
-
-  // preview controls
-  const [visibility, setVisibility] = useState<Visibility>("keep");
-  const cycleVisibility = () => {
-  setVisibility((prev) => {
-    if (prev === "keep") return "once";
-    if (prev === "once") return "twice";
-    return "keep";
-  });
-};
-
-const visibilityLabel = () => {
-  if (visibility === "keep") return "Keep in Chat";
-  if (visibility === "once") return "View Once";
-  return "View Twice";
-};
-
-  const [overlayText, setOverlayText] = useState("");
+  const [preview, setPreview] = useState<PreviewState>(null);
+  const [previewMuted, setPreviewMuted] = useState(false);
+  const [visibilityMode, setVisibilityMode] = useState<Visibility>("keep");
   const [showTextBox, setShowTextBox] = useState(false);
-
-  // draw canvas
+  const [overlayText, setOverlayText] = useState("");
   const [drawMode, setDrawMode] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const activeStrokeRef = useRef<Stroke | null>(null);
 
-  
-  const ensurePerm = async () => {
-    if (perm?.granted) return true;
-    const p = await requestPerm();
-    return !!p?.granted;
-  };
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearRecordTimer();
+    };
+  }, []);
 
- const resetAll = () => {
-      setCameraMode("picture"); // 🔁 safe reset
-      setVideoPendingPreview(false);
-    setBusy(false);
-    setRecording(false);
-    recordingRef.current = false;
-    setRecordingReady(false); // 🆕 Reset ready state
-    setCamReady(false);
-    camReadyRef.current = false;
-    startTimeRef.current = null;
-
-    setPreview(null);
-    setVisibility("keep");
-    setOverlayText("");
-    setShowTextBox(false);
-
-    setDrawMode(false);
-    setStrokes([]);
-    activeStrokeRef.current = null;
-
-  };
-
-  const closeAll = () => {
-    // safety: stop recording if open is closed
-    try {
-      if (recordingRef.current) (camRef.current as any)?.stopRecording?.();
-    } catch {}
-    resetAll();
-    onClose();
-  };
-const snap = async () => {
-  const ok = await ensurePerm();
-  if (!ok) return;
-
-  setCameraMode("picture"); // 🔒 lock pipeline
-
-  try {
-    setBusy(true);
-    const photo: any = await camRef.current?.takePictureAsync({
-      quality: 0.9,
-      skipProcessing: true,
-    });
-
-    if (!photo?.uri) throw new Error("No photo URI");
-    setPreview({ uri: photo.uri, mediaType: "image" });
-  } catch (e: any) {
-    Alert.alert("Camera failed", e?.message || "Try again");
-  } finally {
-    setBusy(false);
-  }
-};
-
-const startVideo = async () => {
-  if (recordingRef.current) return;
-
-  const ok = await ensurePerm();
-  if (!ok) return;
-
-  setCamReady(false);
-  camReadyRef.current = false;
-  setCameraMode("video");
-  recordingRef.current = true;
-  setRecording(true);
-  startTimeRef.current = Date.now();
-  setRecordingReady(false);
-  setRecordSecs(0);
-
-  recordTimerRef.current = setInterval(() => {
-    setRecordSecs((s) => Math.min(s + 1, 60));
-  }, 1000);
-
-  try {
-    // Wait for CameraView to report ready (up to ~2s)
-    await new Promise<void>((resolve) => {
-      if (camReadyRef.current) return resolve();
-      let settled = false;
-      const check = setInterval(() => {
-        if (camReadyRef.current && !settled) {
-          settled = true;
-          clearInterval(check);
-          clearTimeout(to);
-          resolve();
-        }
-      }, 100);
-      const to = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          clearInterval(check);
-          resolve();
-        }
-      }, 2000);
-    });
-
-    // 🔑 Start recording and store the promise
-    const recordPromise = camRef.current?.recordAsync({ maxDuration: 60 });
-    if (!recordPromise) {
-      throw new Error("Camera not ready");
+  useEffect(() => {
+    if (!visible) {
+      hardReset();
+      setActive(false);
+      return;
     }
-    videoPromiseRef.current = recordPromise;
+    setActive(true);
+  }, [visible]);
 
-    // Small safety delay to ensure native recorder has begun producing data
-    await new Promise((r) => setTimeout(r, 700));
-
-    // ✅ Now it's safe to allow stopping
-    if (recordingRef.current) {
-      setRecordingReady(true);
-    }
-  } catch (err) {
-    console.error("Failed to start recording:", err);
-    recordingRef.current = false;
-    setRecording(false);
-    startTimeRef.current = null;
+  const clearRecordTimer = () => {
     if (recordTimerRef.current) {
       clearInterval(recordTimerRef.current);
       recordTimerRef.current = null;
     }
-    Alert.alert("Camera error", "Could not start recording. Try again.");
-  }
-};
+  };
 
-// optional manual stop (in case user wants earlier stop)
-const stopVideo = async () => {
-  if (!recordingRef.current) return;
-  
-  // 🚫 Prevent stopping if recording hasn't actually started yet
-  if (!recordingReady) {
-    Alert.alert("Please wait", "Camera is starting... Wait a moment before stopping.");
-    return;
-  }
-
-  // Ensure minimum recording duration to avoid native error
-  const minMs = 900; // safe minimum duration
-  const started = startTimeRef.current ?? 0;
-  const elapsed = Date.now() - started;
-  if (elapsed < minMs) {
-    await new Promise((r) => setTimeout(r, minMs - elapsed));
-  }
-
-  // 🔒 Lock the ref immediately so user can't press stop twice
-  recordingRef.current = false;
-  setRecording(false);
-  setRecordingReady(false);
-
-  // ⏱ Clear the timer immediately
-  if (recordTimerRef.current) {
-    clearInterval(recordTimerRef.current);
-    recordTimerRef.current = null;
-  }
-
-  // 🎬 Show loading state while video is being saved
-  setBusy(true);
-
-  try {
-    // 🛑 Stop the camera recording
-    (camRef.current as any)?.stopRecording?.();
-
-    // ⏳ Wait for the video file to be saved
-    let vid: any = null;
-    const waitForVideoPromise = async () => {
-      const maxRetries = 4;
-      let attempt = 0;
-      while (attempt < maxRetries) {
-        try {
-          const p = videoPromiseRef.current;
-          if (!p) throw new Error("no-promise");
-          const res = await p;
-          return res;
-        } catch (e: any) {
-          // if native error indicates "stopped before any data" then retry a short time
-          const msg = e?.message || "";
-          if (msg.includes("stopped before any data" ) || msg.includes("Recording was stopped before any data")) {
-            // small backoff and retry
-            await new Promise((r) => setTimeout(r, 250));
-            attempt++;
-            continue;
-          }
-          // for other errors, bail
-          throw e;
-        }
-      }
-      // final attempt: await whatever current promise is
-      return await videoPromiseRef.current;
-    };
-
-    vid = await waitForVideoPromise();
-
-    if (vid?.uri) {
-      // ✅ Video saved successfully, show preview
-      setPreview({
-        uri: vid.uri,
-        mediaType: "video",
+  const startRecordTimer = () => {
+    clearRecordTimer();
+    recordTimerRef.current = setInterval(() => {
+      setRecordSecs((prev) => {
+        if (prev >= MAX_VIDEO_SECONDS) return MAX_VIDEO_SECONDS;
+        return prev + 1;
       });
-    } else {
-      // ❌ No video file received
-      Alert.alert("Recording failed", "Could not save video. Try again.");
+    }, 1000);
+  };
+
+  const ensureCameraPermission = async () => {
+    if (cameraPerm?.granted) return true;
+    const next = await requestCameraPerm();
+    return !!next?.granted;
+  };
+
+  const ensureVideoPermissions = async () => {
+    const camOK = cameraPerm?.granted ? true : !!(await requestCameraPerm())?.granted;
+    if (!camOK) {
+      Alert.alert("Camera permission needed", "Please allow camera access first.");
+      return false;
     }
-  } catch (err: any) {
-    // ❌ Recording failed or was cancelled
-    console.error("Video recording error:", err);
-    Alert.alert("Recording failed", "Please try recording again.");
-  } finally {
-    // 🧹 Clean up
-    videoPromiseRef.current = null;
-    startTimeRef.current = null;
-    setBusy(false);
-  }
-};
 
-const formatTime = (secs: number) => {
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
+    const micOK = micPerm?.granted ? true : !!(await requestMicPerm())?.granted;
+    if (!micOK) {
+      Alert.alert(
+        "Microphone permission needed",
+        "Please allow microphone access to record videos with sound."
+      );
+      return false;
+    }
 
+    return true;
+  };
 
-  // draw: capture points inside the preview area
-  const pan = useMemo(() => {
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => !!preview && drawMode,
-      onMoveShouldSetPanResponder: () => !!preview && drawMode,
-      onPanResponderGrant: (evt) => {
-        if (!preview || !drawMode) return;
-        const { locationX, locationY } = evt.nativeEvent;
+  const resetEditor = () => {
+    setVisibilityMode("keep");
+    setPreviewMuted(false);
+    setShowTextBox(false);
+    setOverlayText("");
+    setDrawMode(false);
+    setStrokes([]);
+    activeStrokeRef.current = null;
+  };
+  const resetRecording = () => {
+    clearRecordTimer();
+    setStartingVideo(false);
+    setRecording(false);
+    setRecordSecs(0);
+    recordPromiseRef.current = null;
+    recordStartedAtRef.current = null;
+    stopRequestedRef.current = false;
+    stoppingRef.current = false;
+  };
 
-        const st: Stroke = {
-          id: `st_${Date.now()}`,
-          points: [{ x: locationX, y: locationY }],
-        };
-        activeStrokeRef.current = st;
-        setStrokes((p) => [...p, st]);
-      },
-      onPanResponderMove: (evt) => {
-        if (!preview || !drawMode) return;
-        const st = activeStrokeRef.current;
-        if (!st) return;
+  const hardReset = () => {
+    resetRecording();
+    resetEditor();
+    setPreview(null);
+    setTakingPhoto(false);
+    setSending(false);
+    setCamReady(false);
+    setTorchOn(false);
+    setZoom(0);
+    setCaptureTab("picture");
+  };
 
-        const { locationX, locationY } = evt.nativeEvent;
+  const closeModal = async () => {
+    if (recording) {
+      try {
+        await stopVideo(true);
+      } catch {}
+    }
+    hardReset();
+    onClose();
+  };
 
-        setStrokes((prev) => {
-          const next = [...prev];
-          const idx = next.findIndex((s) => s.id === st.id);
-          if (idx === -1) return prev;
-
-          const cur = next[idx];
-          const updated: Stroke = {
-            ...cur,
-            points: [...cur.points, { x: locationX, y: locationY }],
-          };
-          next[idx] = updated;
-          activeStrokeRef.current = updated;
-          return next;
-        });
-      },
-      onPanResponderRelease: () => {
-        activeStrokeRef.current = null;
-      },
-      onPanResponderTerminate: () => {
-        activeStrokeRef.current = null;
-      },
+  const cycleVisibility = () => {
+    setVisibilityMode((prev) => {
+      if (prev === "keep") return "once";
+      if (prev === "once") return "twice";
+      return "keep";
     });
-  }, [preview, drawMode]);
+  };
 
+  const visibilityLabel =
+    visibilityMode === "keep"
+      ? "Keep in chat"
+      : visibilityMode === "once"
+      ? "View once"
+      : "View twice";
 
-  const send = () => {
-    if (!preview?.uri) return;
+  const cycleFlash = () => {
+    setFlash((prev) => {
+      if (prev === "off") return "on";
+      if (prev === "on") return "auto";
+      return "off";
+    });
+  };
+
+  const flashIcon =
+    flash === "off"
+      ? "flash-off"
+      : flash === "auto"
+      ? "flash-outline"
+      : "flash";
+
+  const flashLabel =
+    flash === "off" ? "Off" : flash === "auto" ? "Auto" : "On";
+  const setZoomStep = (next: number) => {
+    const clamped = Math.max(0, Math.min(1, next));
+    setZoom(clamped);
+  };
+
+  const toggleFacing = () => {
+    if (recording || takingPhoto || startingVideo || sending) return;
+    setFacing((prev) => (prev === "back" ? "front" : "back"));
+    setTorchOn(false);
+  };
+
+  const takePhoto = async () => {
+    const ok = await ensureCameraPermission();
+    if (!ok) {
+      Alert.alert("Camera permission needed", "Please allow camera access first.");
+      return;
+    }
+
+    if (!camReady || takingPhoto || startingVideo || recording || sending) return;
+
+    try {
+      setTakingPhoto(true);
+      const result: any = await camRef.current?.takePictureAsync({
+        quality: 0.92,
+        skipProcessing: false,
+      });
+
+      if (!result?.uri) {
+        throw new Error("No photo URI returned from camera.");
+      }
+
+      if (!mountedRef.current) return;
+      resetEditor();
+      setPreview({ uri: result.uri, mediaType: "image" });
+    } catch (e: any) {
+      Alert.alert("Photo failed", e?.message || "Could not take photo.");
+    } finally {
+      if (mountedRef.current) setTakingPhoto(false);
+    }
+  };
+
+  const startVideo = async () => {
+    const ok = await ensureVideoPermissions();
+    if (!ok) return;
+
+    if (!camReady || takingPhoto || startingVideo || recording || sending) return;
+
+    try {
+      setCaptureTab("video");
+      setStartingVideo(true);
+      setPreview(null);
+      resetEditor();
+      setRecordSecs(0);
+      stopRequestedRef.current = false;
+      stoppingRef.current = false;
+
+      await sleep(120);
+
+      const promise = camRef.current?.recordAsync({
+        maxDuration: MAX_VIDEO_SECONDS,
+      });
+
+      if (!promise) {
+        throw new Error("Could not start recording.");
+      }
+
+      recordPromiseRef.current = promise;
+      recordStartedAtRef.current = Date.now();
+      setRecording(true);
+      setStartingVideo(false);
+      startRecordTimer();
+
+      const result = await promise;
+
+      if (!mountedRef.current) return;
+
+      const uri = result?.uri;
+      resetRecording();
+
+      if (!uri) {
+        Alert.alert("Recording failed", "No video file was returned from the camera.");
+        return;
+      }
+
+      resetEditor();
+      setPreview({ uri, mediaType: "video" });
+    } catch (e: any) {
+      if (!mountedRef.current) return;
+
+      const message = String(e?.message || "");
+      const stopLikeError =
+        message.includes("stop") ||
+        message.includes("Session") ||
+        message.includes("cancel") ||
+        message.includes("interrupted");
+
+      resetRecording();
+
+      if (!stopLikeError) {
+        Alert.alert("Recording failed", message || "Could not record video.");
+      }
+    } finally {
+      if (mountedRef.current) setStartingVideo(false);
+    }
+  };
+
+  const stopVideo = async (silent = false) => {
+    if (!recording) return;
+    if (stoppingRef.current) return;
+
+    try {
+      stoppingRef.current = true;
+
+      const startedAt = recordStartedAtRef.current ?? Date.now();
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < MIN_RECORD_MS) {
+        await sleep(MIN_RECORD_MS - elapsed);
+      }
+
+      stopRequestedRef.current = true;
+      camRef.current?.stopRecording();
+    } catch (e: any) {
+      stoppingRef.current = false;
+      if (!silent) {
+        Alert.alert("Stop failed", e?.message || "Could not stop recording cleanly.");
+      }
+    }
+  };
+
+  const retake = () => {
+    setPreview(null);
+    resetEditor();
+    setSending(false);
+    setCaptureTab("picture");
+  };
+
+  const send = async () => {
+    if (!preview?.uri || sending) return;
 
     const item: ChatCameraCapturedItem = {
       uri: preview.uri,
       mediaType: preview.mediaType,
-      visibility,
-      overlayText: overlayText?.trim() ? overlayText.trim() : undefined,
+      visibility: visibilityMode,
+      overlayText: overlayText.trim() ? overlayText.trim() : undefined,
       drawing: strokes.length ? { strokes } : undefined,
     };
 
-    onCaptured([item]);
-    closeAll();
+    try {
+      setSending(true);
+      await Promise.resolve(onCaptured([item]));
+      hardReset();
+      onClose();
+    } catch (e: any) {
+      setSending(false);
+      Alert.alert("Camera", e?.message || "Failed to send media.");
+    }
   };
 
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !!preview && drawMode,
+        onMoveShouldSetPanResponder: () => !!preview && drawMode,
+        onPanResponderGrant: (evt) => {
+          if (!preview || !drawMode) return;
+          const { locationX, locationY } = evt.nativeEvent;
+          const stroke: Stroke = {
+            id: `stroke_${Date.now()}`,
+            points: [{ x: locationX, y: locationY }],
+          };
+          activeStrokeRef.current = stroke;
+          setStrokes((prev) => [...prev, stroke]);
+        },
+        onPanResponderMove: (evt) => {
+          if (!preview || !drawMode) return;
+          const current = activeStrokeRef.current;
+          if (!current) return;
+          const { locationX, locationY } = evt.nativeEvent;
+
+          setStrokes((prev) => {
+            const next = [...prev];
+            const index = next.findIndex((s) => s.id === current.id);
+            if (index === -1) return prev;
+            const updated: Stroke = {
+              ...next[index],
+              points: [...next[index].points, { x: locationX, y: locationY }],
+            };
+            next[index] = updated;
+            activeStrokeRef.current = updated;
+            return next;
+          });
+        },
+        onPanResponderRelease: () => {
+          activeStrokeRef.current = null;
+        },
+        onPanResponderTerminate: () => {
+          activeStrokeRef.current = null;
+        },
+      }),
+    [preview, drawMode]
+  );
+
+  const noPreview = !preview;
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={closeAll}>
-      <View style={styles.wrap}>
-        {/* Top bar */}
-        <View style={styles.topBar}>
-          <Pressable onPress={closeAll} style={styles.topBtn}>
-            <Ionicons name="close" size={22} color={RBZ.white} />
-          </Pressable>
-
-          <Text style={styles.title}>
-            {!preview ? "Camera" : preview.mediaType === "video" ? "Preview video" : "Preview photo"}
-          </Text>
-
-          {!preview ? (
-            <Pressable
-              onPress={() => {
-                if (recordingRef.current) return;
-                setFacing((p) => (p === "back" ? "front" : "back"));
-              }}
-              style={styles.topBtn}
-              disabled={recording}
-            >
-              <Ionicons name="camera-reverse" size={22} color={RBZ.white} />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => {
-                if (drawMode && strokes.length) setStrokes((p) => p.slice(0, -1));
-              }}
-              style={styles.topBtn}
-            >
-              <Ionicons name="arrow-undo" size={20} color={RBZ.white} />
-            </Pressable>
-          )}
-        </View>
-
-        {/* Camera / Preview */}
-        <View style={styles.cameraWrap} {...(preview && drawMode ? pan.panHandlers : {})}>
-          {!preview ? (
-               <CameraView
+    <Modal visible={visible} animationType="slide" onRequestClose={closeModal}>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.root}>
+          <View style={styles.previewShell} {...(preview && drawMode ? panResponder.panHandlers : {})}>
+            {noPreview ? (
+              <CameraView
                 ref={camRef}
-                key={`camera-${cameraMode}-${facing}`}
                 style={StyleSheet.absoluteFill}
+                active={active}
                 facing={facing}
-                mode={cameraMode}
-                onCameraReady={() => {
-                  camReadyRef.current = true;
-                  setCamReady(true);
-                }}
+                flash={flash}
+                enableTorch={facing === "back" ? torchOn : false}
+                zoom={zoom}
+                mirror={facing === "front" ? mirrorFront : false}
+                autofocus="on"
+                videoQuality="720p"
+                mode={captureTab}
+                animateShutter
+                onCameraReady={() => setCamReady(true)}
               />
-              ) : (
-            <View style={StyleSheet.absoluteFill}>
-              {preview.mediaType === "video" ? (
+                    ) : preview.mediaType === "video" ? (
               <Video
-                    source={{ uri: preview.uri }}
-                    style={StyleSheet.absoluteFill}
-                    resizeMode={ResizeMode.CONTAIN}
-                    shouldPlay
-                    isLooping
-                    useNativeControls={false}
-                  />
-                   ) : (
-                <Image
-                  source={{ uri: preview.uri }}
-                  style={StyleSheet.absoluteFill}
-                  resizeMode="contain"
-                  onError={() => {
-                    Alert.alert(
-                      "Preview failed",
-                      "Could not load the captured image preview. Retake and try again."
-                    );
-                  }}
-                />
-              )}
-        
-              {/* Drawing layer */}
-              {drawMode && strokes.length ? (
-                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                  {strokes.map((s) =>
-                    s.points.map((pt, idx) => (
-                      <View
-                        key={`${s.id}_${idx}`}
-                        style={[
-                          styles.dot,
-                          {
-                            left: pt.x - 3,
-                            top: pt.y - 3,
-                          },
-                        ]}
-                      />
-                    ))
-                  )}
-                </View>
-              ) : null}
+                source={{ uri: preview.uri }}
+                style={StyleSheet.absoluteFill}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay
+                isLooping
+                isMuted={previewMuted}
+                useNativeControls={false}
+              />
+            ) : (
+              <Image source={{ uri: preview.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            )}
 
-              {/* Overlay text */}
-              {overlayText?.trim() ? (
-                <View pointerEvents="none" style={styles.overlayTextWrap}>
-                  <Text style={styles.overlayText}>{overlayText.trim()}</Text>
-                </View>
-              ) : null}
-            </View>
-          )}
-        </View>
-{/* Right-side vertical edit tools */}
-<View style={styles.rightTools}>
-  <Pressable
-    onPress={() => setShowTextBox((p) => !p)}
-    style={[
-      styles.verticalToolBtn,
-      showTextBox && { backgroundColor: "rgba(181,23,158,0.35)" },
-    ]}
-  >
-    <Ionicons name="text" size={20} color={RBZ.white} />
-    <Text style={styles.verticalToolText}>Text</Text>
-  </Pressable>
-
-  <Pressable
-    onPress={() => setDrawMode((p) => !p)}
-    style={[
-      styles.verticalToolBtn,
-      drawMode && { backgroundColor: "rgba(216,52,95,0.35)" },
-    ]}
-  >
-    <Ionicons name="brush" size={20} color={RBZ.white} />
-    <Text style={styles.verticalToolText}>Draw</Text>
-  </Pressable>
-
-  <Pressable
-    onPress={() =>
-      Alert.alert("Crop", "Crop UI will be wired next (needs your preferred library).")
-    }
-    style={styles.verticalToolBtn}
-  >
-    <Ionicons name="crop" size={20} color={RBZ.white} />
-    <Text style={styles.verticalToolText}>Crop</Text>
-  </Pressable>
-
-  <Pressable
-    onPress={() =>
-      Alert.alert("Filters", "Filters UI will be wired next (depends on library).")
-    }
-    style={styles.verticalToolBtn}
-  >
-    <Ionicons name="color-filter" size={20} color={RBZ.white} />
-    <Text style={styles.verticalToolText}>Filters</Text>
-  </Pressable>
-
-  <Pressable
-    onPress={() => {
-      setPreview(null);
-      setStrokes([]);
-      setOverlayText("");
-      setShowTextBox(false);
-      setDrawMode(false);
-    
-    }}
-    style={[styles.verticalToolBtn, { backgroundColor: RBZ.c1 }]}
-  >
-    <Ionicons name="refresh" size={20} color={RBZ.white} />
-    <Text style={styles.verticalToolText}>Retake</Text>
-  </Pressable>
-</View>
-
-        {/* Bottom controls */}
-        {!preview ? (
-          <View style={styles.bottomBar}>
-        <Text style={styles.hint}>
-{recording 
-  ? `Recording ${formatTime(recordSecs)}${!recordingReady ? " (starting...)" : ""}` 
-  : "Choose capture mode"}
-            </Text>
-
-            <View style={styles.captureRow}>
-              {/* 📸 PHOTO */}
-              <Pressable
-                onPress={snap}
-                disabled={busy || recording}
-                style={[
-                  styles.captureBtn,
-                  (busy || recording) && { opacity: 0.6 },
-                ]}
-              >
-                <Ionicons name="camera" size={18} color={RBZ.white} />
-                <Text style={styles.captureText}>Photo</Text>
-              </Pressable>
-
-              {/* 🎥 VIDEO */}
-              <Pressable
-                onPress={recording ? stopVideo : startVideo}
-                disabled={busy}
-                style={[
-                  styles.captureBtn,
-                  recording ? { backgroundColor: RBZ.c1, borderColor: "rgba(255,255,255,0.18)" } : { backgroundColor: RBZ.c4 },
-                  busy && { opacity: 0.6 },
-                ]}
-              >
-          <Ionicons name={recording ? "stop" : "videocam"} size={18} color={RBZ.white} />
-                <Text style={styles.captureText}>
-                  {recording 
-                    ? (recordingReady ? "Stop" : "Starting...") 
-                    : "Video (60s)"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.previewBar}>
-      
-
-            {/* Text input */}
-            {showTextBox ? (
-              <View style={styles.textBox}>
-                <TextInput
-                  value={overlayText}
-                  onChangeText={setOverlayText}
-                  placeholder="Type text…"
-                  placeholderTextColor="rgba(255,255,255,0.65)"
-                  style={styles.textInput}
-                />
-                <Pressable onPress={() => setShowTextBox(false)} style={styles.smallBtn}>
-                  <Ionicons name="checkmark" size={18} color={RBZ.white} />
-                </Pressable>
+            {preview && strokes.length ? (
+              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                {strokes.map((stroke) =>
+                  stroke.points.map((pt, idx) => (
+                    <View
+                      key={`${stroke.id}_${idx}`}
+                      style={[styles.dot, { left: pt.x - 3, top: pt.y - 3 }]}
+                    />
+                  ))
+                )}
               </View>
             ) : null}
 
-         {/* Decision actions (in gap above Send) */}
-<View style={styles.decisionRow}>
-  <Pressable
-    style={styles.decisionBtn}
-    onPress={() => setShowGiftPicker(true)}
-  >
-    <Ionicons name="gift" size={18} color={RBZ.white} />
-    <Text style={styles.decisionText}>Gift</Text>
-  </Pressable>
+            {preview && overlayText.trim() ? (
+              <View pointerEvents="none" style={styles.overlayTextWrap}>
+                <Text style={styles.overlayText}>{overlayText.trim()}</Text>
+              </View>
+            ) : null}
 
-  <Pressable
-    style={styles.decisionBtn}
-    onPress={cycleVisibility}
-  >
-    <Ionicons name="eye" size={18} color={RBZ.white} />
-    <Text style={styles.decisionText}>{visibilityLabel()}</Text>
-  </Pressable>
-</View>
+            <View style={styles.topBar}>
+              <Pressable onPress={closeModal} style={styles.glassBtn}>
+                <Ionicons name="close" size={22} color={RBZ.white} />
+              </Pressable>
 
-{/* Send */}
-<Pressable onPress={send} style={styles.sendBtn}>
-  <Ionicons name="send" size={18} color={RBZ.white} />
-  <Text style={styles.sendText}>Send</Text>
-</Pressable>
+              <View style={styles.topPills}>
+                {recording ? (
+                  <View style={[styles.pill, styles.livePill]}>
+                    <View style={styles.liveDot} />
+                    <Text style={styles.pillText}>REC {formatTime(recordSecs)}</Text>
+                  </View>
+                ) : preview ? (
+                  <View style={styles.pill}>
+                    <Text style={styles.pillText}>
+                      {preview.mediaType === "video" ? "Video preview" : "Photo preview"}
+                    </Text>
+                  </View>
+                  ) : (
+                  <View style={styles.pill}>
+                    <Text style={styles.pillText}>{captureTab === "video" ? "Video" : "Photo"}</Text>
+                  </View>
+                )}
+              </View>
 
+              <Pressable
+                onPress={toggleFacing}
+                style={styles.glassBtn}
+                disabled={recording || takingPhoto || startingVideo || sending}
+              >
+                <Ionicons name="camera-reverse" size={21} color={RBZ.white} />
+              </Pressable>
+            </View>
+
+            {noPreview ? (
+              <>
+                <View style={styles.leftTools}>
+                  <Pressable onPress={cycleFlash} style={styles.toolBtn}>
+                    <Ionicons name={flashIcon as any} size={20} color={RBZ.white} />
+                    <Text style={styles.toolText}>{flashLabel}</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => facing === "back" && setTorchOn((prev) => !prev)}
+                    style={[styles.toolBtn, facing !== "back" && styles.toolDisabled]}
+                    disabled={facing !== "back"}
+                  >
+                    <Ionicons name={torchOn ? "sunny" : "sunny-outline"} size={20} color={RBZ.white} />
+                    <Text style={styles.toolText}>{torchOn ? "Torch" : "Torch"}</Text>
+                  </Pressable>
+
+                </View>
+
+                <View style={styles.zoomRailWrap}>
+                  <Pressable onPress={() => setZoomStep(0)} style={styles.zoomChip}>
+                    <Text style={styles.zoomChipText}>1x</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setZoomStep(0.15)} style={styles.zoomChip}>
+                    <Text style={styles.zoomChipText}>2x</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setZoomStep(0.35)} style={styles.zoomChip}>
+                    <Text style={styles.zoomChipText}>3x</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setZoomStep(Math.max(0, zoom - 0.08))} style={styles.zoomChip}>
+                    <Ionicons name="remove" size={16} color={RBZ.white} />
+                  </Pressable>
+                  <Pressable onPress={() => setZoomStep(Math.min(1, zoom + 0.08))} style={styles.zoomChip}>
+                    <Ionicons name="add" size={16} color={RBZ.white} />
+                  </Pressable>
+                </View>
+
+                <View style={styles.bottomPanel}>
+                      <View style={styles.modeTabs}>
+                    <Pressable
+                      onPress={() => !recording && setCaptureTab("picture")}
+                      style={[styles.modeTab, captureTab === "picture" && styles.modeTabActive]}
+                    >
+                      <Ionicons name="camera" size={16} color={RBZ.white} />
+                      <Text style={styles.modeTabText}>Photo</Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => !recording && setCaptureTab("video")}
+                      style={[styles.modeTab, captureTab === "video" && styles.modeTabActive]}
+                    >
+                      <Ionicons name="videocam" size={16} color={RBZ.white} />
+                      <Text style={styles.modeTabText}>Video</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.captureRow}>
+                    <View style={styles.captureSideSpacer} />
+
+                    {captureTab === "picture" ? (
+                      <Pressable
+                        onPress={takePhoto}
+                        disabled={!camReady || takingPhoto || startingVideo || recording || sending}
+                        style={styles.captureMainBtn}
+                      >
+                        <View style={styles.captureOuterRing}>
+                          <View style={styles.captureInnerPhoto} />
+                        </View>
+                      </Pressable>
+                    ) : (
+                      <Pressable
+                        onPress={recording ? () => stopVideo(false) : startVideo}
+                        disabled={!camReady || takingPhoto || startingVideo || sending}
+                        style={styles.captureMainBtn}
+                      >
+                        <View style={[styles.captureOuterRing, recording && styles.captureOuterRecording]}>
+                          <View style={recording ? styles.captureInnerStop : styles.captureInnerVideo} />
+                        </View>
+                      </Pressable>
+                    )}
+
+                    <View style={styles.captureSideSpacer}>
+                      <Text style={styles.captureHint}>
+                        {takingPhoto
+                          ? "Capturing..."
+                          : startingVideo
+                          ? "Starting..."
+                          : recording
+                          ? "Max 60sec"
+                          : captureTab === "video"
+                          }
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <>
+                          <View style={styles.editorToolsRight}>
+                  <Pressable
+                    onPress={() => setShowTextBox((prev) => !prev)}
+                    style={[styles.toolBtn, showTextBox && styles.toolBtnActive]}
+                  >
+                    <Ionicons name="text" size={20} color={RBZ.white} />
+                    <Text style={styles.toolText}>Text</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setDrawMode((prev) => !prev)}
+                    style={[styles.toolBtn, drawMode && styles.toolBtnActive]}
+                  >
+                    <Ionicons name="brush" size={20} color={RBZ.white} />
+                    <Text style={styles.toolText}>Draw</Text>
+                  </Pressable>
+
+                  <Pressable onPress={() => setStrokes((prev) => prev.slice(0, -1))} style={styles.toolBtn}>
+                    <Ionicons name="arrow-undo" size={20} color={RBZ.white} />
+                    <Text style={styles.toolText}>Undo</Text>
+                  </Pressable>
+
+                  {preview?.mediaType === "video" ? (
+                    <Pressable
+                      onPress={() => setPreviewMuted((prev) => !prev)}
+                      style={[styles.toolBtn, styles.retakeBtn]}
+                    >
+                      <Ionicons
+                        name={previewMuted ? "volume-mute" : "volume-high"}
+                        size={20}
+                        color={RBZ.white}
+                      />
+                      <Text style={styles.toolText}>{previewMuted ? "Muted" : "Sound"}</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable onPress={retake} style={[styles.toolBtn, styles.retakeBtn]}>
+                      <Ionicons name="refresh" size={20} color={RBZ.white} />
+                      <Text style={styles.toolText}>Retake</Text>
+                    </Pressable>
+                  )}
+                </View>
+
+                <View style={styles.previewBottom}>
+                  {showTextBox ? (
+                    <View style={styles.textEditorWrap}>
+                      <TextInput
+                        value={overlayText}
+                        onChangeText={setOverlayText}
+                        placeholder="Add text..."
+                        placeholderTextColor="rgba(255,255,255,0.65)"
+                        style={styles.textEditorInput}
+                      />
+                      <Pressable onPress={() => setShowTextBox(false)} style={styles.smallActionBtn}>
+                        <Ionicons name="checkmark" size={18} color={RBZ.white} />
+                      </Pressable>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.previewActionRow}>
+                    <Pressable onPress={cycleVisibility} style={styles.previewChipWide}>
+                      <Ionicons name="eye" size={17} color={RBZ.white} />
+                      <Text style={styles.previewChipText}>{visibilityLabel}</Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => Alert.alert("Gift", "Gift flow is not wired in this file yet.")}
+                      style={styles.previewChip}
+                    >
+                      <Ionicons name="gift" size={17} color={RBZ.white} />
+                      <Text style={styles.previewChipText}>Gift</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.sendRow}>
+                    <Pressable onPress={retake} style={styles.secondaryPreviewBtn}>
+                      <Ionicons name="refresh" size={18} color={RBZ.white} />
+                      <Text style={styles.secondaryPreviewText}>Retake</Text>
+                    </Pressable>
+
+                    <Pressable onPress={send} disabled={sending} style={[styles.sendBtn, sending && styles.toolDisabled]}>
+                      <Ionicons name="send" size={18} color={RBZ.white} />
+                      <Text style={styles.sendBtnText}>{sending ? "Sending..." : "Send"}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
-        )}
-      </View>
+        </View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: "#000" },
+  safe: { flex: 1, backgroundColor: "#000" },
+  root: { flex: 1, backgroundColor: "#000" },
+  previewShell: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
 
   topBar: {
-    height: 58,
-    paddingHorizontal: 12,
+    position: "absolute",
+    top: 10,
+    left: 12,
+    right: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(0,0,0,0.35)",
+    zIndex: 40,
   },
-  topBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  title: { color: RBZ.white, fontWeight: "900" },
-
-  cameraWrap: { flex: 1 },
-
-  bottomBar: {
-    height: 130,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.35)",
-    gap: 12,
-    paddingHorizontal: 12,
-  },
-  hint: { color: "rgba(255,255,255,0.82)", fontWeight: "800" },
-
-  captureRow: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-    justifyContent: "center",
-  },
-
-  captureBtn: {
+  topPills: {
     flex: 1,
-    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  pill: {
+    minHeight: 34,
     borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: RBZ.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  livePill: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  pillText: {
+    color: RBZ.white,
+    fontWeight: "900",
+    fontSize: 12,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ff3b30",
+    marginTop: 3,
+  },
+
+  glassBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: RBZ.glass,
+    borderWidth: 1,
+    borderColor: RBZ.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  leftTools: {
+    position: "absolute",
+    top: 86,
+    left: 12,
+    gap: 10,
+    zIndex: 30,
+  },
+  editorToolsRight: {
+    position: "absolute",
+    top: 90,
+    right: 12,
+    gap: 10,
+    zIndex: 30,
+  },
+  toolBtn: {
+    width: 64,
+    minHeight: 58,
+    borderRadius: 18,
+    backgroundColor: RBZ.glass,
+    borderWidth: 1,
+    borderColor: RBZ.border,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+  },
+  toolBtnActive: {
+    backgroundColor: "rgba(181,23,158,0.38)",
+  },
+  retakeBtn: {
+    backgroundColor: "rgba(177,18,60,0.55)",
+  },
+  toolText: {
+    marginTop: 4,
+    color: RBZ.white,
+    fontWeight: "900",
+    fontSize: 11,
+  },
+  toolDisabled: {
+    opacity: 0.55,
+  },
+
+  zoomRailWrap: {
+    position: "absolute",
+    bottom: 182,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    zIndex: 25,
+  },
+  zoomChip: {
+    minWidth: 46,
+    height: 34,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: RBZ.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  zoomChipText: {
+    color: RBZ.white,
+    fontWeight: "900",
+    fontSize: 12,
+  },
+
+  bottomPanel: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+    paddingTop: 12,
+    backgroundColor: "transparent",
+    zIndex: 25,
+  },
+  modeTabs: {
+    flexDirection: "row",
+    alignSelf: "center",
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderRadius: 20,
+    padding: 4,
+    gap: 4,
+    marginBottom: 14,
+  },
+  modeTab: {
+    minWidth: 112,
+    height: 40,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    gap: 10,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    gap: 8,
   },
-  captureText: {
+  modeTabActive: {
+    backgroundColor: "rgba(181,23,158,0.85)",
+  },
+  modeTabText: {
     color: RBZ.white,
     fontWeight: "900",
     fontSize: 13,
   },
 
-  // preview UI
-  previewBar: {
-    paddingHorizontal: 12,
+  captureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  captureSideSpacer: {
+    width: 86,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  captureHint: {
+    color: "rgba(255,255,255,0.86)",
+    fontWeight: "800",
+    fontSize: 11,
+    textAlign: "center",
+  },
+  captureMainBtn: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  captureOuterRing: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 4,
+    borderColor: "rgba(255,255,255,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+  captureOuterRecording: {
+    borderColor: "#ff453a",
+    backgroundColor: "rgba(255,69,58,0.12)",
+  },
+  captureInnerPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: RBZ.white,
+  },
+  captureInnerVideo: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#ff3b30",
+  },
+  captureInnerStop: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: "#ff3b30",
+  },
+
+  previewBottom: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 16,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingBottom: 18,
+    backgroundColor: "rgba(0,0,0,0.42)",
+    zIndex: 28,
     gap: 12,
   },
-  row: {
+  textEditorWrap: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    flexWrap: "wrap",
   },
-
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    height: 38,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-  },
-  pillText: { color: RBZ.white, fontWeight: "900", fontSize: 12 },
-
-  toolBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    height: 38,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-  },
-  toolText: { color: RBZ.white, fontWeight: "900", fontSize: 12 },
-
-  retakeBtn: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    paddingHorizontal: 12,
-    height: 38,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-  },
-  retakeText: { color: RBZ.white, fontWeight: "900", fontSize: 12 },
-
-  textBox: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-  },
-  textInput: {
+  textEditorInput: {
     flex: 1,
-    height: 42,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    height: 46,
+    borderRadius: 15,
+    paddingHorizontal: 14,
     color: RBZ.white,
+    backgroundColor: "rgba(255,255,255,0.11)",
+    borderWidth: 1,
+    borderColor: RBZ.border,
     fontWeight: "800",
   },
-  smallBtn: {
-    width: 42,
-    height: 42,
+  smallActionBtn: {
+    width: 46,
+    height: 46,
     borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
     backgroundColor: RBZ.c4,
+    alignItems: "center",
+    justifyContent: "center",
   },
-
-  trimBox: {
-    borderRadius: 16,
-    padding: 12,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+  previewActionRow: {
+    flexDirection: "row",
     gap: 10,
   },
-  trimTitle: { color: RBZ.white, fontWeight: "900" },
-  trimRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  trimBtn: {
-    flexDirection: "row",
+  previewChipWide: {
+    flex: 1,
+    height: 44,
+    borderRadius: 16,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 8,
-    paddingHorizontal: 12,
-    height: 38,
-    borderRadius: 16,
-    backgroundColor: RBZ.c2,
+    backgroundColor: "rgba(255,255,255,0.11)",
+    borderWidth: 1,
+    borderColor: RBZ.border,
   },
-  trimBtnText: { color: RBZ.white, fontWeight: "900", fontSize: 12 },
-  trimMeta: { color: "rgba(255,255,255,0.85)", fontWeight: "900", fontSize: 12 },
-  trimHint: { color: "rgba(255,255,255,0.75)", fontWeight: "700", fontSize: 12 },
-
-  sendBtn: {
-    height: 48,
+  previewChip: {
+    width: 110,
+    height: 44,
     borderRadius: 16,
-    backgroundColor: RBZ.c2,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.11)",
+    borderWidth: 1,
+    borderColor: RBZ.border,
+  },
+  previewChipText: {
+    color: RBZ.white,
+    fontWeight: "900",
+    fontSize: 12,
+  },
+  sendRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  secondaryPreviewBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.11)",
+    borderWidth: 1,
+    borderColor: RBZ.border,
+  },
+  secondaryPreviewText: {
+    color: RBZ.white,
+    fontWeight: "900",
+  },
+  sendBtn: {
+    flex: 1.2,
+    height: 50,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 10,
+    backgroundColor: RBZ.c2,
   },
-  sendText: { color: RBZ.white, fontWeight: "900" },
+  sendBtnText: {
+    color: RBZ.white,
+    fontWeight: "900",
+    fontSize: 14,
+  },
 
   overlayTextWrap: {
     position: "absolute",
-    left: 12,
-    right: 12,
-    top: 18,
+    left: 16,
+    right: 16,
+    top: 84,
     alignItems: "center",
+    zIndex: 15,
   },
   overlayText: {
     color: RBZ.white,
     fontWeight: "900",
-    fontSize: 20,
+    fontSize: 22,
     textAlign: "center",
-    textShadowColor: "rgba(0,0,0,0.65)",
+    textShadowColor: "rgba(0,0,0,0.75)",
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowRadius: 10,
   },
-previewActionButton: {
-  backgroundColor: "#1c1c1e",
-  paddingVertical: 10,
-  marginHorizontal: 24,
-  borderRadius: 18,
-  marginBottom: 8,
-  alignItems: "center",
-},
-
-previewActionText: {
-  color: "#fff",
-  fontSize: 14,
-  fontWeight: "600",
-},
-
-rightTools: {
-  position: "absolute",
-  right: 12,
-  top: "22%",
-  gap: 14,
-  alignItems: "center",
-},
-verticalToolBtn: {
-  width: 58,
-  height: 58,
-  borderRadius: 18,
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: "rgba(0,0,0,0.55)",
-  borderWidth: 1,
-  borderColor: "rgba(255,255,255,0.18)",
-},
-verticalToolText: {
-  marginTop: 4,
-  color: RBZ.white,
-  fontSize: 11,
-  fontWeight: "900",
-},
-
-leftActionsRow: {
-  flexDirection: "row",
-  gap: 10,
-  alignSelf: "flex-start",
-},
-rightActionsRow: {
-  flexDirection: "row",
-  gap: 10,
-  alignSelf: "flex-end",
-},
-smallToolBtn: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 6,
-  paddingHorizontal: 12,
-  height: 38,
-  borderRadius: 16,
-  backgroundColor: "rgba(255,255,255,0.10)",
-  borderWidth: 1,
-  borderColor: "rgba(255,255,255,0.14)",
-},
-bottomOverlayActions: {
-  position: "absolute",
-  left: 12,
-  right: 12,
-  bottom: 82, // 👈 sits just above Send button
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-},
-
-bottomOverlayBtn: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 8,
-  paddingHorizontal: 14,
-  height: 40,
-  borderRadius: 18,
-  backgroundColor: "rgba(0,0,0,0.6)",
-  borderWidth: 1,
-  borderColor: "rgba(255,255,255,0.18)",
-},
-
-bottomOverlayText: {
-  color: RBZ.white,
-  fontWeight: "900",
-  fontSize: 12,
-},
-
-decisionRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-},
-
-decisionBtn: {
-  flex: 1,
-  height: 42,
-  borderRadius: 18,
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  backgroundColor: "rgba(255,255,255,0.12)",
-  borderWidth: 1,
-  borderColor: "rgba(255,255,255,0.18)",
-},
-
-decisionText: {
-  color: RBZ.white,
-  fontWeight: "900",
-  fontSize: 12,
-},
-
   dot: {
     position: "absolute",
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#ffffff",
-    opacity: 0.95,
+    backgroundColor: RBZ.white,
   },
 });

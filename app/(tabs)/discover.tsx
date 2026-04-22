@@ -118,37 +118,46 @@ function getBlurMode(u: any) {
   }
   return "clear";
 }
+function normalizeImageUrl(value: any) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function extractUserImageUrls(user: any): string[] {
+  if (!user) return [];
+
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  const pushUrl = (value: any) => {
+    const url = normalizeImageUrl(value);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
+
+  pushUrl(user.avatar);
+
+  if (Array.isArray(user.media)) {
+    user.media.forEach((m: any) => {
+      pushUrl(typeof m === "string" ? m : m?.url);
+    });
+  }
+
+  if (Array.isArray(user.photos)) {
+    user.photos.forEach((p: any) => {
+      pushUrl(typeof p === "string" ? p : p?.url);
+    });
+  }
+  return urls;
+}
+
 function getUserImages(user: any): string[] {
-  if (!user) return ["https://picsum.photos/700/900"];
-
-  if (Array.isArray(user.media) && user.media.length > 0) {
-    return user.media
-      .map((m: any) => (typeof m === "string" ? m : m?.url))
-      .filter(Boolean)
-      .slice(0, 6);
-  }
-
-  if (typeof user.avatar === "string") {
-    return [user.avatar];
-  }
-
-  return ["https://picsum.photos/700/900"];
+  const urls = extractUserImageUrls(user).slice(0, 6);
+  return urls.length ? urls : ["https://picsum.photos/700/900"];
 }
 
 function getImageUri(user: any): string {
-  if (!user) return "https://picsum.photos/700/900";
-
-  // media array (Cloudinary-style objects)
-  if (Array.isArray(user.media) && user.media.length > 0) {
-    const m = user.media[0];
-    if (typeof m === "string") return m;
-    if (typeof m === "object" && typeof m.url === "string") return m.url;
-  }
-
-  // avatar fallback
-  if (typeof user.avatar === "string") return user.avatar;
-
-  return "https://picsum.photos/700/900";
+  return getUserImages(user)[0] || "https://picsum.photos/700/900";
 }
 
 type DiscoverFilters = {
@@ -312,10 +321,7 @@ function buildRelaxedFilters(filters: DiscoverFilters, stage: number): DiscoverF
 function applyClientOnlyFilters(list: any[], filters: DiscoverFilters) {
   return list.filter((u) => {
     if (filters.photosOnly) {
-      const hasMedia =
-        (Array.isArray(u?.media) && u.media.length > 0) ||
-        (typeof u?.avatar === "string" && !!u.avatar);
-      if (!hasMedia) return false;
+      if (extractUserImageUrls(u).length === 0) return false;
     }
 
     const age = computeAge(u?.dob);
@@ -612,7 +618,7 @@ const removeTopCard = useCallback(() => {
       id: current.id,
       firstName: current.firstName,
       lastName: current.lastName,
-         avatar: current.avatar,
+      avatar: normalizeImageUrl(current.avatar),
       media: Array.isArray(current.media) ? current.media : [],
       photos: Array.isArray((current as any).photos) ? (current as any).photos : [],
       dob: current.dob,
@@ -664,32 +670,39 @@ router.push({
 }, [current, removeTopCard]);
 
 
- const handleBuzz = useCallback(async () => {
-  if (!current || buzzing) return;
-  setBuzzing(true);
-  setMessage("");
+   const handleBuzz = useCallback(async () => {
+    if (!current || buzzing) return;
+    setBuzzing(true);
+    setMessage("");
 
-  try {
-    const data = await likeAPI(String(current.id));
+    try {
+      const data = await likeAPI(String(current.id));
 
-    if (data?.matched) {
-      setMessage(`💞 It's a match with ${current.firstName || "someone"}!`);
-      setReveal(1);
-    } else {
-      setMessage(`✅ You buzzed ${current.firstName || "someone"}!`);
-      setReveal((r) => clamp(r + 0.35, 0, 1));
-    }
+      if (data?.matched) {
+        setMessage(`💞 It's a match with ${current.firstName || "someone"}!`);
+        setReveal(1);
+      } else {
+        setMessage(`✅ You buzzed ${current.firstName || "someone"}!`);
+        setReveal((r) => clamp(r + 0.35, 0, 1));
+      }
 
-    // remove card after a short delay so message is visible
-    setTimeout(() => {
+      // let the card leave first, then show the toast clearly on top
       removeTopCard();
-    }, 220);
-  } catch (e: any) {
-    setMessage(e?.message || "Something went wrong");
-  } finally {
-    setBuzzing(false);
-  }
-}, [buzzing, current, likeAPI, removeTopCard]);
+
+      // hide the toast after a short moment
+      setTimeout(() => {
+        setMessage("");
+      }, 1800);
+    } catch (e: any) {
+      setMessage(e?.message || "Something went wrong");
+
+      setTimeout(() => {
+        setMessage("");
+      }, 1800);
+    } finally {
+      setBuzzing(false);
+    }
+  }, [buzzing, current, likeAPI, removeTopCard]);
 // ======================================
 // 🔁 Swipe → JS bridge (MUST be after handlers)
 // ======================================
@@ -872,15 +885,8 @@ const swipeGesture = Gesture.Pan()
         </ScrollView>
       </LinearGradient>
 
-      {/* Content */}
+         {/* Content */}
       <View style={styles.body}>
-        {/* status message */}
-        {!!message && (
-          <View style={styles.toast}>
-            <Text style={styles.toastText}>{message}</Text>
-          </View>
-        )}
-
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color={RBZ.c3} />
@@ -1003,6 +1009,13 @@ const swipeGesture = Gesture.Pan()
             </GestureHandlerRootView>
         )}
       </View>
+            {!!message && (
+        <View pointerEvents="none" style={styles.toastOverlay}>
+          <View style={styles.toast}>
+            <Text style={styles.toastText}>{message}</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1059,24 +1072,37 @@ const styles = StyleSheet.create({
   vibeText: { color: "rgba(255,255,255,0.92)", fontWeight: "800", fontSize: 13 },
   vibeTextActive: { color: RBZ.c1 },
 
-  body: { flex: 1, paddingHorizontal: 14, paddingTop: 10 },
+   body: { flex: 1, paddingHorizontal: 14, paddingTop: 10 },
 
-  toast: {
-    alignSelf: "center",
-    marginBottom: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: RBZ.white,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+  toastOverlay: {
+    position: "absolute",
+    top: 150,
+    left: 16,
+    right: 16,
+    zIndex: 9999,
+    elevation: 9999,
+    alignItems: "center",
   },
-  toastText: { color: RBZ.black, fontWeight: "700", fontSize: 13 },
+  toast: {
+    maxWidth: "92%",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderWidth: 1,
+    borderColor: "rgba(177,18,60,0.14)",
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
+  },
+  toastText: {
+    color: RBZ.black,
+    fontWeight: "800",
+    fontSize: 14,
+    textAlign: "center",
+  },
 
   center: {
     flex: 1,

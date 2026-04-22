@@ -200,7 +200,7 @@ function ListModal({
     }
   };
 
-  const handleViewProfile = (userId: string) => {
+   const handleViewProfile = (userId: string) => {
   onClose();
 
   // ✅ Condition:
@@ -213,11 +213,14 @@ function ListModal({
     pathname: target,
     params:
       activeTab === "matches"
-        ? { id: userId, fromMatches: "1" } // ✅ matches tab is authoritative
+        ? {
+            id: userId,
+            fromMatches: "1",
+            returnTo: "/social-stats",
+          }
         : { id: userId },
   });
 };
-
 
  const handleChat = (userId: string) => {
   onClose();

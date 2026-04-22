@@ -145,6 +145,52 @@ function showField(u: any, field: string, value: any) {
   return false;
 }
 
+function normalizeImageUrl(value: any) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getImageUrlFromEntry(entry: any) {
+  if (typeof entry === "string") return normalizeImageUrl(entry);
+  return normalizeImageUrl(entry?.url);
+}
+
+function getMediaVisibility(entry: any) {
+  return String(entry?.privacy || entry?.scope || "").toLowerCase().trim();
+}
+
+function getMediaCaption(entry: any) {
+  return String(entry?.caption || "").toLowerCase().trim();
+}
+
+function isDiscoverSafeMediaEntry(entry: any) {
+  const url = getImageUrlFromEntry(entry);
+  if (!url) return false;
+
+  const visibility = getMediaVisibility(entry);
+  const caption = getMediaCaption(entry);
+  const type = String(entry?.type || entry?.mediaType || "").toLowerCase().trim();
+
+  if (
+    visibility === "private" ||
+    visibility === "matches" ||
+    visibility === "matched-only" ||
+    visibility === "hidden" ||
+    visibility === "specific"
+  ) {
+    return false;
+  }
+
+  if (caption.includes("scope:private")) return false;
+  if (caption.includes("scope:matches")) return false;
+  if (caption.includes("scope:matched")) return false;
+  if (caption.includes("privacy:private")) return false;
+  if (caption.includes("privacy:matches")) return false;
+  if (caption.includes("kind:reel")) return false;
+  if (type === "video") return false;
+
+  return true;
+}
+
 
 export default function DiscoverProfile() {
   const router = useRouter();
@@ -221,25 +267,34 @@ const distanceText = useMemo(() => {
   // Photos only (Discover = photos, no reels)
  const photos: string[] = useMemo(() => {
   const set = new Set<string>();
+  const avatarUrl = normalizeImageUrl(user?.avatar);
+
+  if (avatarUrl) {
+    set.add(avatarUrl);
+  }
 
   // media objects (PhotoBuzz / FaceBuzz)
   if (Array.isArray(user?.media)) {
     user.media.forEach((m: any) => {
-      if (typeof m === "string") set.add(m);
-      else if (m?.url) set.add(m.url);
+      if (!isDiscoverSafeMediaEntry(m)) return;
+      const url = getImageUrlFromEntry(m);
+      if (url) set.add(url);
     });
   }
 
   // legacy photos array
   if (Array.isArray(user?.photos)) {
     user.photos.forEach((p: any) => {
-      if (typeof p === "string") set.add(p);
-      else if (p?.url) set.add(p.url);
+      if (typeof p !== "string" && !isDiscoverSafeMediaEntry(p)) return;
+      const url = getImageUrlFromEntry(p);
+      if (url) set.add(url);
     });
   }
 
   return Array.from(set).slice(0, 9);
 }, [user]);
+
+ const heroImage = photos[0] || normalizeImageUrl(user?.avatar);
 
 
  // Load from backend (hydration)
@@ -272,15 +327,14 @@ useEffect(() => {
     ];
 
     // de-dupe by url/string
-    const dedupe = (arr: any[]) => {
+        const dedupe = (arr: any[]) => {
       const seen = new Set<string>();
       const out: any[] = [];
       for (const x of arr) {
-        const k =
-          typeof x === "string" ? x : typeof x?.url === "string" ? x.url : "";
+        const k = getImageUrlFromEntry(x);
         if (!k || seen.has(k)) continue;
         seen.add(k);
-        out.push(x);
+        out.push(typeof x === "string" ? k : { ...x, url: k });
       }
       return out;
     };
@@ -379,7 +433,7 @@ if (loading && !user) {
         {/* Hero */}
         <View style={styles.hero}>
           <Image
-            source={{ uri: user.avatar || photos[0] }}
+            source={{ uri: heroImage }}
             style={styles.avatar}
           />
         <View style={styles.nameRow}>

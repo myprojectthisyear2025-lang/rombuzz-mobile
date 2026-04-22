@@ -12,7 +12,7 @@ import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -24,12 +24,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import BuzzPokeCard, {
+  type BuzzPokeMeta,
+} from "@/src/components/profile/BuzzPokeCard";
 import PhotoGrid from "@/src/components/profile/Gallery/PhotoGrid";
 import ReelGrid from "@/src/components/profile/Gallery/ReelGrid";
 import { API_BASE } from "@/src/config/api";
@@ -154,15 +158,30 @@ function inferType(m: any): "image" | "reel" {
   if (!m) return "image";
 
   const type = String(m?.type || "").toLowerCase();
+  const caption = String(m?.caption || "").toLowerCase();
 
   // 🔥 IMPORTANT: preserve backend reel type
-  if (type === "reel" || type.includes("reel")) return "reel";
+  if (
+    caption.includes("kind:reel") ||
+    caption.includes("kind:video")
+  ) {
+    return "reel";
+  }
+
+  if (
+    type === "reel" ||
+    type === "video" ||
+    type.includes("reel") ||
+    type.includes("video")
+  ) {
+    return "reel";
+  }
 
   const url = String(m?.url || m || "");
 
   if (
     url.includes("/video/upload/") ||
-    url.match(/\.(mp4|mov|m4v|webm|avi|wmv|flv|mkv|mpg|mpeg)(\?|$)/i)
+    url.match(/\.(mp4|mov|m4v|webm|avi|wmv|flv|mkv|mpg|mpeg)(\?|#|$)/i)
   ) {
     return "reel";
   }
@@ -182,19 +201,29 @@ function inferScopeFromCaption(caption: string): "public" | "matches" | "private
 function canViewerSeeMedia(m: any) {
   if (!m) return false;
   
-  // If it's a simple string URL, assume it's visible for matched users
-  if (typeof m === 'string') return true;
-  
-  // For objects, check privacy/scope
-  const caption = String(m?.caption || "");
-  const scope = inferScopeFromCaption(caption);
+  if (typeof m === "string") return true;
+
+  const caption = String(m?.caption || "").toLowerCase();
+  const scope = String(m?.scope || inferScopeFromCaption(caption)).toLowerCase();
   const privacy = String(m?.privacy || m?.visibility || "").toLowerCase();
-  
+
+  const matchedOnly =
+    scope === "matches" ||
+    privacy === "matches" ||
+    privacy === "matched" ||
+    privacy === "matched-only" ||
+    caption.includes("scope:matches") ||
+    caption.includes("scope:matched") ||
+    caption.includes("privacy:matches");
+
+  if (matchedOnly) return true;
+
   if (scope === "private") return false;
-  if (privacy === "private" && scope !== "matches") return false;
-  
-  // Allow if public, matches, or no privacy setting (default to visible for matched)
-  return scope === "public" || scope === "matches" || privacy === "public" || !privacy;
+  if (caption.includes("scope:private")) return false;
+  if (caption.includes("privacy:private")) return false;
+  if (privacy === "private") return false;
+
+  return scope === "public" || privacy === "public" || !privacy;
 }
 // ---------------------------------------------------------------------------
 // PROFILE INFO HELPERS (supports string / array formats from backend)
@@ -248,27 +277,48 @@ export default function ViewProfile() {
     id?: string;
     fromChat?: string;
     fromMatches?: string;
+    returnTo?: string;
   }>();
   const userId = String(params.userId || params.id || "");
+  const returnTo = String(params.returnTo || "").trim();
 
   // ✅ If you came from chat thread OR Matches tab → trust it and allow viewing
   const bypassMatchGate = params.fromChat === "1" || params.fromMatches === "1";
 
-  const [loading, setLoading] = useState(true);
+  const handleGoBack = useCallback(() => {
+    if (returnTo) {
+      router.replace(returnTo as any);
+      return;
+    }
+
+    const canGoBack =
+      typeof (router as any)?.canGoBack === "function"
+        ? (router as any).canGoBack()
+        : false;
+
+    if (canGoBack) {
+      router.back();
+      return;
+    }
+
+    router.replace("/profile" as any);
+  }, [router, returnTo]);
+
+   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [matched, setMatched] = useState(false);
   const [stories, setStories] = useState<any[]>([]);
+  const [buzzMeta, setBuzzMeta] = useState<BuzzPokeMeta>({
+    count: 0,
+    lastBuzz: null,
+    lastBuzzLabel: "No buzz yet",
+  });
   const hasStory = stories.length > 0;
-
-  const [buzzing, setBuzzing] = useState(false);
-  const [streak, setStreak] = useState<number>(0);
-  const [streakLoading, setStreakLoading] = useState(false);
 
   // voice intro
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
-
   // gallery
   const [tab, setTab] = useState<"photos" | "reels">("photos");
    const [viewerOpen, setViewerOpen] = useState(false);
@@ -295,6 +345,8 @@ export default function ViewProfile() {
   const [blockLoading, setBlockLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [unmatchLoading, setUnmatchLoading] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState("");
 
   // Calculate age from DOB
   const age = useMemo(() => {
@@ -313,10 +365,15 @@ export default function ViewProfile() {
   // Full name
   const fullName = useMemo(() => {
     if (!user) return "RomBuzz User";
-    const parts = [];
-    if (user.firstName) parts.push(user.firstName);
-    if (user.lastName) parts.push(user.lastName);
-    return parts.join(" ") || "RomBuzz User";
+
+    const first = String(user.firstName || "").trim();
+    const last = String(user.lastName || "").trim();
+    const combined = [first, last].filter(Boolean).join(" ").trim();
+    const rawName = String(user.name || "").trim();
+
+    if (first && last) return `${first} ${last}`;
+    if (rawName.includes(" ")) return rawName;
+    return combined || rawName || first || last || "RomBuzz User";
   }, [user]);
 
   // Distance text
@@ -464,29 +521,29 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         return;
       }
 
-      /* ✅ Allow viewing if matched OR if we came from chat thread info
-      const allowed = bypassMatchGate || !!data?.matched;
-
-      if (!allowed) {
-        Alert.alert(
-          "Profile unavailable",
-          "You can only view profiles of matched users.",
-          [{ text: "Go back", onPress: () => router.back() }]
-        );
-        return;
-      }
-*/
       setProfile(data);
       setUser(data.user);
-      setMatched(!!data.matched);
 
-
-      // 2. Load streak if matched
-      if (data.matched) {
-        loadStreak(token);
+      // ✅ Source of truth for matched state = likes/status endpoint
+      let resolvedMatched = !!data?.matched;
+      try {
+        const statusRes = await fetch(
+          `${API_BASE}/likes/status/${encodeURIComponent(String(userId))}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const statusData = await statusRes.json().catch(() => ({}));
+        if (statusRes.ok) {
+          resolvedMatched = !!statusData?.matched;
+        }
+      } catch {
+        // keep fallback from profile response
       }
 
-      // 3. Load stories
+      setMatched(resolvedMatched);
+
+      // 2. Load stories
       try {
         const storiesRes = await fetch(`${API_BASE}/stories/${userId}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -502,23 +559,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
       router.back();
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadStreak = async (token: string) => {
-    try {
-      setStreakLoading(true);
-      const res = await fetch(`${API_BASE}/matchstreak/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data?.streak?.count) {
-        setStreak(data.streak.count);
-      }
-    } catch (err) {
-      console.log("Streak fetch failed:", err);
-    } finally {
-      setStreakLoading(false);
     }
   };
 
@@ -591,60 +631,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
       Alert.alert("Voice", "Unable to play voice intro");
     }
   };
-
-  // ---------------------------------------------------------------------------
-  // BUZZ
-  // ---------------------------------------------------------------------------
-  const sendBuzz = async () => {
-    if (!userId || buzzing || !matched) return;
-
-    try {
-      setBuzzing(true);
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-
-      const res = await fetch(`${API_BASE}/buzz`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ to: userId }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        if (res.status === 429) {
-          Alert.alert("Slow down!", "Please wait before buzzing again.");
-        } else if (res.status === 409) {
-          Alert.alert("Not matched", "You need to be matched first!");
-        } else if (res.status === 403) {
-          Alert.alert("Blocked", "You cannot buzz this user.");
-        } else {
-          throw new Error(data?.error || "Buzz failed");
-        }
-        return;
-      }
-
-      // Update streak
-      if (typeof data?.streak === "number") {
-        setStreak(data.streak);
-        Alert.alert("💞 Buzz Sent!", `Streak: ${data.streak} !`);
-      } else {
-        Alert.alert("💞 Buzz Sent!", "Keep the connection alive!");
-      }
-
-      // Refresh streak
-      if (token) {
-        loadStreak(token);
-      }
-
-    } catch (e: any) {
-      Alert.alert("Buzz", e?.message || "Failed to buzz");
-    } finally {
-      setBuzzing(false);
-    }
-  };
   // ---------------------------------------------------------------------------
   // MENU OPEN (measure button → position modal dropdown)
   // ---------------------------------------------------------------------------
@@ -663,52 +649,62 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   const handleBlock = async () => {
     if (!userId || blockLoading) return;
     
-    const action = profile?.blocked ? "unblock" : "block";
     const confirmMessage = profile?.blocked 
       ? `Unblock ${fullName}? They will be able to message and view you again.`
       : `Block ${fullName}? They will not be able to message or view you.`;
 
-    if (!window.confirm(confirmMessage)) return;
+    Alert.alert(
+      profile?.blocked ? "Unblock User" : "Block User",
+      confirmMessage,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: profile?.blocked ? "Unblock" : "Block",
+          style: profile?.blocked ? "default" : "destructive",
+          onPress: async () => {
+            try {
+              setBlockLoading(true);
+              const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+              
+              const endpoint = profile?.blocked ? `${API_BASE}/unblock` : `${API_BASE}/block`;
+              const method = profile?.blocked ? "POST" : "POST";
+              
+              const res = await fetch(endpoint, {
+                method,
+                headers: { 
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}` 
+                },
+                body: JSON.stringify({ targetId: userId }),
+              });
 
-    try {
-      setBlockLoading(true);
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      
-      const endpoint = profile?.blocked ? `${API_BASE}/unblock` : `${API_BASE}/block`;
-      const method = profile?.blocked ? "POST" : "POST";
-      
-      const res = await fetch(endpoint, {
-        method,
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
+              if (!res.ok) throw new Error("Operation failed");
+
+              Alert.alert(
+                "Success", 
+                profile?.blocked ? "User unblocked successfully!" : "User blocked successfully!"
+              );
+              
+              // Refresh profile to update blocked status
+              await loadProfile();
+              setShowMenu(false);
+              
+            } catch (e: any) {
+              Alert.alert("Error", e?.message || "Operation failed");
+            } finally {
+              setBlockLoading(false);
+            }
+          },
         },
-        body: JSON.stringify({ targetId: userId }),
-      });
-
-      if (!res.ok) throw new Error("Operation failed");
-
-      Alert.alert(
-        "Success", 
-        profile?.blocked ? "User unblocked successfully!" : "User blocked successfully!"
-      );
-      
-      // Refresh profile to update blocked status
-      await loadProfile();
-      setShowMenu(false);
-      
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Operation failed");
-    } finally {
-      setBlockLoading(false);
-    }
+      ]
+    );
   };
 
   const handleReport = async () => {
     if (!userId || reportLoading) return;
-    
-    const reason = prompt("Why are you reporting this user?");
-    if (!reason || !reason.trim()) return;
+
+    const trimmedReason = reportReason.trim();
+    if (!trimmedReason) return;
 
     try {
       setReportLoading(true);
@@ -720,12 +716,14 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}` 
         },
-        body: JSON.stringify({ targetId: userId, reason: reason.trim() }),
+        body: JSON.stringify({ targetId: userId, reason: trimmedReason }),
       });
 
       if (!res.ok) throw new Error("Report failed");
 
       Alert.alert("Report Submitted", "Thank you for helping keep RomBuzz safe.");
+      setReportModalVisible(false);
+      setReportReason("");
       setShowMenu(false);
       
     } catch (e: any) {
@@ -737,30 +735,41 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
 
   const handleUnmatch = async () => {
     if (!userId || unmatchLoading) return;
-    
-    if (!window.confirm(`Unmatch with ${fullName}? This will remove your match connection.`)) return;
 
-    try {
-      setUnmatchLoading(true);
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      
-      const res = await fetch(`${API_BASE}/unmatch/${userId}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    Alert.alert(
+      "Unmatch User",
+      `Unmatch with ${fullName}? This will remove your match connection.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unmatch",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setUnmatchLoading(true);
+              const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+              
+              const res = await fetch(`${API_BASE}/unmatch/${userId}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+              });
 
-      const data = await res.json().catch(() => ({}));
-      
-      if (!res.ok) throw new Error(data?.error || "Unmatch failed");
+              const data = await res.json().catch(() => ({}));
+              
+              if (!res.ok) throw new Error(data?.error || "Unmatch failed");
 
-      Alert.alert("Unmatched", "You are no longer connected with this user.");
-      router.back();
-      
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Failed to unmatch");
-    } finally {
-      setUnmatchLoading(false);
-    }
+              Alert.alert("Unmatched", "You are no longer connected with this user.");
+              router.back();
+              
+            } catch (e: any) {
+              Alert.alert("Error", e?.message || "Failed to unmatch");
+            } finally {
+              setUnmatchLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // ---------------------------------------------------------------------------
@@ -784,21 +793,21 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
     );
   }
 
-   if (!user) {
+     if (!user) {
     return (
       <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
         <Text style={styles.unavailableText}>Profile unavailable</Text>
         <Text style={styles.unavailableSubtext}>This profile could not be loaded.</Text>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable onPress={handleGoBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>Go back</Text>
         </Pressable>
       </View>
     );
   }
 
-  // If you want: keep “matched-only” UI text accurate, but don’t block viewing.
-  // const viewingAsMatched = bypassMatchGate ? true : matched;
-
+  // Keep matched-only UI accurate for normal flow,
+  // but allow matched-entry contexts like chat/matches to show matched actions.
+  const viewingAsMatched = bypassMatchGate ? true : matched;
 
   // ---------------------------------------------------------------------------
   // MAIN UI
@@ -812,24 +821,16 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: insets.top + 12 }]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backButtonHeader}>
+        <Pressable onPress={handleGoBack} style={styles.backButtonHeader}>
           <Ionicons name="arrow-back" size={22} color={RBZ.white} />
         </Pressable>
         
-        <View style={styles.headerCenter}>
+           <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>View Profile</Text>
           <Text style={styles.headerSubtitle}>Matched Connection</Text>
         </View>
         
-        <View style={styles.headerRight}>
-          {/* Streak badge */}
-          {streak > 0 && (
-            <View style={styles.streakBadge}>
-              <Ionicons name="flash" size={12} color={RBZ.white} />
-              <Text style={styles.streakBadgeText}>{streak}</Text>
-            </View>
-          )}
-        </View>
+        <View style={styles.headerRight} />
       </LinearGradient>
 
       <ScrollView
@@ -876,7 +877,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             </LinearGradient>
           </Pressable>
 
-          <View style={styles.nameContainer}>
+                  <View style={styles.nameContainer}>
             <View style={styles.nameRow}>
               <Text style={styles.name}>{fullName}</Text>
               {age !== null && (
@@ -886,44 +887,39 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                 <Text style={styles.distanceText}> • {distanceText}</Text>
               ) : null}
             </View>
-            
-            {/* Streak display */}
-            {streak > 0 && (
-              <View style={styles.streakDisplay}>
-                <Ionicons name="flash" size={14} color={RBZ.warning} />
-                <Text style={styles.streakText}>HotTouch {streak} </Text>
+
+            {viewingAsMatched ? (
+              <View style={styles.buzzMetaRow}>
+                <View style={styles.buzzMetaChip}>
+                  <Ionicons name="flash" size={12} color={RBZ.c2} />
+                  <Text style={styles.buzzMetaCount}>
+                    {Number(buzzMeta?.count || 0)} streak
+                  </Text>
+                </View>
+
+                <Text style={styles.buzzMetaTime}>
+                  {buzzMeta?.lastBuzzLabel || "No buzz yet"}
+                </Text>
               </View>
-            )}
+            ) : null}
           </View>
 
           {/* Action Row */}
           <View style={styles.actionRow}>
-            <Pressable
-              onPress={sendBuzz}
-              disabled={buzzing}
-              style={[styles.actionButton, styles.buzzButton]}
-            >
-              <LinearGradient
-                colors={[RBZ.c2, RBZ.c3]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.buzzButtonGradient}
-              >
-                <Ionicons name="heart" size={20} color={RBZ.white} />
-                <Text style={styles.buzzButtonText}>
-                  {buzzing ? "Buzzing..." : "Buzz"}
-                </Text>
-              </LinearGradient>
-            </Pressable>
+            <BuzzPokeCard
+              userId={userId}
+              matched={viewingAsMatched}
+              onMetaChange={setBuzzMeta}
+            />
 
             <Pressable
               onPress={() => {
                 router.push({
                   pathname: "/chat/[peerId]" as any,
-                  params: { 
-                    peerId: userId, 
-                    name: fullName, 
-                    avatar: user.avatar || "" 
+                  params: {
+                    peerId: userId,
+                    name: fullName,
+                    avatar: user.avatar || "",
                   },
                 });
               }}
@@ -932,6 +928,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               <Ionicons name="chatbubble-ellipses" size={20} color={RBZ.c2} />
               <Text style={styles.chatButtonText}>Chat</Text>
             </Pressable>
+
             {/* 3-dot Menu Button (opens a Modal overlay so it never goes under About) */}
             <View style={styles.menuContainer}>
               <View ref={menuBtnRef} collapsable={false}>
@@ -1603,8 +1600,9 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             </Pressable>
 
             <Pressable
-              onPress={async () => {
-                await handleReport();
+              onPress={() => {
+                if (reportLoading) return;
+                setReportModalVisible(true);
               }}
               disabled={reportLoading}
               style={styles.menuItem}
@@ -1628,6 +1626,64 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               </Text>
             </Pressable>
           </View>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={reportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (reportLoading) return;
+          setReportModalVisible(false);
+        }}
+      >
+        <Pressable
+          style={styles.reportModalBackdrop}
+          onPress={() => {
+            if (reportLoading) return;
+            setReportModalVisible(false);
+          }}
+        >
+          <Pressable style={styles.reportModalCard} onPress={() => {}}>
+            <Text style={styles.reportModalTitle}>Report User</Text>
+            <Text style={styles.reportModalHelper}>
+              Share a short reason so we can review this report.
+            </Text>
+
+            <TextInput
+              value={reportReason}
+              onChangeText={setReportReason}
+              placeholder="Describe what happened"
+              placeholderTextColor={RBZ.muted}
+              multiline
+              textAlignVertical="top"
+              editable={!reportLoading}
+              style={styles.reportInput}
+            />
+
+            <View style={styles.reportActions}>
+              <Pressable
+                onPress={() => {
+                  if (reportLoading) return;
+                  setReportModalVisible(false);
+                }}
+                style={[styles.reportActionButton, styles.reportCancelButton]}
+              >
+                <Text style={styles.reportCancelText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleReport}
+                disabled={reportLoading}
+                style={[styles.reportActionButton, styles.reportSubmitButton, reportLoading && styles.reportSubmitButtonDisabled]}
+              >
+                <Text style={styles.reportSubmitText}>
+                  {reportLoading ? "Submitting..." : "Submit"}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -1880,15 +1936,15 @@ const styles = StyleSheet.create({
     borderColor: RBZ.white,
   },
   nameContainer: {
-    alignItems: "center",
-    marginBottom: 20,
+      alignItems: "center",
+    marginTop: 6,
+    marginBottom: 18,
   },
   nameRow: {
-    flexDirection: "row",
+   flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
     justifyContent: "center",
-    marginBottom: 4,
+    flexWrap: "wrap",
   },
   name: {
     fontSize: 26,
@@ -1922,6 +1978,36 @@ const styles = StyleSheet.create({
     color: RBZ.warning,
     fontWeight: "700",
     fontSize: 12,
+  },
+  buzzMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  buzzMetaChip: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(216,52,95,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(216,52,95,0.16)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+  buzzMetaCount: {
+    color: RBZ.c2,
+    fontWeight: "900",
+    fontSize: 12,
+  },
+  buzzMetaTime: {
+    color: RBZ.muted,
+    fontSize: 12,
+    fontWeight: "700",
   },
   actionRow: {
     flexDirection: "row",
@@ -2018,6 +2104,80 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
     flex: 1,
+  },
+  reportModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17,24,39,0.35)",
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reportModalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: RBZ.white,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: RBZ.line,
+  },
+  reportModalTitle: {
+    color: RBZ.ink,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  reportModalHelper: {
+    marginTop: 6,
+    color: RBZ.muted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "500",
+  },
+  reportInput: {
+    minHeight: 120,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(17,24,39,0.08)",
+    backgroundColor: RBZ.soft,
+    color: RBZ.ink,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  reportActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+  reportActionButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reportCancelButton: {
+    backgroundColor: "rgba(17,24,39,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(17,24,39,0.08)",
+  },
+  reportCancelText: {
+    color: RBZ.ink,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  reportSubmitButton: {
+    backgroundColor: RBZ.c2,
+  },
+  reportSubmitButtonDisabled: {
+    opacity: 0.7,
+  },
+  reportSubmitText: {
+    color: RBZ.white,
+    fontSize: 14,
+    fontWeight: "800",
   },
   card: {
     marginHorizontal: 16,

@@ -17,7 +17,7 @@
  */
 
 import { API_BASE } from "@/src/config/api";
-import { getSocket, onNotification } from "@/src/lib/socket";
+import { getSocket, onNotification, resolveNotificationHref } from "@/src/lib/socket";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter } from "expo-router";
@@ -409,7 +409,7 @@ export default function NotificationsScreen() {
     try {
       await markAsRead(n.id);
     } catch {}
-    const href = resolveHref(n);
+    const href = resolveNotificationHref(n);
     router.push(href as any);
   };
 

@@ -77,6 +77,9 @@ const MBZ_ONBOARDED_KEY = "RBZ_MICROBUZZ_ONBOARDED";
 const STATUS_MESSAGES = {
   inactive: [
     "Appear nearby",
+    "You are one click away",
+    "Send buzz to connect",
+    "Find your match with a selfie",
     "Someone could be close",
     "Your moment awaits",
     "Go live, find chemistry",
@@ -102,9 +105,10 @@ const STATUS_MESSAGES = {
 };
 
 const TIPS = [
+  "Take a selfie to go live",
   "Long press any avatar to peek their selfie",
   "People around you will appear in real time",
-  "Stay live — someone may pop up any second",
+  "Stay live - someone may pop up any second",
   "You're only shown to people you wanna see",
   "If you both Buzz each other → instant match ⚡",
   "The closer they are, the warmer their glow",
@@ -843,7 +847,7 @@ export default function MicroBuzzScreen() {
                 <Animated.View style={[
                   styles.presenceOrbGlow,
                   isActive && { transform: [{ scale: orbScale }] },
-                  { opacity: isActive ? glowOpacity : 0.3 }
+                  { opacity: isActive ? glowOpacity : 1 }
                 ]}>
                   <LinearGradient
                     colors={isActive ? [RBZ.c2, RBZ.c5] : [RBZ.glass, RBZ.glass2]}
@@ -856,9 +860,9 @@ export default function MicroBuzzScreen() {
                       />
                     ) : (
                       <View style={styles.presenceEmpty}>
-                        <Ionicons name="camera" size={24} color={RBZ.white} />
-                        <Text style={styles.presenceEmptyText}>Add</Text>
-                      </View>
+                          <Ionicons name="camera" size={22} color={RBZ.white} />
+                          <Text style={styles.presenceEmptyText}>Add</Text>
+                        </View>
                     )}
                   </LinearGradient>
                 </Animated.View>
@@ -1400,10 +1404,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   subtitle: {
-    color: RBZ.glass2,
+    color: "rgba(255,255,255,0.72)",
     fontSize: 13,
     marginTop: 2,
-    fontWeight: "500",
+    fontWeight: "600",
   },
 
   // Body
@@ -1444,9 +1448,14 @@ const styles = StyleSheet.create({
     height: 96,
     borderRadius: 48,
     padding: 4,
-    backgroundColor: "rgba(216,52,95,0.18)",
-    borderWidth: 1.5,
-    borderColor: "rgba(216,52,95,0.35)",
+    backgroundColor: "rgba(216,52,95,0.28)",
+    borderWidth: 2,
+    borderColor: "rgba(216,52,95,0.55)",
+    shadowColor: RBZ.c2,
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
   presenceOrbGradient: {
     flex: 1,
@@ -1467,8 +1476,11 @@ const styles = StyleSheet.create({
     color: RBZ.white,
     fontSize: 11,
     fontWeight: "900",
-    marginTop: 4,
-    letterSpacing: 0.3,
+    marginTop: 5,
+    letterSpacing: 0.4,
+    textShadowColor: "rgba(0,0,0,0.18)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   liveBadge: {
     position: "absolute",

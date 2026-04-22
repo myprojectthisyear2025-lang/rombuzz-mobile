@@ -35,6 +35,7 @@ type Props = {
 
   uri: string;
   mediaType: "image" | "video";
+  muted?: boolean;
 
   // undefined => keep mode
   maxViews?: 1 | 2;
@@ -51,6 +52,7 @@ export default function MediaViewer({
   onClose,
   uri,
   mediaType,
+  muted = false,
   maxViews,
   allowDownload,
   onViewed,
@@ -187,6 +189,7 @@ const localPath = `${baseDir}rbz_${Date.now()}.${ext}`;
             style={{ flex: 1 }}
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay
+            isMuted={muted}
             useNativeControls
           />
         ) : (
