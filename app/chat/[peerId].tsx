@@ -49,6 +49,7 @@ import ChatCameraModal from "@/src/components/chat/ChatCameraModal";
 import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
 import MediaViewer from "@/src/components/chat/MediaViewer";
 import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
+import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
 
 const RBZ = {
@@ -196,14 +197,27 @@ const getReplyKind = (value: any) => {
 
   if (decoded?.deleted) return "deleted";
   if (decoded?.mediaType === "audio") return "audio";
-  if (decoded?.mediaType === "video" || decoded?.type === "share_reel") return "video";
+
+  const isProfileShare = decoded?.type === "share_profile_media";
+  const profileShareMediaType = String(decoded?.mediaType || "").toLowerCase();
+
+  if (
+    decoded?.mediaType === "video" ||
+    decoded?.type === "share_reel" ||
+    (isProfileShare && profileShareMediaType === "reel")
+  ) {
+    return "video";
+  }
+
   if (
     decoded?.mediaType === "image" ||
     decoded?.type === "share_post" ||
+    (isProfileShare && profileShareMediaType === "photo") ||
     (decoded?.type === "media" && decoded?.url)
   ) {
     return "image";
   }
+
   if (decoded?.type === "media" || decoded?.url || decoded?.mediaUrl) return "attachment";
   return "text";
 };
@@ -520,9 +534,18 @@ const [plusOpen, setPlusOpen] = useState(false);
 
 // 📷 Dedicated camera modal
 const [cameraOpen, setCameraOpen] = useState(false);
-// ✅ Fullscreen media viewer (reusable component)
-const [viewerOpen, setViewerOpen] = useState(false);
-const [viewerMsg, setViewerMsg] = useState<any | null>(null);
+
+// ✅ Shared fullscreen viewers
+const [imageViewerOpen, setImageViewerOpen] = useState(false);
+const [imageViewerItems, setImageViewerItems] = useState<Array<{
+  id: string | number;
+  url: string;
+  title?: string;
+}>>([]);
+const [imageViewerIndex, setImageViewerIndex] = useState(0);
+
+const [videoViewerOpen, setVideoViewerOpen] = useState(false);
+const [videoViewerMsg, setVideoViewerMsg] = useState<any | null>(null);
 
 // ✅ View-once / View-twice client enforcement (removal)
 const [mediaViews, setMediaViews] = useState<Record<string, number>>({});
@@ -552,14 +575,75 @@ const isExpired = (m: any) => {
   return !!expiredMedia[k];
 };
 
-const openViewer = (m: any) => {
-  setViewerMsg(m);
-  setViewerOpen(true);
+const buildChatImageViewerItems = (activeMsg?: any) => {
+  const items = messages
+    .map((raw) => maybeDecode(raw))
+    .filter((msg: any) => {
+      if (!msg || isExpired(msg)) return false;
+
+      const isDirectImage =
+        msg?.mediaType === "image" &&
+        !!String(msg?.url || "").trim();
+
+      const isSharedImage =
+        msg?.type === "share_post" &&
+        !!String(msg?.mediaUrl || "").trim();
+
+      const isSharedProfilePhoto =
+        msg?.type === "share_profile_media" &&
+        String(msg?.mediaType || "").toLowerCase() === "photo" &&
+        !!String(msg?.mediaUrl || "").trim();
+
+      return isDirectImage || isSharedImage || isSharedProfilePhoto;
+    })
+    .map((msg: any) => ({
+      id: String(msg?.id || msg?.url || msg?.mediaUrl || Math.random()),
+      url: String(msg?.url || msg?.mediaUrl || "").trim(),
+      title:
+        msg?.type === "share_profile_media"
+          ? `${String(msg?.ownerName || "Shared")}'s Photo`
+          : "Photo",
+    }))
+    .filter((item) => !!item.url);
+
+  if (!items.length && activeMsg) {
+    const fallbackUrl = String(activeMsg?.url || activeMsg?.mediaUrl || "").trim();
+    if (fallbackUrl) {
+      return [
+        {
+          id: String(activeMsg?.id || fallbackUrl),
+          url: fallbackUrl,
+          title: "Photo",
+        },
+      ];
+    }
+  }
+
+  return items;
 };
 
-const closeViewer = () => {
-  setViewerOpen(false);
-  setViewerMsg(null);
+const openImageViewer = (m: any) => {
+  const items = buildChatImageViewerItems(m);
+  const activeId = String(m?.id || m?.url || m?.mediaUrl || "");
+  const foundIndex = items.findIndex((item) => String(item.id) === activeId);
+
+  setImageViewerItems(items);
+  setImageViewerIndex(foundIndex >= 0 ? foundIndex : 0);
+  setImageViewerOpen(true);
+};
+
+const closeImageViewer = () => {
+  setImageViewerOpen(false);
+};
+
+const openVideoViewer = (m: any) => {
+  setVideoViewerMsg(m);
+  setVideoViewerOpen(true);
+};
+
+const closeVideoViewer = () => {
+  setVideoViewerOpen(false);
+  setVideoViewerMsg(null);
 };
 
 const consumeEphemeralView = async (m: any) => {
@@ -611,11 +695,13 @@ const consumeEphemeralView = async (m: any) => {
         return dedupeById(filtered);
       });
 
-      closeViewer();
+          closeImageViewer();
+      closeVideoViewer();
       return;
     }
 
-    closeViewer();
+    closeImageViewer();
+    closeVideoViewer();
   } catch (e) {
     console.log("❌ consumeEphemeralView failed", e);
   }
@@ -1909,7 +1995,7 @@ const togglePinMessage = async (m: Msg) => {
 };
 
 
- const renderItem = ({ item }: { item: Msg }) => {
+  const renderItem = ({ item }: { item: Msg }) => {
   const m = decodeCached(item);
   const isMine = mine(m);
 
@@ -1923,7 +2009,20 @@ const togglePinMessage = async (m: Msg) => {
     typeof m?.mediaUrl === "string" &&
     !!String(m.mediaUrl).trim();
 
- const isShared = isSharedPost || isSharedReel;
+  const isSharedProfileMedia =
+    m?.type === "share_profile_media" &&
+    typeof m?.mediaUrl === "string" &&
+    !!String(m.mediaUrl).trim();
+
+  const isSharedProfileReel =
+    isSharedProfileMedia &&
+    String(m?.mediaType || "").toLowerCase() === "reel";
+
+  const isSharedProfilePhoto =
+    isSharedProfileMedia &&
+    String(m?.mediaType || "").toLowerCase() === "photo";
+
+ const isShared = isSharedPost || isSharedReel || isSharedProfileMedia;
 
   // basic media handling (web uses ::RBZ:: payload)
  const isMedia = !isShared && (m?.type === "media" || !!m?.url);
@@ -2103,10 +2202,11 @@ const togglePinMessage = async (m: Msg) => {
       <AudioBubble uri={m.url} isMine={isMine} />
     ) : isMedia ? (
       isExpired(m) ? null : (
-        <Pressable
+           <Pressable
           onPress={() =>
             handleMessageTap(item, m, {
-              singleTapAction: () => openViewer(m),
+              singleTapAction: () =>
+                m.mediaType === "video" ? openVideoViewer(m) : openImageViewer(m),
               enableDoubleTapLove: true,
             })
           }
@@ -2116,7 +2216,6 @@ const togglePinMessage = async (m: Msg) => {
             isMine ? styles.mediaMine : styles.mediaPeer,
           ]}
         >
-            
                  {m.mediaType === "video" ? (
             <Video
               source={{ uri: m.url }}
@@ -2200,15 +2299,25 @@ const togglePinMessage = async (m: Msg) => {
           </View>
         </Pressable>
       ) : (
-        <Pressable
+                    <Pressable
           onPress={() =>
             handleMessageTap(item, m, {
-              singleTapAction: () =>
-                openViewer({
+              singleTapAction: () => {
+                const sharedIsVideo = isSharedReel || isSharedProfileReel;
+
+                const payload = {
                   id: String(m?.id || ""),
                   url: String(m?.mediaUrl || ""),
-                  mediaType: isSharedReel ? "video" : "image",
-                }),
+                  mediaUrl: String(m?.mediaUrl || ""),
+                  mediaType: sharedIsVideo ? "video" : "image",
+                };
+
+                if (sharedIsVideo) {
+                  openVideoViewer(payload);
+                } else {
+                  openImageViewer(payload);
+                }
+              },
               enableDoubleTapLove: true,
             })
           }
@@ -2219,7 +2328,7 @@ const togglePinMessage = async (m: Msg) => {
           ]}
         >
         
-          {isSharedReel ? (
+          {isSharedReel || isSharedProfileReel ? (
             <Video
               source={{ uri: String(m?.mediaUrl || "") }}
               style={styles.mediaThumb}
@@ -2236,7 +2345,7 @@ const togglePinMessage = async (m: Msg) => {
           )}
 
           {/* ✅ Extra visual cue so reels look like videos immediately */}
-          {isSharedReel ? (
+          {isSharedReel || isSharedProfileReel ? (
             <View style={styles.videoPlayOverlay} pointerEvents="none">
               <View style={styles.videoPlayBadge}>
                 <Ionicons name="play" size={22} color={RBZ.white} />
@@ -2246,12 +2355,18 @@ const togglePinMessage = async (m: Msg) => {
 
           <View style={styles.mediaOverlay} pointerEvents="none">
             <Ionicons
-              name={isSharedReel ? "play-circle-outline" : "images-outline"}
+              name={isSharedReel || isSharedProfileReel ? "play-circle-outline" : "images-outline"}
               size={28}
               color={RBZ.white}
             />
             <Text style={styles.mediaOverlayText}>
-              {isSharedReel ? "Shared reel" : "Shared post"}
+              {isSharedProfileReel
+                ? "Shared profile reel"
+                : isSharedProfilePhoto
+                  ? "Shared profile photo"
+                  : isSharedReel
+                    ? "Shared reel"
+                    : "Shared post"}
             </Text>
             <Text style={styles.mediaOverlayText}>Tap to open</Text>
           </View>
@@ -2729,19 +2844,43 @@ const togglePinMessage = async (m: Msg) => {
 />
 ) : null}
 
-<MediaViewer
-  visible={viewerOpen}
-  uri={viewerMsg?.url || ""}
-  mediaType={viewerMsg?.mediaType === "video" ? "video" : "image"}
-  muted={viewerMsg?.mediaType === "video" ? !!viewerMsg?.muted : false}
-  maxViews={getMaxViews(viewerMsg)}
-  allowDownload={!IS_EXPO_GO && !getMaxViews(viewerMsg)}
+<RBZImageViewer
+  visible={imageViewerOpen}
+  items={imageViewerItems}
+  initialIndex={imageViewerIndex}
+  title="Photo"
+  onIndexChange={setImageViewerIndex}
   onClose={() => {
-    if (viewerMsg && getMaxViews(viewerMsg)) {
-      consumeEphemeralView(viewerMsg);
+    const activeImage = imageViewerItems[imageViewerIndex];
+    const matchedMessage = messages
+      .map((raw) => maybeDecode(raw))
+      .find((msg: any) => {
+        const candidateUrl = String(msg?.url || msg?.mediaUrl || "").trim();
+        return candidateUrl && candidateUrl === String(activeImage?.url || "").trim();
+      });
+
+    if (matchedMessage && getMaxViews(matchedMessage)) {
+      consumeEphemeralView(matchedMessage);
       return;
     }
-    closeViewer();
+
+    closeImageViewer();
+  }}
+/>
+
+<MediaViewer
+  visible={videoViewerOpen}
+  uri={videoViewerMsg?.url || videoViewerMsg?.mediaUrl || ""}
+  mediaType="video"
+  muted={!!videoViewerMsg?.muted}
+  maxViews={getMaxViews(videoViewerMsg)}
+  allowDownload={!IS_EXPO_GO && !getMaxViews(videoViewerMsg)}
+  onClose={() => {
+    if (videoViewerMsg && getMaxViews(videoViewerMsg)) {
+      consumeEphemeralView(videoViewerMsg);
+      return;
+    }
+    closeVideoViewer();
   }}
 />
 
