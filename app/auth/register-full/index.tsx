@@ -143,10 +143,10 @@ export type RegisterForm = {
   interests: string[];
   phone: string;
   voiceUrl: string;
+  voiceDurationSec: number;
   photos: string[];
   avatar: string;
 };
-
 
 export default function RegisterFullScreen() {
   const router = useRouter();
@@ -158,7 +158,7 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
 
- const [form, setForm] = useState<RegisterForm>({
+  const [form, setForm] = useState<RegisterForm>({
   firstName: "",
   lastName: "",
   password: "",
@@ -182,10 +182,10 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   interests: [],
   phone: "",
   voiceUrl: "",
+  voiceDurationSec: 0,
   photos: [],
   avatar: "",
 });
-
 
   const setField = (key: keyof RegisterForm, value: any) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -326,16 +326,16 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   dislikes: form.dislikes,
 
   // Interests / media
-  interests: form.interests,
+   interests: form.interests,
   avatar: form.avatar,
   photos: form.photos,
   phone: form.phone || "",
   voiceUrl: form.voiceUrl || "",
+  voiceDurationSec: Number(form.voiceDurationSec || 0),
 };
 
         const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
       const { token, user } = res.data || {};
-
       if (!token || !user) {
         throw new Error("Registration failed. Invalid response.");
       }
@@ -345,12 +345,11 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
       //    - LetsBuzz → Posts
       await saveSignupPhotosToGallery(token, form.photos);
 
-      await SecureStore.setItemAsync("RBZ_TOKEN", token);
+         await SecureStore.setItemAsync("RBZ_TOKEN", token);
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
 
-      // ✅ Force exit auth stack + re-evaluate root layout
-      router.replace("../(tabs)");
-      router.reload();
+      // ✅ Account is created. Send user directly to the Tabs homepage.
+      router.replace("/(tabs)/homepage");
 
     } catch (e: any) {
       setError(

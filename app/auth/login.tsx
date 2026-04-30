@@ -151,7 +151,7 @@ export default function LoginScreen() {
       console.error("Login network error:", err);
 
       if (err?.name === "AbortError") {
-        setError("Login request timed out. Backend is taking too long.");
+        setError("Login request timed out. Please try again.");
       } else {
         setError("Network error. Please try again.");
       }

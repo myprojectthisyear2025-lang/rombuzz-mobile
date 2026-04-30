@@ -146,8 +146,6 @@ function countHeartReactions(reactions: Record<string, any> = {}) {
   return Object.values(reactions || {}).filter((v) => v === "❤️").length;
 }
 
-const CENTER_TAP_SIZE = 190;
-
 export default function LetsBuzzReels({ targetPostId }: { targetPostId?: string }) {
   const router = useRouter();
 
@@ -845,9 +843,9 @@ const [muted, setMuted] = useState(false);
               tintColor="#fff"
             />
           }
-          renderItem={({ item, index }) => (
+                    renderItem={({ item, index }) => (
             <View style={styles.reelContainer}>
-              {/* Video Background (NO FULLSCREEN PRESSABLE ANYMORE) */}
+              {/* Video Background */}
               <View style={styles.videoWrap}>
                 <Video
                   ref={(ref) => {
@@ -864,10 +862,10 @@ const [muted, setMuted] = useState(false);
                   onError={() => {}}
                 />
 
-                {/* CENTER TAP ZONE: single tap = pause/play, double tap = like */}
+                {/* FULL VIDEO TAP LAYER: tap anywhere except overlay buttons */}
                 {index === currentIndex && (
                   <Pressable
-                    style={styles.centerTapZone}
+                    style={styles.videoTapLayer}
                     onPress={(e: any) => {
                       const now = Date.now();
                       const isDoubleTap = now - lastTapRef.current < 280;
@@ -884,7 +882,7 @@ const [muted, setMuted] = useState(false);
                   />
                 )}
 
-                           {/* Pause/Play icon overlay (VISUAL ONLY, DOES NOT CAPTURE TOUCHES) */}
+                {/* Pause/Play icon overlay (VISUAL ONLY, DOES NOT CAPTURE TOUCHES) */}
                 {index === currentIndex && paused && (
                   <View style={styles.playOverlayVisual} pointerEvents="none">
                     <View style={styles.playButton}>
@@ -1295,22 +1293,15 @@ const styles = StyleSheet.create({
     height: "100%",
     position: "relative",
   },
-  video: {
+   video: {
     width: "100%",
     height: "100%",
   },
 
-  // ✅ ONLY CENTER area toggles pause/play (and handles double-tap like)
-  centerTapZone: {
-    position: "absolute",
-    left: "50%",
-    top: "50%",
-    width: CENTER_TAP_SIZE,
-    height: CENTER_TAP_SIZE,
-    transform: [{ translateX: -CENTER_TAP_SIZE / 2 }, { translateY: -CENTER_TAP_SIZE / 2 }],
-    borderRadius: CENTER_TAP_SIZE / 2,
-    // (optional) keep invisible; if you ever want debug, uncomment:
-    // backgroundColor: "rgba(255,255,255,0.06)",
+  // ✅ Tap anywhere on the reel to pause/play, except actual overlay buttons
+  videoTapLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
   },
 
   overlayContainer: {
@@ -1324,11 +1315,11 @@ const styles = StyleSheet.create({
     paddingTop: StatusBar.currentHeight || 44,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "transparent",
   },
   muteButton: {
     padding: 8,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.18)",
     borderRadius: 20,
   },
     rightActions: {

@@ -57,13 +57,22 @@ const RBZ = {
   c2: "#d8345f",
   c3: "#e9486a",
   c4: "#b40000ff",
+
   white: "#ffffff",
   ink: "#111827",
   muted: "#6b7280",
+
   bg: "#ffffff",
   card: "#ffffff",
   soft: "#f8fafc",
   line: "rgba(17,24,39,0.08)",
+
+  // aliases used by ProfileInfoTab
+  primary: "#d8345f",
+  background: "#ffffff",
+  border: "rgba(17,24,39,0.08)",
+  text: "#111827",
+  success: "#16a34a",
 } as const;
 
 // Cloudinary (same as web Profile.jsx)
@@ -113,7 +122,35 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function extractVoiceFromFavorites(favorites: any[] = []) {
+function normalizeCsvField(value: any) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+}
+
+function normalizeStringArray(value: any) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function extractVoiceFromFavorites(favorites: any[] = [], directVoiceUrl: any = "") {
+  const direct = String(directVoiceUrl || "").trim();
+  if (direct) return direct;
+
   for (const item of favorites) {
     if (typeof item === "string" && item.startsWith("voice:")) {
       return item.slice("voice:".length);
@@ -143,7 +180,7 @@ function computeCompletion(u: any) {
     Array.isArray(u.hobbies) && u.hobbies.length >= 2,
     (Array.isArray(u.photos) && u.photos.length >= 2) ||
       (Array.isArray(u.media) && u.media.length >= 2),
-    !!extractVoiceFromFavorites(u.favorites || []),
+     !!extractVoiceFromFavorites(u.favorites || [], u?.voiceUrl || u?.voiceIntro || ""),
   ];
   checks.forEach((ok) => (score += ok ? 1 : 0));
   return score / checks.length; // ✅ FIX
@@ -265,27 +302,59 @@ async function apiJson(path: string, method: string, body: any) {
   return data;
 }
 
+function getCloudinaryResourceType(mimeType: string, filename: string) {
+  const mt = String(mimeType || "").toLowerCase();
+  const name = String(filename || "").toLowerCase();
 
-async function uploadToCloudinaryUnsigned(fileUri: string, mimeType: string, filename: string) {
+  if (
+    mt.startsWith("video/") ||
+    mt.startsWith("audio/") ||
+    name.endsWith(".mp4") ||
+    name.endsWith(".mov") ||
+    name.endsWith(".m4v") ||
+    name.endsWith(".m4a") ||
+    name.endsWith(".mp3") ||
+    name.endsWith(".wav") ||
+    name.endsWith(".aac")
+  ) {
+    return "video";
+  }
+
+  return "image";
+}
+
+async function uploadToCloudinaryUnsigned(
+  fileUri: string,
+  mimeType: string,
+  filename: string
+) {
+  const resourceType = getCloudinaryResourceType(mimeType, filename);
+
   const fd = new FormData();
- fd.append(
-  "file",
-  {
-    uri: fileUri,
-    type: mimeType,
-    name: filename,
-  } as any
-);
-
+  fd.append(
+    "file",
+    {
+      uri: fileUri,
+      type: mimeType,
+      name: filename,
+    } as any
+  );
   fd.append("upload_preset", UPLOAD_PRESET);
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
-    method: "POST",
-    body: fd,
-  });
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`,
+    {
+      method: "POST",
+      body: fd,
+    }
+  );
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || "Cloudinary upload failed");
+
+  if (!res.ok) {
+    throw new Error(data?.error?.message || "Cloudinary upload failed");
+  }
+
   return data; // contains secure_url
 }
 
@@ -835,9 +904,10 @@ const [form, setForm] = useState<ProfileForm>({
 
 
   // Voice
-  const recordingRef = useRef<Audio.Recording | null>(null);
+   const recordingRef = useRef<Audio.Recording | null>(null);
   const [recording, setRecording] = useState(false);
   const [voiceUrl, setVoiceUrl] = useState<string>("");
+  const [voiceDurationSec, setVoiceDurationSec] = useState<number>(0);
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
 
@@ -910,87 +980,82 @@ useEffect(() => {
 }, [guidanceList]);
 
 
- const hydrateFormFromUser = useCallback((u: any) => {
+    const hydrateFormFromUser = useCallback((u: any) => {
   const fav = Array.isArray(u?.favorites) ? u.favorites : [];
-  setVoiceUrl(extractVoiceFromFavorites(fav));
+  setVoiceUrl(extractVoiceFromFavorites(fav, u?.voiceUrl || u?.voiceIntro || ""));
+  setVoiceDurationSec(Number(u?.voiceDurationSec || 0));
 
-if (hydratedOnceRef.current) return;
-hydratedOnceRef.current = true;
+  setForm({
+    // Identity
+    firstName: u?.firstName || "",
+    lastName: u?.lastName || "",
+    gender: u?.gender || "",
+    genderVisibility: u?.genderVisibility || "public",
+    pronouns: u?.pronouns || "",
+    orientation: u?.orientation || "",
+    orientationVisibility: u?.orientationVisibility || "public",
+    dob: u?.dob || "",
 
-setForm({
-  // Identity
-  firstName: u?.firstName || "",
-  lastName: u?.lastName || "",
-  gender: u?.gender || "",
-  genderVisibility: u?.genderVisibility || "public",
-  pronouns: u?.pronouns || "",
-  orientation: u?.orientation || "",
-  orientationVisibility: u?.orientationVisibility || "public",
-  dob: u?.dob || "",
+    // Location
+    city: u?.city || "",
+    country: u?.country || "",
+    hometown: u?.hometown || "",
+    latitude: u?.latitude ?? null,
+    longitude: u?.longitude ?? null,
+    distanceVisibility: u?.distanceVisibility || "public",
+    travelMode: !!u?.travelMode,
 
-  // Location
-  city: u?.city || "",
-  country: u?.country || "",
-  hometown: u?.hometown || "",
-  latitude: u?.latitude ?? null,
-  longitude: u?.longitude ?? null,
-  distanceVisibility: u?.distanceVisibility || "public",
-  travelMode: !!u?.travelMode,
+    // About
+    bio: u?.bio || "",
+    vibeTags: Array.isArray(u?.vibeTags) ? u.vibeTags : [],
 
-  // About
-  bio: u?.bio || "",
-  vibeTags: Array.isArray(u?.vibeTags) ? u.vibeTags : [],
+    // Dating
+    lookingFor: u?.lookingFor || "",
+    relationshipStyle: u?.relationshipStyle || "",
+    interestedIn: Array.isArray(u?.interestedIn) ? u.interestedIn : [],
 
-  // Dating
-  lookingFor: u?.lookingFor || "",
-  relationshipStyle: u?.relationshipStyle || "",
-  interestedIn: Array.isArray(u?.interestedIn) ? u.interestedIn : [],
+    // Body
+    height: u?.height || "",
+    bodyType: u?.bodyType || "",
+    fitnessLevel: u?.fitnessLevel || "",
 
-  // Body
-  height: u?.height || "",
-  bodyType: u?.bodyType || "",
-  fitnessLevel: u?.fitnessLevel || "",
+    // Lifestyle
+    smoking: u?.smoking || "",
+    drinking: u?.drinking || "",
+    workoutFrequency: u?.workoutFrequency || "",
+    diet: u?.diet || "",
+    sleepSchedule: u?.sleepSchedule || "",
 
-  // Lifestyle
-  smoking: u?.smoking || "",
-  drinking: u?.drinking || "",
-  workoutFrequency: u?.workoutFrequency || "",
-  diet: u?.diet || "",
-  sleepSchedule: u?.sleepSchedule || "",
+    // Background
+    educationLevel: u?.educationLevel || "",
+    school: u?.school || "",
+    jobTitle: u?.jobTitle || "",
+    company: u?.company || "",
+    languages: Array.isArray(u?.languages) ? u.languages : [],
 
-  // Background
-  educationLevel: u?.educationLevel || "",
-  school: u?.school || "",
-  jobTitle: u?.jobTitle || "",
-  company: u?.company || "",
-  languages: Array.isArray(u?.languages) ? u.languages : [],
+    // Beliefs
+    religion: u?.religion || "",
+    politicalViews: u?.politicalViews || "",
+    zodiac: u?.zodiac || "",
 
-  // Beliefs
-  religion: u?.religion || "",
-  politicalViews: u?.politicalViews || "",
-  zodiac: u?.zodiac || "",
+    // Interests
+    interests: Array.isArray(u?.interests) ? u.interests : [],
+    hobbies: Array.isArray(u?.hobbies) ? u.hobbies : [],
+    favoriteMusic: Array.isArray(u?.favoriteMusic) ? u.favoriteMusic : [],
+    favoriteMovies: Array.isArray(u?.favoriteMovies) ? u.favoriteMovies : [],
+    travelStyle: u?.travelStyle || "",
+    petsPreference: u?.petsPreference || "",
 
-  // Interests
-  interests: Array.isArray(u?.interests) ? u.interests : [],
-  hobbies: Array.isArray(u?.hobbies) ? u.hobbies : [],
-  favoriteMusic: Array.isArray(u?.favoriteMusic) ? u.favoriteMusic : [],
-  favoriteMovies: Array.isArray(u?.favoriteMovies) ? u.favoriteMovies : [],
-  travelStyle: u?.travelStyle || "",
-  petsPreference: u?.petsPreference || "",
-
-  // Legacy
-  likes: Array.isArray(u?.likes) ? u.likes.join(", ") : (u?.likes || ""),
-  dislikes: Array.isArray(u?.dislikes) ? u.dislikes.join(", ") : (u?.dislikes || ""),
-  favorites: Array.isArray(u?.favorites) ? u.favorites : [],
-  visibilityMode: u?.visibilityMode || "public",
-  fieldVisibility: u?.fieldVisibility || {},
-});
-
-
+    // Legacy
+    likes: normalizeCsvField(u?.likes),
+    dislikes: normalizeCsvField(u?.dislikes),
+    favorites: normalizeStringArray(u?.favorites),
+    visibilityMode: u?.visibilityMode || "public",
+    fieldVisibility: u?.fieldVisibility || {},
+  });
 }, []);
 
  const hydrateUserFromLocal = useCallback(async () => {
-  // 🛑 HARD STOP: prevent infinite loop
   if (hydratedOnceRef.current) return;
 
   try {
@@ -999,11 +1064,9 @@ setForm({
 
     const u = JSON.parse(cached);
 
-    hydratedOnceRef.current = true; // ✅ lock immediately
-
-    // ✅ INSTANT PROFILE RENDER (ONE TIME)
     setUser(u);
     hydrateFormFromUser(u);
+    hydratedOnceRef.current = true;
   } catch (e) {
     console.log("Failed to hydrate RBZ_USER", e);
   }
@@ -1017,7 +1080,6 @@ const loadProfile = useCallback(
     const background = !!opts?.background;
 
     try {
-      // Show loader ONLY if we have no cached user yet
       if (!background && !user) {
         setLoading(true);
       }
@@ -1025,18 +1087,16 @@ const loadProfile = useCallback(
       const data = await apiFetch("/profile/full");
       const u = data?.user;
 
-   if (u) {
-  setUser(u);
+      if (u) {
+        setUser(u);
 
-  // only hydrate form once per session
-  if (!hydratedOnceRef.current) {
-    hydrateFormFromUser(u);
-    hydratedOnceRef.current = true;
-  }
+        if (!hydratedOnceRef.current) {
+          hydrateFormFromUser(u);
+          hydratedOnceRef.current = true;
+        }
 
-  await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(u));
-}
-
+        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(u));
+      }
 
       // stories can refresh silently
       loadMyStories().catch(() => {});
@@ -1289,35 +1349,51 @@ setStoryOpen(true);
       if (!rec) return;
 
       setRecording(false);
+
+      const status: any = await rec.getStatusAsync().catch(() => null);
+      const durationSec = Math.max(
+        1,
+        Math.round(Number(status?.durationMillis || 0) / 1000)
+      );
+
       await rec.stopAndUnloadAsync();
       const uri = rec.getURI();
       recordingRef.current = null;
 
       if (!uri) throw new Error("Recording URI missing");
 
-      // Upload to Cloudinary
       setUploading(true);
 
-   // Cloudinary accepts direct file URI from Expo Recording
-const uploaded = await uploadToCloudinaryUnsigned(
-  uri,
-  "audio/m4a",
-  "voice.m4a"
-);
+      const uploaded = await uploadToCloudinaryUnsigned(
+        uri,
+        "audio/m4a",
+        "voice.m4a"
+      );
 
       const url = uploaded?.secure_url;
       if (!url) throw new Error("Upload did not return secure_url");
 
-      // Save voice into favorites as voice:<url> (same as web)
       const nextFavorites = upsertVoiceInFavorites(form.favorites || [], url);
-      const updated = await apiJson("/users/me", "PUT", { favorites: nextFavorites });
+
+      const updated = await apiJson("/users/me", "PUT", {
+        favorites: nextFavorites,
+        voiceUrl: url,
+        voiceDurationSec: durationSec,
+      });
 
       setVoiceUrl(url);
-setForm((p: ProfileForm) => ({ ...p, favorites: nextFavorites }));
+      setVoiceDurationSec(durationSec);
+      setForm((p: ProfileForm) => ({
+        ...p,
+        favorites: nextFavorites,
+      }));
 
       if (updated?.user) {
         setUser((prev: any) => ({ ...(prev || {}), ...updated.user }));
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify({ ...(user || {}), ...updated.user }));
+        await SecureStore.setItemAsync(
+          "RBZ_USER",
+          JSON.stringify({ ...(user || {}), ...updated.user })
+        );
       }
 
       Alert.alert("Voice Intro", autoStop ? "Saved (60s max)" : "Saved!");
@@ -1354,39 +1430,98 @@ setForm((p: ProfileForm) => ({ ...p, favorites: nextFavorites }));
     }
   };
 
+    const deleteVoice = async () => {
+    try {
+      if (playing) {
+        await soundRef.current?.stopAsync().catch(() => {});
+        setPlaying(false);
+      }
+
+      const nextFavorites = upsertVoiceInFavorites(form.favorites || [], "");
+
+      const updated = await apiJson("/users/me", "PUT", {
+        favorites: nextFavorites,
+        voiceUrl: "",
+        voiceDurationSec: 0,
+      });
+
+      setVoiceUrl("");
+      setVoiceDurationSec(0);
+      setForm((p: ProfileForm) => ({
+        ...p,
+        favorites: nextFavorites,
+      }));
+
+      if (updated?.user) {
+        setUser((prev: any) => ({ ...(prev || {}), ...updated.user }));
+        await SecureStore.setItemAsync(
+          "RBZ_USER",
+          JSON.stringify({ ...(user || {}), ...updated.user })
+        );
+      }
+
+      Alert.alert("Voice Intro", "Deleted.");
+      await loadProfile();
+    } catch (e: any) {
+      Alert.alert("Voice Intro", e?.message || "Failed to delete voice intro");
+    }
+  };
+
   // ---------- Save profile
-  const saveProfile = async () => {
+    const saveProfile = async () => {
     try {
       setUploading(true);
 
-      // Build payload similar to web
-      const payload = {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        bio: form.bio,
-        gender: form.gender,
-        dob: form.dob,
-        city: form.city,
-        height: form.height,
-        orientation: form.orientation,
-        lookingFor: form.lookingFor,
-        likes: form.likes,
-        dislikes: form.dislikes,
-        interests: form.interests,
-        hobbies: form.hobbies,
-        favorites: form.favorites,
-        visibilityMode: form.visibilityMode,
-        fieldVisibility: form.fieldVisibility,
-      };
+      let payload: any = {};
+
+      if (editTarget === "bio") {
+        payload = {
+          bio: form.bio,
+        };
+      } else if (editTarget === "interests") {
+        payload = {
+          interests: Array.isArray(form.interests) ? form.interests : [],
+          hobbies: Array.isArray(form.hobbies) ? form.hobbies : [],
+        };
+      } else if (editTarget === "info") {
+        payload = {
+          city: form.city,
+          orientation: form.orientation,
+          lookingFor: form.lookingFor,
+        };
+      } else {
+        payload = {
+          firstName: form.firstName,
+          lastName: form.lastName,
+          bio: form.bio,
+          gender: form.gender,
+          dob: form.dob,
+          city: form.city,
+          height: form.height,
+          orientation: form.orientation,
+          lookingFor: form.lookingFor,
+          likes: normalizeCsvField(form.likes),
+          dislikes: normalizeCsvField(form.dislikes),
+          interests: Array.isArray(form.interests) ? form.interests : [],
+          hobbies: Array.isArray(form.hobbies) ? form.hobbies : [],
+          favorites: normalizeStringArray(form.favorites),
+          visibilityMode: form.visibilityMode,
+          fieldVisibility: form.fieldVisibility,
+        };
+      }
 
       const data = await apiJson("/users/me", "PUT", payload);
 
-      if (data?.user) {
-        setUser((prev: any) => ({ ...(prev || {}), ...data.user }));
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify({ ...(user || {}), ...data.user }));
-      }
+      const merged = {
+        ...(user || {}),
+        ...payload,
+        ...(data?.user || {}),
+      };
 
-setEditTarget(null);
+      setUser(merged);
+      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
+
+      setEditTarget(null);
       Alert.alert("Profile", "Saved!");
       await loadProfile();
     } catch (e: any) {
@@ -1614,7 +1749,7 @@ setEditTarget(null);
     parseHeight={parseHeight}
     formatHeight={formatHeight}
 
-    /* actions */
+     /* actions */
     saveSingleField={saveSingleField}
     setForm={setForm}
     setEditTarget={setEditTarget}
@@ -1624,7 +1759,9 @@ setEditTarget(null);
     startRecording={startRecording}
     stopRecording={stopRecording}
     playVoice={playVoice}
+    deleteVoiceIntro={deleteVoice}
     voiceUrl={voiceUrl}
+    voiceDurationSec={voiceDurationSec}
     playing={playing}
 
     /* chips */

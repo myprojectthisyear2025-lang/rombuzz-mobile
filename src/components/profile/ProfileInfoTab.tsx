@@ -233,14 +233,23 @@ export default function ProfileInfoTab(props: any) {
     LOOKINGFOR_OPTIONS,
     LIKE_CHIP_OPTIONS,
     DISLIKE_CHIP_OPTIONS,
-    recording,
+     recording,
     startRecording,
     stopRecording,
     playVoice,
+    deleteVoiceIntro,
     voiceUrl,
+    voiceDurationSec,
     playing,
     Chip,
   } = props;
+
+    const formatDuration = (sec: number) => {
+    const s = Math.max(0, Math.floor(Number(sec || 0)));
+    const mm = Math.floor(s / 60).toString().padStart(2, "0");
+    const ss = (s % 60).toString().padStart(2, "0");
+    return `${mm}:${ss}`;
+  };
 
   // State
   const [cityQuery, setCityQuery] = useState("");
@@ -659,7 +668,7 @@ const t = setTimeout(async () => {
           </>
         ))}
 
-        {/* VOICE INTRO */}
+         {/* VOICE INTRO */}
         {renderSection("Voice Intro", (
           <>
             <View style={{
@@ -681,10 +690,12 @@ const t = setTimeout(async () => {
                   color: RBZ.success,
                   fontWeight: '500',
                 }}>
-                  Boosts matches by 4x
+                  {voiceUrl
+                    ? `Saved duration: ${formatDuration(voiceDurationSec)}`
+                    : "Boosts matches by 4x"}
                 </Text>
               </View>
-              
+
               {voiceUrl && (
                 <TouchableOpacity
                   onPress={playVoice}
@@ -700,12 +711,12 @@ const t = setTimeout(async () => {
                 >
                   <Ionicons name={playing ? "pause" : "play"} size={14} color={RBZ.success} />
                   <Text style={{ fontSize: 12, color: RBZ.success, fontWeight: '600' }}>
-                    {playing ? "Playing" : "Play"}
+                    {playing ? "Pause" : "Play"}
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
-            
+
             <View style={{ flexDirection: 'row', gap: 12 }}>
               {recording ? (
                 <TouchableOpacity
@@ -750,6 +761,22 @@ const t = setTimeout(async () => {
                   }}>
                     {voiceUrl ? "Record Again" : "Record Intro"}
                   </Text>
+                </TouchableOpacity>
+              )}
+
+              {voiceUrl && !recording && (
+                <TouchableOpacity
+                  onPress={deleteVoiceIntro}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 14,
+                    borderRadius: 12,
+                    backgroundColor: '#ef4444',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#fff" />
                 </TouchableOpacity>
               )}
             </View>

@@ -35,7 +35,6 @@ import {
 import { INTEREST_OPTIONS, RegisterForm } from "../index";
 // Local state for adding custom interest
 
-
 type Props = {
   form: RegisterForm;
   setField: (key: keyof RegisterForm, value: any) => void;
@@ -44,7 +43,9 @@ type Props = {
   onBack: () => void;
 };
 
-const CLOUDINARY_VOICE_PRESET = "rombuzz_voice";
+// ✅ Match the working Profile voice recorder Cloudinary config.
+const CLOUD_NAME = "drhx99m5f";
+const UPLOAD_PRESET = "rombuzz_unsigned";
 
 const getVoiceUploadFile = (uri: string) => {
   const cleanUri = String(uri || "").trim();
@@ -306,7 +307,7 @@ export default function Step2Prefs({
     }
   };
 
-   const uploadVoice = async () => {
+     const uploadVoice = async () => {
     if (!recordedUri) {
       setVoiceError("No recording to upload.");
       return;
@@ -316,20 +317,14 @@ export default function Step2Prefs({
       setVoiceError(null);
       setUploadingVoice(true);
 
-      const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
-      if (!cloudName) {
-        throw new Error("Cloudinary cloud name is missing in this app build.");
-      }
-
       const voiceFile = getVoiceUploadFile(recordedUri);
 
       const formData = new FormData();
       formData.append("file", voiceFile as any);
-      formData.append("upload_preset", CLOUDINARY_VOICE_PRESET);
-      formData.append("resource_type", "video");
+      formData.append("upload_preset", UPLOAD_PRESET);
 
       const res = await fetch(
-        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`,
         {
           method: "POST",
           body: formData,

@@ -30,7 +30,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -47,10 +46,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AudioBubble from "@/src/components/chat/AudioBubble";
 import ChatCameraModal from "@/src/components/chat/ChatCameraModal";
 import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
-import MediaViewer from "@/src/components/chat/MediaViewer";
 import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
-import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
+import { useChatMediaViewerController } from "@/src/features/chat/thread/ChatMediaViewerController";
+import SwipeReplyRow from "@/src/features/chat/thread/SwipeReplyRow";
+import {
+  RBZ_TAG,
+  decodeCached,
+  dedupeById,
+  encodePayload,
+  maybeDecode,
+  mergeReplySnapshot,
+} from "@/src/features/chat/thread/chatPayload";
+import {
+  buildReplySnapshot,
+  getReplyPreviewText,
+} from "@/src/features/chat/thread/chatReplyUtils";
+import { formatExactMessageTime } from "@/src/features/chat/thread/chatTimeUtils";
+import type { Msg, ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
 
 const RBZ = {
   c1: "#b1123c",
@@ -64,361 +77,13 @@ const RBZ = {
   line: "rgba(0,0,0,0.08)",
 };
 
-const RBZ_TAG = "::RBZ::";
 const IS_EXPO_GO = Constants.appOwnership === "expo";
 
 const SCREEN_W = Dimensions.get("window").width;
 const BUBBLE_MAX_W = Math.floor(SCREEN_W * 0.72); // IG-like bubble width
 
-const encodePayload = (obj: any) => `${RBZ_TAG}${JSON.stringify(obj)}`;
-
-// ✅ Parse ::RBZ:: only once per message version (huge win on long threads)
-const decodedCacheRef = { current: new Map<string, { sig: string; val: any }>() };
-
-const maybeDecode = (m: any) => {
-  if (!m) return m;
-  if (typeof m?.text === "string" && m.text.startsWith(RBZ_TAG)) {
-    try {
-      const payload = JSON.parse(m.text.slice(RBZ_TAG.length));
-      return { ...m, ...payload };
-    } catch {
-      return m;
-    }
-  }
-  return m;
-};
-
-const decodeCached = (m: any) => {
-  const id = String(m?.id || "");
-  if (!id) return maybeDecode(m);
-
-  // ✅ IMPORTANT: reactions must be part of the signature,
-  // otherwise reaction updates won't re-render until refresh.
-  const reactionsSig = (() => {
-    try {
-      return JSON.stringify(m?.reactions || {});
-    } catch {
-      return "";
-    }
-  })();
-
-  const replySig = (() => {
-    try {
-      return JSON.stringify(m?.replyTo || null);
-    } catch {
-      return "";
-    }
-  })();
-
-  const pinSig = `${String(m?.pinned || "")}|${String(m?.pinnedAt || "")}|${String(m?.pinnedBy || "")}|${String(m?.action || "")}|${String(m?.actorId || "")}|${String(m?.actorName || "")}|${String(m?.pinnedTargetId || "")}`;
-
-  // sig changes if message text/deleted/edited/seen/reactions/replyTo/pin state changes
-  const sig = `${String(m?.text || "")}|${String(m?.deleted || "")}|${String(m?.edited || "")}|${String(m?.seen || "")}|${reactionsSig}|${replySig}|${pinSig}`;
-
-  const hit = decodedCacheRef.current.get(id);
-  if (hit && hit.sig === sig) return hit.val;
-
-  const val = maybeDecode(m);
-  decodedCacheRef.current.set(id, { sig, val });
-  return val;
-};
-
-
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
-}
-
-type Msg = {
-  id: string;
-  from: string;
-  to: string;
-  text?: string;
-  type?: string;
-  action?: string;
-  time?: any;
-  createdAt?: any;
-
-  edited?: boolean;
-  seen?: boolean; // ✅ add this
-
-  deleted?: boolean;
-  reactions?: Record<string, string>;
-  ephemeral?: { mode?: string };
-  replyTo?: ReplySnapshot | null;
-  _temp?: boolean;
-  roomId?: string;
-  url?: string | null;
-  mediaType?: string | null;
-  mediaUrl?: string | null;
-  system?: boolean;
-  pinned?: boolean;
-  pinnedAt?: any;
-  pinnedBy?: string | null;
-  actorId?: string | null;
-  actorName?: string | null;
-  pinnedTargetId?: string | null;
-};
-
-type ReplySnapshot = {
-  id: string;
-  from: string;
-  type?: string;
-  text?: string;
-  url?: string | null;
-  mediaType?: string | null;
-  deleted?: boolean;
-};
-
-function dedupeById(list: Msg[]) {
-  const map = new Map<string, Msg>();
-  for (const m of list) {
-    map.set(String(m.id), m); // latest wins
-  }
-  return Array.from(map.values());
-}
-
-const mergeReplySnapshot = (existing: Msg, incoming: Msg): Msg => ({
-  ...existing,
-  ...incoming,
-  replyTo: incoming?.replyTo || existing?.replyTo || undefined,
-});
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-const getPreviewText = (value: any, fallback = "Message") => {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (!text) return fallback;
-  return text.length > 90 ? `${text.slice(0, 87).trimEnd()}...` : text;
-};
-
-const getReplyKind = (value: any) => {
-  const decoded = maybeDecode(value);
-
-  if (decoded?.deleted) return "deleted";
-  if (decoded?.mediaType === "audio") return "audio";
-
-  const isProfileShare = decoded?.type === "share_profile_media";
-  const profileShareMediaType = String(decoded?.mediaType || "").toLowerCase();
-
-  if (
-    decoded?.mediaType === "video" ||
-    decoded?.type === "share_reel" ||
-    (isProfileShare && profileShareMediaType === "reel")
-  ) {
-    return "video";
-  }
-
-  if (
-    decoded?.mediaType === "image" ||
-    decoded?.type === "share_post" ||
-    (isProfileShare && profileShareMediaType === "photo") ||
-    (decoded?.type === "media" && decoded?.url)
-  ) {
-    return "image";
-  }
-
-  if (decoded?.type === "media" || decoded?.url || decoded?.mediaUrl) return "attachment";
-  return "text";
-};
-
-const getReplyPreviewText = (reply?: ReplySnapshot | null) => {
-  if (!reply) return "";
-
-  const decoded = maybeDecode({
-    text: reply.text || "",
-    type: reply.type || "text",
-    url: reply.url || null,
-    mediaType: reply.mediaType || null,
-    deleted: !!reply.deleted,
-  });
-
-  const kind = getReplyKind(decoded);
-
-  if (kind === "deleted") return "Original message unavailable";
-  if (kind === "audio") return "Voice message";
-  if (kind === "video") return "Video";
-  if (kind === "image") return "Photo";
-  if (kind === "attachment") return "Attachment";
-  return getPreviewText(decoded?.text, "Message");
-};
-
-const buildReplySnapshot = (message: any): ReplySnapshot | null => {
-  if (!message?.id) return null;
-
-  const decoded = maybeDecode(message);
-  const kind = getReplyKind(decoded);
-  const fallbackUrl =
-    decoded?.url ||
-    decoded?.mediaUrl ||
-    null;
-
-  return {
-    id: String(decoded.id),
-    from: String(decoded.from || ""),
-    type:
-      kind === "audio" || kind === "video" || kind === "image" || kind === "attachment"
-        ? decoded?.type || "media"
-        : decoded?.type || "text",
-    text: kind === "text" ? String(decoded?.text || "") : "",
-    url: fallbackUrl ? String(fallbackUrl) : null,
-    mediaType:
-      decoded?.mediaType === "image" ||
-      decoded?.mediaType === "video" ||
-      decoded?.mediaType === "audio"
-        ? decoded.mediaType
-        : kind === "video"
-          ? "video"
-          : kind === "image"
-            ? "image"
-            : kind === "audio"
-              ? "audio"
-              : null,
-    deleted: !!decoded?.deleted,
-  };
-};
-
-const exactDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-const exactTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-const toMs = (ts: any): number | null => {
-  if (ts == null || ts === "") return null;
-
-  if (ts instanceof Date) {
-    const ms = ts.getTime();
-    return Number.isFinite(ms) ? ms : null;
-  }
-
-  if (typeof ts === "number") {
-    if (!Number.isFinite(ts)) return null;
-    return ts < 1e12 ? ts * 1000 : ts;
-  }
-
-  if (typeof ts === "string") {
-    const trimmed = ts.trim();
-    if (!trimmed) return null;
-
-    const asNum = Number(trimmed);
-    if (Number.isFinite(asNum)) {
-      return asNum < 1e12 ? asNum * 1000 : asNum;
-    }
-
-    const parsed = Date.parse(trimmed);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-};
-
-const formatExactMessageTime = (ts: any) => {
-  const ms = toMs(ts);
-  if (!ms) return "";
-
-  const d = new Date(ms);
-  return `${exactDateFormatter.format(d)} • ${exactTimeFormatter.format(d)}`;
-};
-
-function SwipeReplyRow({
-  children,
-  isMine,
-  disabled,
-  onReply,
-  style,
-}: {
-  children: React.ReactNode;
-  isMine: boolean;
-  disabled?: boolean;
-  onReply: () => void;
-  style?: any;
-}) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const triggeredRef = useRef(false);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          if (disabled) return false;
-
-          const { dx, dy } = gesture;
-          const intentionalHorizontal = Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2;
-          if (!intentionalHorizontal) return false;
-
-          return isMine ? dx < 0 : dx > 0;
-        },
-        onPanResponderGrant: () => {
-          triggeredRef.current = false;
-        },
-        onPanResponderMove: (_, gesture) => {
-          const next = isMine
-            ? clamp(gesture.dx, -82, 0)
-            : clamp(gesture.dx, 0, 82);
-          translateX.setValue(next);
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const crossed = isMine ? gesture.dx <= -56 : gesture.dx >= 56;
-          if (crossed && !triggeredRef.current) {
-            triggeredRef.current = true;
-            onReply();
-          }
-
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 6,
-            speed: 18,
-          }).start();
-        },
-        onPanResponderTerminate: () => {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 6,
-            speed: 18,
-          }).start();
-        },
-      }),
-    [disabled, isMine, onReply, translateX]
-  );
-
-  const iconOpacity = translateX.interpolate({
-    inputRange: isMine ? [-82, -22, 0] : [0, 22, 82],
-    outputRange: isMine ? [1, 0.35, 0] : [0, 0.35, 1],
-    extrapolate: "clamp",
-  });
-
-  const iconScale = translateX.interpolate({
-    inputRange: isMine ? [-82, 0] : [0, 82],
-    outputRange: [1, 0.86],
-    extrapolate: "clamp",
-  });
-
-  return (
-    <Animated.View
-      style={[style, styles.swipeReplyRow, { transform: [{ translateX }] }]}
-      {...(!disabled ? panResponder.panHandlers : {})}
-    >
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.swipeReplyIconWrap,
-          isMine ? styles.swipeReplyIconWrapMine : styles.swipeReplyIconWrapPeer,
-          { opacity: iconOpacity, transform: [{ scale: iconScale }] },
-        ]}
-      >
-        <Ionicons name="arrow-undo" size={16} color={RBZ.white} />
-      </Animated.View>
-      {children}
-    </Animated.View>
-  );
 }
 
 export default function ChatWindowMobile() {
@@ -535,18 +200,6 @@ const [plusOpen, setPlusOpen] = useState(false);
 // 📷 Dedicated camera modal
 const [cameraOpen, setCameraOpen] = useState(false);
 
-// ✅ Shared fullscreen viewers
-const [imageViewerOpen, setImageViewerOpen] = useState(false);
-const [imageViewerItems, setImageViewerItems] = useState<Array<{
-  id: string | number;
-  url: string;
-  title?: string;
-}>>([]);
-const [imageViewerIndex, setImageViewerIndex] = useState(0);
-
-const [videoViewerOpen, setVideoViewerOpen] = useState(false);
-const [videoViewerMsg, setVideoViewerMsg] = useState<any | null>(null);
-
 // ✅ View-once / View-twice client enforcement (removal)
 const [mediaViews, setMediaViews] = useState<Record<string, number>>({});
 const [expiredMedia, setExpiredMedia] = useState<Record<string, true>>({});
@@ -573,77 +226,6 @@ const getMediaKey = (m: any) => String(m?.id || m?.url || "");
 const isExpired = (m: any) => {
   const k = getMediaKey(m);
   return !!expiredMedia[k];
-};
-
-const buildChatImageViewerItems = (activeMsg?: any) => {
-  const items = messages
-    .map((raw) => maybeDecode(raw))
-    .filter((msg: any) => {
-      if (!msg || isExpired(msg)) return false;
-
-      const isDirectImage =
-        msg?.mediaType === "image" &&
-        !!String(msg?.url || "").trim();
-
-      const isSharedImage =
-        msg?.type === "share_post" &&
-        !!String(msg?.mediaUrl || "").trim();
-
-      const isSharedProfilePhoto =
-        msg?.type === "share_profile_media" &&
-        String(msg?.mediaType || "").toLowerCase() === "photo" &&
-        !!String(msg?.mediaUrl || "").trim();
-
-      return isDirectImage || isSharedImage || isSharedProfilePhoto;
-    })
-    .map((msg: any) => ({
-      id: String(msg?.id || msg?.url || msg?.mediaUrl || Math.random()),
-      url: String(msg?.url || msg?.mediaUrl || "").trim(),
-      title:
-        msg?.type === "share_profile_media"
-          ? `${String(msg?.ownerName || "Shared")}'s Photo`
-          : "Photo",
-    }))
-    .filter((item) => !!item.url);
-
-  if (!items.length && activeMsg) {
-    const fallbackUrl = String(activeMsg?.url || activeMsg?.mediaUrl || "").trim();
-    if (fallbackUrl) {
-      return [
-        {
-          id: String(activeMsg?.id || fallbackUrl),
-          url: fallbackUrl,
-          title: "Photo",
-        },
-      ];
-    }
-  }
-
-  return items;
-};
-
-const openImageViewer = (m: any) => {
-  const items = buildChatImageViewerItems(m);
-  const activeId = String(m?.id || m?.url || m?.mediaUrl || "");
-  const foundIndex = items.findIndex((item) => String(item.id) === activeId);
-
-  setImageViewerItems(items);
-  setImageViewerIndex(foundIndex >= 0 ? foundIndex : 0);
-  setImageViewerOpen(true);
-};
-
-const closeImageViewer = () => {
-  setImageViewerOpen(false);
-};
-
-const openVideoViewer = (m: any) => {
-  setVideoViewerMsg(m);
-  setVideoViewerOpen(true);
-};
-
-const closeVideoViewer = () => {
-  setVideoViewerOpen(false);
-  setVideoViewerMsg(null);
 };
 
 const consumeEphemeralView = async (m: any) => {
@@ -695,18 +277,25 @@ const consumeEphemeralView = async (m: any) => {
         return dedupeById(filtered);
       });
 
-          closeImageViewer();
-      closeVideoViewer();
       return;
     }
-
-    closeImageViewer();
-    closeVideoViewer();
   } catch (e) {
     console.log("❌ consumeEphemeralView failed", e);
   }
 };
 
+const {
+  openImageViewer,
+  openVideoViewer,
+  mediaViewerNode,
+} = useChatMediaViewerController({
+  messages,
+  isExpoGo: IS_EXPO_GO,
+  maybeDecodeMessage: maybeDecode,
+  isExpiredMessage: isExpired,
+  getMaxViews,
+  consumeEphemeralView,
+});
 
 const triggerHeartBurst = (m: any) => {
   const k = getMediaKey(m);
@@ -2844,45 +2433,7 @@ const togglePinMessage = async (m: Msg) => {
 />
 ) : null}
 
-<RBZImageViewer
-  visible={imageViewerOpen}
-  items={imageViewerItems}
-  initialIndex={imageViewerIndex}
-  title="Photo"
-  onIndexChange={setImageViewerIndex}
-  onClose={() => {
-    const activeImage = imageViewerItems[imageViewerIndex];
-    const matchedMessage = messages
-      .map((raw) => maybeDecode(raw))
-      .find((msg: any) => {
-        const candidateUrl = String(msg?.url || msg?.mediaUrl || "").trim();
-        return candidateUrl && candidateUrl === String(activeImage?.url || "").trim();
-      });
-
-    if (matchedMessage && getMaxViews(matchedMessage)) {
-      consumeEphemeralView(matchedMessage);
-      return;
-    }
-
-    closeImageViewer();
-  }}
-/>
-
-<MediaViewer
-  visible={videoViewerOpen}
-  uri={videoViewerMsg?.url || videoViewerMsg?.mediaUrl || ""}
-  mediaType="video"
-  muted={!!videoViewerMsg?.muted}
-  maxViews={getMaxViews(videoViewerMsg)}
-  allowDownload={!IS_EXPO_GO && !getMaxViews(videoViewerMsg)}
-  onClose={() => {
-    if (videoViewerMsg && getMaxViews(videoViewerMsg)) {
-      consumeEphemeralView(videoViewerMsg);
-      return;
-    }
-    closeVideoViewer();
-  }}
-/>
+{mediaViewerNode}
 
       {/* ✨ Reply Ideas */}
       <Modal
@@ -3174,32 +2725,6 @@ bubbleRow: {
   alignItems: "flex-start",
   overflow: "visible",
 },
-
-swipeReplyRow: {
-  position: "relative",
-},
-
-swipeReplyIconWrap: {
-  position: "absolute",
-  top: "50%",
-  marginTop: -15,
-  width: 30,
-  height: 30,
-  borderRadius: 999,
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: RBZ.c1,
-  zIndex: 1,
-},
-
-swipeReplyIconWrapMine: {
-  right: 8,
-},
-
-swipeReplyIconWrapPeer: {
-  left: 8,
-},
-
 
   rowMine: {
   justifyContent: "flex-end",

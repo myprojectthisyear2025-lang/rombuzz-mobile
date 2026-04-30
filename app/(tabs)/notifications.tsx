@@ -17,7 +17,7 @@
  */
 
 import { API_BASE } from "@/src/config/api";
-import { getSocket, onNotification, resolveNotificationHref } from "@/src/lib/socket";
+import { getSocket, onNotification } from "@/src/lib/socket";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter } from "expo-router";
@@ -345,8 +345,40 @@ export default function NotificationsScreen() {
     return fixed;
   };
 
-  const resolveHref = (n: NotificationItem) => {
+   const buildMatchedProfileHref = (userId: string) => {
+    return `/view-profile?id=${encodeURIComponent(userId)}&returnTo=${encodeURIComponent(
+      "/(tabs)/notifications"
+    )}`;
+  };
+
+  const buildDiscoverProfileHref = (userId: string) => {
+    return `/(tabs)/discover-profile?id=${encodeURIComponent(userId)}&returnTo=${encodeURIComponent(
+      "/(tabs)/notifications"
+    )}`;
+  };
+
+  const checkMatchedWithUser = async (targetUserId: string) => {
+    if (!token || !targetUserId) return false;
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/likes/status/${encodeURIComponent(targetUserId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const data = await res.json().catch(() => null);
+      return !!data?.matched;
+    } catch (err) {
+      console.warn("Notification match-status check failed:", err);
+      return false;
+    }
+  };
+
+  const resolveHref = async (n: NotificationItem) => {
     const type = String(n?.type || "system");
+    const via = String(n?.via || "");
     const fromId = n?.fromId ? String(n.fromId) : "";
     const postId = n?.postId || n?.entityId ? String(n.postId || n.entityId) : "";
 
@@ -355,16 +387,36 @@ export default function NotificationsScreen() {
       return "/(tabs)/discover";
     }
 
-    if (type === "match" || type === "buzz") {
-      if (fromId) return `/view-profile?id=${encodeURIComponent(fromId)}`;
+    // ✅ Match notification means they are already matched.
+    if (type === "match") {
+      if (fromId) return buildMatchedProfileHref(fromId);
       return "/(tabs)/notifications";
+    }
+
+    // ✅ Buzz is overloaded in your backend:
+    // 1. pending discover match request: "Kylie wants to match with you"
+    // 2. matched-user buzz: "Kylie buzzed you"
+    //
+    // So NEVER blindly send buzz to view-profile.
+    // Check real server truth first.
+    if (type === "buzz") {
+      if (!fromId) return "/(tabs)/notifications";
+
+      const matched = await checkMatchedWithUser(fromId);
+      if (matched) return buildMatchedProfileHref(fromId);
+
+      return buildDiscoverProfileHref(fromId);
     }
 
     // like -> will become gift:
     // direct to the specific post in LetsBuzz feed
     if (type === "like") {
       if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
-      if (fromId) return `/view-profile?id=${encodeURIComponent(fromId)}`;
+      if (fromId) {
+        const matched = await checkMatchedWithUser(fromId);
+        if (matched) return buildMatchedProfileHref(fromId);
+        return buildDiscoverProfileHref(fromId);
+      }
       return "/(tabs)/letsbuzz";
     }
 
@@ -377,7 +429,11 @@ export default function NotificationsScreen() {
     // new_post -> show the specific post in LetsBuzz feed
     if (type === "new_post") {
       if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
-      if (fromId) return `/view-profile?id=${encodeURIComponent(fromId)}`;
+      if (fromId) {
+        const matched = await checkMatchedWithUser(fromId);
+        if (matched) return buildMatchedProfileHref(fromId);
+        return buildDiscoverProfileHref(fromId);
+      }
       return "/(tabs)/letsbuzz";
     }
 
@@ -393,7 +449,9 @@ export default function NotificationsScreen() {
       return "/(tabs)/notifications";
     }
 
-    // If backend sends href, still accept it (after translating legacy routes)
+    // If backend sends href, still accept it for non-profile notifications only.
+    // Do NOT trust backend /viewprofile hrefs for buzz/like routing because
+    // pending match requests and matched buzzes both use type="buzz".
     if (n?.href) return normalizeHref(n.href);
 
     return "/(tabs)/notifications";
@@ -405,11 +463,12 @@ export default function NotificationsScreen() {
       setSelectedMenuId(null);
       return;
     }
-    
+
     try {
       await markAsRead(n.id);
     } catch {}
-    const href = resolveNotificationHref(n);
+
+    const href = await resolveHref(n);
     router.push(href as any);
   };
 

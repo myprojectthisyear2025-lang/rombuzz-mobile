@@ -17,6 +17,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /* 🎨 RomBuzz Palette */
 const COLORS = {
@@ -233,6 +234,7 @@ function toggleInArray(list: string[], value: string) {
 
 export default function FilterScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ discoverFilters?: string }>();
 
   const incoming = useMemo(
@@ -255,11 +257,18 @@ export default function FilterScreen() {
     } as any);
   };
 
-  return (
+   return (
     <View style={styles.container}>
       {/* 🔝 Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: Math.max(insets.top + 8, 28),
+          },
+        ]}
+      >
+        <Pressable onPress={() => router.replace("/(tabs)/discover" as any)}>
           <Ionicons name="close" size={26} color={COLORS.primary} />
         </Pressable>
 
@@ -688,7 +697,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
     backgroundColor: COLORS.white,
   },
   headerTitle: {

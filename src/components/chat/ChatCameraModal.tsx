@@ -413,10 +413,47 @@ export default function ChatCameraModal({
     }
   };
 
-  const formatTime = (secs: number) => {
+   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const renderStrokeSegments = (stroke: Stroke) => {
+    if (!stroke.points?.length) return null;
+
+    if (stroke.points.length === 1) {
+      const pt = stroke.points[0];
+      return (
+        <View
+          key={`${stroke.id}_dot_0`}
+          style={[styles.dot, { left: pt.x - 3, top: pt.y - 3 }]}
+        />
+      );
+    }
+
+    return stroke.points.slice(1).map((pt, idx) => {
+      const prev = stroke.points[idx];
+      const dx = pt.x - prev.x;
+      const dy = pt.y - prev.y;
+      const length = Math.max(6, Math.sqrt(dx * dx + dy * dy));
+      const angle = `${Math.atan2(dy, dx)}rad`;
+
+      return (
+        <View
+          key={`${stroke.id}_segment_${idx}`}
+          style={[
+            styles.strokeSegment,
+            {
+              left: (prev.x + pt.x) / 2 - length / 2,
+              top: (prev.y + pt.y) / 2 - 3,
+              width: length,
+              transform: [{ rotate: angle }],
+            },
+          ]}
+        />
+      );
+    });
   };
 
   const panResponder = useMemo(
@@ -463,13 +500,13 @@ export default function ChatCameraModal({
     [preview, drawMode]
   );
 
-  const noPreview = !preview;
+   const noPreview = !preview;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={closeModal}>
       <SafeAreaView style={styles.safe}>
         <View style={styles.root}>
-          <View style={styles.previewShell} {...(preview && drawMode ? panResponder.panHandlers : {})}>
+          <View style={styles.previewShell}>
             {noPreview ? (
               <CameraView
                 ref={camRef}
@@ -500,16 +537,17 @@ export default function ChatCameraModal({
               <Image source={{ uri: preview.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             )}
 
+                      {preview && drawMode ? (
+              <View
+                style={styles.drawCanvas}
+                pointerEvents="auto"
+                {...panResponder.panHandlers}
+              />
+            ) : null}
+
             {preview && strokes.length ? (
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                {strokes.map((stroke) =>
-                  stroke.points.map((pt, idx) => (
-                    <View
-                      key={`${stroke.id}_${idx}`}
-                      style={[styles.dot, { left: pt.x - 3, top: pt.y - 3 }]}
-                    />
-                  ))
-                )}
+              <View pointerEvents="none" style={styles.drawingLayer}>
+                {strokes.map((stroke) => renderStrokeSegments(stroke))}
               </View>
             ) : null}
 
@@ -747,9 +785,17 @@ export default function ChatCameraModal({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#000" },
   root: { flex: 1, backgroundColor: "#000" },
-  previewShell: {
+   previewShell: {
     flex: 1,
     backgroundColor: "#000",
+  },
+  drawCanvas: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 12,
+  },
+  drawingLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 13,
   },
 
   topBar: {
@@ -1098,5 +1144,33 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: RBZ.white,
+  },
+  strokeSegment: {
+    position: "absolute",
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: RBZ.white,
+  },
+  drawHintPill: {
+    position: "absolute",
+    left: 14,
+    right: 92,
+    bottom: 146,
+    minHeight: 42,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "rgba(181,23,158,0.82)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    zIndex: 31,
+  },
+  drawHintText: {
+    color: RBZ.white,
+    fontWeight: "900",
+    fontSize: 12,
   },
 });

@@ -16,7 +16,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Modal,
   Pressable,
@@ -31,11 +30,15 @@ import {
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import RBZImageViewer from "@/src/components/media/RBZImageViewer";
+import RBZVideoViewer, {
+  type RBZVideoViewerItem,
+} from "@/src/components/media/RBZVideoViewer";
 import BuzzPokeCard, {
   type BuzzPokeMeta,
 } from "@/src/components/profile/BuzzPokeCard";
-import PhotoGrid from "@/src/components/profile/Gallery/PhotoGrid";
-import ReelGrid from "@/src/components/profile/Gallery/ReelGrid";
+import ViewProfileGallery from "@/src/components/profile/ViewProfileGallery";
+import ViewProfileMediaActions from "@/src/components/profile/ViewProfileMediaActions";
 import { API_BASE } from "@/src/config/api";
 
 const RBZ = {
@@ -83,6 +86,7 @@ interface UserProfile {
   orientation?: string;
   lookingFor?: string;
    height?: string;
+  voiceDurationSec?: number;
 
   // likes/dislikes can be string OR arrays depending on backend/user save
   likes?: any;
@@ -133,6 +137,7 @@ interface UserProfile {
   // ✅ MEDIA SOURCES (FIX FOR TS ERRORS)
   media?: any[];
   photos?: any[];
+  reels?: any[];
   gallery?: any[];
   uploads?: any[];
 
@@ -271,7 +276,7 @@ const hasAny = (...vals: any[]) => {
 export default function ViewProfile() {
    const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const params = useLocalSearchParams<{
     userId?: string;
     id?: string;
@@ -316,26 +321,24 @@ export default function ViewProfile() {
   });
   const hasStory = stories.length > 0;
 
-  // voice intro
-  const soundRef = useRef<Audio.Sound | null>(null);
+   // voice intro
+   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [voiceDurationSec, setVoiceDurationSec] = useState(0);
   // gallery
   const [tab, setTab] = useState<"photos" | "reels">("photos");
-   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerIndex, setViewerIndex] = useState(0);
-  const [viewerItems, setViewerItems] = useState<MediaItem[]>([]);
-  const viewerListRef = useRef<FlatList<MediaItem>>(null);
+
+  // shared image viewer (photos only for now)
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [imageViewerIndex, setImageViewerIndex] = useState(0);
+  const [imageViewerItems, setImageViewerItems] = useState<any[]>([]);
+
+  // shared video viewer (reels only)
+  const [videoViewerOpen, setVideoViewerOpen] = useState(false);
+  const [videoViewerIndex, setVideoViewerIndex] = useState(0);
+  const [videoViewerItems, setVideoViewerItems] = useState<RBZVideoViewerItem[]>([]);
 
   const [refreshing, setRefreshing] = useState(false);
-
-  const goToViewerIndex = (nextIndex: number) => {
-    const max = Math.max(0, (viewerItems?.length || 0) - 1);
-    const clamped = Math.max(0, Math.min(nextIndex, max));
-    setViewerIndex(clamped);
-    try {
-      viewerListRef.current?.scrollToIndex({ index: clamped, animated: true });
-    } catch {}
-  };
 
   // ✅ 3-dot menu as true overlay (so it never hides under About)
   const [showMenu, setShowMenu] = useState(false);
@@ -403,26 +406,32 @@ const d = user.distanceMiles ?? user.distanceKm ?? user.distance ?? null;
     return possibleFields.find(url => url && url.trim()) || "";
   }, [user]);
 
-  // Media processing
+    // Media processing
  const allMedia: MediaItem[] = useMemo(() => {
   if (!user) return [];
   
   // Debug log
   console.log('Processing media for user:', {
     media: user?.media?.slice(0, 2),
+    reels: user?.reels?.slice(0, 2),
     photos: user?.photos?.slice(0, 2)
   });
   
   // Extract from all possible fields
   const rawMedia = (Array.isArray(user?.media) ? user.media : []) as any[];
+  const rawReels = (Array.isArray(user?.reels) ? user.reels : []) as any[];
   const rawPhotos = (Array.isArray(user?.photos) ? user.photos : []) as any[];
   const gallery = (Array.isArray(user?.gallery) ? user.gallery : []) as any[];
   const uploads = (Array.isArray(user?.uploads) ? user.uploads : []) as any[];
   
-  // Combine all sources
-  const allRaw = [...rawMedia, ...rawPhotos, ...gallery, ...uploads];
+  // Combine all sources.
+  // ✅ Backend sends real ViewProfile reels in user.reels.
+  // ✅ Older/alternate backend responses may also include reels inside user.media.
+  const allRaw = [...rawMedia, ...rawReels, ...rawPhotos, ...gallery, ...uploads];
   
   console.log('Total raw items:', allRaw.length);
+
+  const seen = new Set<string>();
   
   const merged = allRaw
     .map((item: any, idx: number): MediaItem | undefined => {
@@ -432,7 +441,7 @@ const d = user.distanceMiles ?? user.distanceKm ?? user.distance ?? null;
         if (!url) return undefined;
         
         return {
-          id: `media-${idx}-${Date.now()}`,
+          id: `media-${idx}-${url}`,
           url,
           type: inferType({ url }),
           caption: '',
@@ -442,9 +451,6 @@ const d = user.distanceMiles ?? user.distanceKm ?? user.distance ?? null;
       
       // Handle object format
       if (item && typeof item === 'object') {
-        const id = String(item?.id || item?._id || `item-${idx}-${Date.now()}`);
-        
-        // Try multiple possible URL fields
         const url = String(
           item?.url || 
           item?.secure_url || 
@@ -457,14 +463,17 @@ const d = user.distanceMiles ?? user.distanceKm ?? user.distance ?? null;
         ).trim();
         
         if (!url) return undefined;
-        
+
+        const id = String(item?.id || item?._id || item?.mediaId || `item-${idx}-${url}`);
         const caption = String(item?.caption || item?.text || item?.description || '');
-        const privacy = String(item?.privacy || item?.visibility || 'public').toLowerCase();
+        const privacy = String(item?.privacy || item?.visibility || item?.scope || 'public').toLowerCase();
         
         return {
+          ...item,
           id,
           url,
-          type: inferType(item),
+          mediaUrl: String(item?.mediaUrl || url),
+          type: inferType({ ...item, url }),
           caption,
           privacy
         };
@@ -472,15 +481,20 @@ const d = user.distanceMiles ?? user.distanceKm ?? user.distance ?? null;
       
       return undefined;
     })
-    .filter((m): m is MediaItem => Boolean(m));
+    .filter((m): m is MediaItem => {
+      if (!m?.url) return false;
+      if (!canViewerSeeMedia(m)) return false;
+
+      const key = `${m.id}:${m.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+
+      return true;
+    });
   
-  console.log('Processed media items:', merged.length, merged.slice(0, 2));
+  console.log('Processed visible media items:', merged.length, merged.slice(0, 2));
   
-  // Filter by visibility
-  const visible = merged.filter((m) => canViewerSeeMedia(m));
-  console.log('Visible after filtering:', visible.length);
-  
-  return visible;
+  return merged;
 }, [user]);
 
   const photos = useMemo(() => allMedia.filter((m) => m.type === "image"), [allMedia]);
@@ -521,8 +535,9 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         return;
       }
 
-      setProfile(data);
+         setProfile(data);
       setUser(data.user);
+      setVoiceDurationSec(Number(data?.user?.voiceDurationSec || 0));
 
       // ✅ Source of truth for matched state = likes/status endpoint
       let resolvedMatched = !!data?.matched;
@@ -603,9 +618,18 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
 
     try {
       if (playing && soundRef.current) {
-        await soundRef.current.stopAsync();
-        setPlaying(false);
-        return;
+        const status = await soundRef.current.getStatusAsync();
+        if (status?.isLoaded && status.isPlaying) {
+          await soundRef.current.pauseAsync();
+          setPlaying(false);
+          return;
+        }
+
+        if (status?.isLoaded) {
+          await soundRef.current.playAsync();
+          setPlaying(true);
+          return;
+        }
       }
 
       if (soundRef.current) {
@@ -624,13 +648,29 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
       soundRef.current = sound;
       setPlaying(true);
 
-      sound.setOnPlaybackStatusUpdate((s: any) => {
-        if (s?.didJustFinish) setPlaying(false);
+      sound.setOnPlaybackStatusUpdate((status: any) => {
+        if (!status?.isLoaded) return;
+
+        if (status?.durationMillis && !voiceDurationSec) {
+          setVoiceDurationSec(Math.max(1, Math.round(status.durationMillis / 1000)));
+        }
+
+        if (status?.didJustFinish) {
+          setPlaying(false);
+          sound.unloadAsync().catch(() => {});
+          soundRef.current = null;
+        }
       });
-    } catch {
-      Alert.alert("Voice", "Unable to play voice intro");
+    } catch (e: any) {
+      setPlaying(false);
+      try {
+        await soundRef.current?.unloadAsync();
+      } catch {}
+      soundRef.current = null;
+      Alert.alert("Voice", e?.message || "Unable to play voice intro.");
     }
   };
+
   // ---------------------------------------------------------------------------
   // MENU OPEN (measure button → position modal dropdown)
   // ---------------------------------------------------------------------------
@@ -772,14 +812,58 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
     );
   };
 
+   // ---------------------------------------------------------------------------
+  // OPEN IMAGE VIEWER (shared universal file)
   // ---------------------------------------------------------------------------
-  // OPEN MEDIA VIEWER
+  const openImageViewer = useCallback((items: MediaItem[], index: number) => {
+    const onlyImages = items
+      .filter((x) => (x?.type || "image") !== "reel" && !!x?.url)
+      .map((x) => ({
+        ...x,
+        id: String(x.id),
+        mediaId: String((x as any)?.mediaId || x.id),
+        url: String(x.url),
+        mediaUrl: String((x as any)?.mediaUrl || x.url),
+      }));
+
+    const safeIndex = Math.max(0, Math.min(index, Math.max(0, onlyImages.length - 1)));
+
+    setImageViewerItems(onlyImages);
+    setImageViewerIndex(safeIndex);
+    setImageViewerOpen(true);
+  }, []);
+
+  const closeImageViewer = useCallback(() => {
+    setImageViewerOpen(false);
+  }, []);
+
   // ---------------------------------------------------------------------------
-  const openViewer = (items: MediaItem[], index: number) => {
-    setViewerItems(items);
-    setViewerIndex(index);
-    setViewerOpen(true);
-  };
+  // OPEN VIDEO VIEWER (shared universal file for reels)
+  // ---------------------------------------------------------------------------
+  const openVideoViewer = useCallback((items: MediaItem[], index: number) => {
+    const onlyReels = items
+      .filter((x) => (x?.type || "image") === "reel" && !!x?.url)
+      .map((x) => ({
+        ...x,
+        id: String(x.id),
+        mediaId: String((x as any)?.mediaId || x.id),
+        url: String(x.url),
+        mediaUrl: String((x as any)?.mediaUrl || x.url),
+        title: fullName ? `${fullName}'s Reel` : "Reel",
+        poster: String((x as any)?.poster || (x as any)?.thumbnail || ""),
+        thumbnail: String((x as any)?.thumbnail || (x as any)?.poster || ""),
+      }));
+
+    const safeIndex = Math.max(0, Math.min(index, Math.max(0, onlyReels.length - 1)));
+
+    setVideoViewerItems(onlyReels);
+    setVideoViewerIndex(safeIndex);
+    setVideoViewerOpen(true);
+  }, [fullName]);
+
+  const closeVideoViewer = useCallback(() => {
+    setVideoViewerOpen(false);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // RENDER STATES
@@ -951,97 +1035,38 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           </View>
         ) : null}
 
-        {/* Voice Intro */}
+              {/* Voice Intro */}
         {voiceUrl ? (
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="mic" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Voice Intro</Text>
-            </View>
+            <Text style={styles.subSectionTitle}>Voice Intro</Text>
+
             <Pressable onPress={playVoice} style={styles.voiceButton}>
-              <Ionicons 
-                name={playing ? "stop-circle" : "play-circle"} 
-                size={28} 
-                color={playing ? RBZ.success : RBZ.c2} 
+              <Ionicons
+                name={playing ? "pause-circle" : "play-circle"}
+                size={22}
+                color={playing ? RBZ.success : RBZ.c2}
               />
               <Text style={styles.voiceButtonText}>
-                {playing ? "Playing..." : "Play Voice Intro"}
+                {playing ? "Pause Voice Intro" : "Play Voice Intro"}
               </Text>
             </Pressable>
+
+            <Text style={{ marginTop: 10, fontSize: 13, color: RBZ.muted }}>
+              {voiceDurationSec > 0 ? `Duration: ${voiceDurationSec}s` : "Voice intro available"}
+            </Text>
           </View>
         ) : null}
 
    {/* Gallery */}
-        <View style={styles.galleryCard}>
-          <View style={styles.galleryHeader}>
-            <View style={styles.galleryTitleRow}>
-              <Ionicons name="images" size={20} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Gallery</Text>
-            </View>
-            
-            <View style={styles.galleryTabs}>
-              <Pressable
-                onPress={() => setTab("photos")}
-                style={[styles.tab, tab === "photos" && styles.activeTab]}
-              >
-                <Text style={[styles.tabText, tab === "photos" && styles.activeTabText]}>
-                  Photos ({photos.length})
-                </Text>
-              </Pressable>
-              
-              <Pressable
-                onPress={() => setTab("reels")}
-                style={[styles.tab, tab === "reels" && styles.activeTab]}
-              >
-                <Text style={[styles.tabText, tab === "reels" && styles.activeTabText]}>
-                  Reels ({reels.length})
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-
-          <Text style={styles.galleryHint}>
-            {tab === "photos" 
-              ? "Shared photos for vibes and moments"
-              : "Reels showing personality and interests"}
-          </Text>
-
-          {tab === "photos" ? (
-            photos.length > 0 ? (
-              <View style={styles.gridContainer}>
-                <PhotoGrid
-                  items={photos}
-                  size={gridSize}
-                  onOpen={(m: any) => {
-                    const idx = photos.findIndex((x) => String(x.id) === String(m?.id));
-                    openViewer(photos, Math.max(0, idx));
-                  }}
-                />
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="images-outline" size={48} color={RBZ.line} />
-                <Text style={styles.emptyText}>No photos shared yet</Text>
-              </View>
-            )
-          ) : reels.length > 0 ? (
-            <View style={styles.gridContainer}>
-              <ReelGrid
-                items={reels}
-                size={gridSize}
-                onOpen={(m: any) => {
-                  const idx = reels.findIndex((x) => String(x.id) === String(m?.id));
-                    openViewer(reels, Math.max(0, idx));
-                  }}
-                />
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="videocam-outline" size={48} color={RBZ.line} />
-                <Text style={styles.emptyText}>No reels shared yet</Text>
-              </View>
-            )}
-          </View>
+        <ViewProfileGallery
+          tab={tab}
+          onTabChange={setTab}
+          photos={photos}
+          reels={reels}
+          gridSize={gridSize}
+          onOpenPhoto={(_, index) => openImageViewer(photos, index)}
+          onOpenReel={(_, index) => openVideoViewer(reels, index)}
+        />
 
         {/* Profile Details */}
         <View style={styles.card}>
@@ -1687,104 +1712,56 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         </Pressable>
       </Modal>
 
-      {/* Media Viewer */}
-      <Modal 
-        visible={viewerOpen} 
-        transparent={false} 
-        animationType="fade" 
-        onRequestClose={() => setViewerOpen(false)}
-      >
-          <View style={styles.viewerContainer}>
-            <LinearGradient
-              colors={['rgba(0,0,0,0.9)', 'rgba(0,0,0,0.8)']}
-              style={[styles.viewerHeader, { paddingTop: insets.top + 8 }]}
-              >
-              <Pressable onPress={() => setViewerOpen(false)} style={styles.viewerCloseButton}>
-                <Ionicons name="close" size={24} color={RBZ.white} />
-              </Pressable>
-              
-              <View style={styles.viewerTitleContainer}>
-                <Text style={styles.viewerTitle} numberOfLines={1}>
-                  {fullName}'s {viewerItems[viewerIndex]?.type === "reel" ? "Reel" : "Photo"}
-                </Text>
-                <Text style={styles.viewerSubtitle}>
-                  {viewerIndex + 1} of {viewerItems.length}
-                </Text>
-              </View>
-              
-              <View style={{ width: 44 }} />
-            </LinearGradient>
-             <View style={styles.viewerBody}>
-                <FlatList
-                ref={(r) => {
-                  // ✅ callback refs must return void (TS fix)
-                  // @ts-ignore
-                  viewerListRef.current = r;
-                }}
-                data={viewerItems}
-                keyExtractor={(item) => String(item.id)}
-                horizontal
+          {/* Media Viewer */}
+         <RBZImageViewer
+        visible={imageViewerOpen}
+        items={imageViewerItems}
+        initialIndex={imageViewerIndex}
+        title={`${fullName}'s Photo`}
+        onClose={closeImageViewer}
+        onIndexChange={setImageViewerIndex}
+        FooterComponent={({ item }) => {
+          if (!item) return null;
 
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                initialScrollIndex={
-                  viewerItems.length > 0 ? Math.max(0, Math.min(viewerIndex, viewerItems.length - 1)) : 0
-                }
-                getItemLayout={(_, index) => ({
-                  length: width,
-                  offset: width * index,
-                  index,
-                })}
-
-                onMomentumScrollEnd={(e) => {
-                  const x = e.nativeEvent.contentOffset.x;
-                  const next = Math.round(x / Math.max(1, width));
-                  setViewerIndex(next);
-                }}
-                renderItem={({ item }) => {
-                  return (
-                    <View style={{ width }}>
-                      {item?.type === "reel" ? (
-                        <View style={styles.videoContainer}>
-                          {/* Video player placeholder (your reel player can go here later) */}
-                          <Text style={styles.videoPlaceholder}>Video Player</Text>
-                        </View>
-                      ) : (
-                        <Image
-                          source={{ uri: item?.url }}
-                          style={styles.viewerImage}
-                          resizeMode="contain"
-                        />
-                      )}
-                    </View>
-                  );
-                }}
+          return (
+            <View pointerEvents="box-none" style={styles.imageViewerMediaActionsWrap}>
+              <ViewProfileMediaActions
+                item={item as any}
+                ownerId={userId}
+                ownerName={fullName}
+                ownerAvatar={user.avatar || ""}
+                mediaKind="photo"
+                onRefresh={refreshProfile}
               />
-
-              {/* ✅ Tap navigation (prev/next) */}
-              {viewerItems.length > 1 ? (
-                <>
-                  <Pressable
-                    onPress={() => goToViewerIndex(viewerIndex - 1)}
-                    style={[styles.viewerNavBtn, styles.viewerNavLeft]}
-                    hitSlop={12}
-                  >
-                    <Ionicons name="chevron-back" size={26} color={RBZ.white} />
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => goToViewerIndex(viewerIndex + 1)}
-                    style={[styles.viewerNavBtn, styles.viewerNavRight]}
-                    hitSlop={12}
-                  >
-                    <Ionicons name="chevron-forward" size={26} color={RBZ.white} />
-                  </Pressable>
-                </>
-              ) : null}
             </View>
+          );
+        }}
+      />
 
-          </View>
-        </Modal>
+      <RBZVideoViewer
+        visible={videoViewerOpen}
+        items={videoViewerItems}
+        initialIndex={videoViewerIndex}
+        title={`${fullName}'s Reel`}
+        onClose={closeVideoViewer}
+        onIndexChange={setVideoViewerIndex}
+        FooterComponent={({ item }) => {
+          if (!item) return null;
+
+          return (
+            <View pointerEvents="box-none" style={styles.videoViewerMediaActionsWrap}>
+              <ViewProfileMediaActions
+                item={item as any}
+                ownerId={userId}
+                ownerName={fullName}
+                ownerAvatar={user.avatar || ""}
+                mediaKind="reel"
+                onRefresh={refreshProfile}
+              />
+            </View>
+          );
+        }}
+      />
       </View>
     );
   }
@@ -2309,85 +2286,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 13,
   },
-  galleryCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 20,
-    backgroundColor: RBZ.cardBg,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.08)",
-  },
-  galleryHeader: {
-    marginBottom: 12,
-  },
-  galleryTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 16,
-  },
-  galleryTabs: {
-    flexDirection: "row",
-    backgroundColor: "rgba(17,24,39,0.03)",
-    borderRadius: 14,
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  activeTab: {
-    backgroundColor: RBZ.white,
-    shadowColor: RBZ.c3,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    color: RBZ.muted,
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  activeTabText: {
-    color: RBZ.c2,
-    fontWeight: "800",
-  },
-  galleryHint: {
-    color: RBZ.muted,
-    fontWeight: "600",
-    fontSize: 12,
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  gridContainer: {
-    marginTop: 8,
-  },
-  emptyState: {
-    paddingVertical: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyText: {
-    marginTop: 12,
-    color: RBZ.muted,
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  viewerContainer: {
+   viewerContainer: {
     flex: 1,
     backgroundColor: "#000",
   },
-  viewerHeader: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+  viewerHeaderOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+  },
+  viewerHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    minHeight: 48,
   },
   viewerCloseButton: {
     width: 44,
@@ -2395,11 +2311,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.14)",
   },
   viewerTitleContainer: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
     marginHorizontal: 10,
   },
   viewerTitle: {
@@ -2408,14 +2325,22 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   viewerSubtitle: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(255,255,255,0.72)",
     fontSize: 12,
     fontWeight: "600",
     marginTop: 2,
   },
   viewerBody: {
     flex: 1,
+  },
+  zoomablePage: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+    backgroundColor: "#000",
   },
   viewerImage: {
     width: "100%",
@@ -2426,9 +2351,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-   videoPlaceholder: {
+  videoPlaceholder: {
     color: RBZ.white,
     fontSize: 18,
+  },
+  imageViewerMediaActionsWrap: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  videoViewerMediaActionsWrap: {
+    width: "100%",
+    height: "100%",
   },
 
   // ✅ viewer swipe nav buttons

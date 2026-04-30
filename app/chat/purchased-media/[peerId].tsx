@@ -1,25 +1,24 @@
 /**
  * ============================================================
- * 📁 File: app/chat/shared-media/[peerId].tsx
- * 🎯 Screen: RomBuzz — Shared Media Hub
+ * 📁 File: app/chat/purchased-media/[peerId].tsx
+ * 🎯 Screen: RomBuzz — Purchased Media Hub
  *
- * Shows 2 tabs under Shared media:
- *  1) Photos → all NON-EPHEMERAL shared images
- *  2) Videos → all NON-EPHEMERAL shared videos
+ * Shows 2 tabs under Purchased media:
+ *  1) Photos → purchased / locked images only
+ *  2) Videos → purchased / locked videos only
  *
  * Rules:
  *  - NEVER show/store view-once/view-twice (ephemeral) media
+ *  - ONLY gift.locked / locked media appears here
  *  - Grid: 3 per row
  *  - Each tile has ⋮ menu:
  *      - Delete for me
- *      - Delete for all
  *      - Show in chat
  *      - Save
  *
  * Backend (already exists):
  *  - GET    /api/chat/rooms/:roomId
  *  - DELETE /api/chat/rooms/:roomId/:msgId?scope=me
- *  - DELETE /api/chat/rooms/:roomId/:msgId?scope=all
  * ============================================================
  */
 
@@ -36,17 +35,17 @@ import * as Sharing from "expo-sharing";
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  Modal,
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    Pressable,
+    SafeAreaView,
+    StyleSheet,
+    Text,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -152,7 +151,7 @@ function pickGiftLocked(m: AnyMsg): boolean {
   return !!(p?.gift?.locked || p?.locked);
 }
 
-export default function SharedMediaHub() {
+export default function PurchasedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -173,7 +172,7 @@ export default function SharedMediaHub() {
   const [loading, setLoading] = useState(true);
   const [mediaTab, setMediaTab] = useState<"photos" | "videos">("photos");
 
-  const [shared, setShared] = useState<MediaRow[]>([]);
+  const [purchased, setPurchased] = useState<MediaRow[]>([]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuItem, setMenuItem] = useState<MediaRow | null>(null);
@@ -219,10 +218,12 @@ export default function SharedMediaHub() {
 
           const type = String(m?.type || "");
           const url = pickMediaUrl(m);
+          const giftLocked = pickGiftLocked(m);
           const isMedia = type === "media" || !!url;
 
           if (!isMedia) return false;
           if (!url) return false;
+          if (!giftLocked) return false;
 
           return true;
         })
@@ -244,9 +245,9 @@ export default function SharedMediaHub() {
         .filter((x) => !!x.id && !!x.url)
         .sort((a, b) => b.createdAtMs - a.createdAtMs);
 
-      setShared(media);
+      setPurchased(media);
     } catch {
-      setShared([]);
+      setPurchased([]);
     } finally {
       setLoading(false);
     }
@@ -277,23 +278,7 @@ export default function SharedMediaHub() {
       const j = await r.json().catch(() => ({}));
       if (!j?.ok) throw new Error(j?.error || "Delete failed");
 
-      setShared((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      Alert.alert("Delete failed", e?.message || "Try again");
-    }
-  };
-
-  const deleteForAll = async (id: string) => {
-    try {
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/${id}?scope=all`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!j?.ok) throw new Error(j?.error || "Delete failed");
-
-      setShared((p) => p.filter((x) => x.id !== id));
+      setPurchased((p) => p.filter((x) => x.id !== id));
     } catch (e: any) {
       Alert.alert("Delete failed", e?.message || "Try again");
     }
@@ -352,13 +337,13 @@ export default function SharedMediaHub() {
   };
 
   const photos = useMemo(
-    () => shared.filter((item) => item.mediaType === "image"),
-    [shared]
+    () => purchased.filter((item) => item.mediaType === "image"),
+    [purchased]
   );
 
   const videos = useMemo(
-    () => shared.filter((item) => item.mediaType === "video"),
-    [shared]
+    () => purchased.filter((item) => item.mediaType === "video"),
+    [purchased]
   );
 
   const data = mediaTab === "photos" ? photos : videos;
@@ -444,11 +429,9 @@ export default function SharedMediaHub() {
           </View>
         ) : null}
 
-        {item.giftLocked ? (
-          <View style={styles.giftBadge}>
-            <Ionicons name="gift" size={14} color={RBZ.white} />
-          </View>
-        ) : null}
+        <View style={styles.giftBadge}>
+          <Ionicons name="gift" size={14} color={RBZ.white} />
+        </View>
 
         <Pressable onPress={() => openMenu(item)} style={styles.dotsBtn} hitSlop={10}>
           <Ionicons name="ellipsis-vertical" size={14} color={RBZ.white} />
@@ -466,7 +449,7 @@ export default function SharedMediaHub() {
 
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            Shared Media
+            Purchased Media
           </Text>
           <Text style={styles.headerSub} numberOfLines={1}>
             {peerName}
@@ -496,9 +479,9 @@ export default function SharedMediaHub() {
             color={RBZ.c4}
           />
           <Text style={styles.emptyTitle}>
-            {mediaTab === "photos" ? "No shared photos yet." : "No shared videos yet."}
+            {mediaTab === "photos" ? "No purchased photos yet." : "No purchased videos yet."}
           </Text>
-          <Text style={styles.emptySub}>View once/twice media never appears here.</Text>
+          <Text style={styles.emptySub}>Only locked / purchased media appears here.</Text>
         </View>
       ) : (
         <FlatList
@@ -520,7 +503,7 @@ export default function SharedMediaHub() {
       <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={closeMenu}>
         <Pressable style={styles.menuOverlay} onPress={closeMenu}>
           <Pressable style={styles.menuCard} onPress={() => {}}>
-            <Text style={styles.menuTitle}>Shared media</Text>
+            <Text style={styles.menuTitle}>Purchased media</Text>
 
             <View style={styles.menuHr} />
 
@@ -570,26 +553,6 @@ export default function SharedMediaHub() {
             >
               <Ionicons name="eye-off-outline" size={18} color={RBZ.ink} />
               <Text style={styles.menuText}>Delete for me</Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.menuRow}
-              onPress={() => {
-                const it = menuItem;
-                closeMenu();
-                if (!it) return;
-                Alert.alert("Delete for all", "Remove for both users forever?", [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Delete for all",
-                    style: "destructive",
-                    onPress: () => deleteForAll(it.id),
-                  },
-                ]);
-              }}
-            >
-              <Ionicons name="trash-outline" size={18} color={RBZ.c1} />
-              <Text style={[styles.menuText, { color: RBZ.c1 }]}>Delete for all</Text>
             </Pressable>
 
             <View style={styles.menuHr} />

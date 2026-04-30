@@ -446,8 +446,31 @@ export default function ThreadInfo() {
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Shared Content</Text>
-              <Text style={styles.rowSub}>Tap to view shared media & purchased</Text>
+              <Text style={styles.rowTitle}>Shared Media</Text>
+              <Text style={styles.rowSub}>Photos and videos in separate tabs</Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
+          </View>
+        </Pressable>
+
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: "/chat/purchased-media/[peerId]" as any,
+              params: { peerId, name: baseName, avatar },
+            })
+          }
+          style={styles.card}
+        >
+          <View style={styles.row}>
+            <View style={styles.rowIcon}>
+              <Ionicons name="gift-outline" size={18} color={RBZ.c4} />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Purchased Media</Text>
+              <Text style={styles.rowSub}>Purchased photos and videos in separate tabs</Text>
             </View>
 
             <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />

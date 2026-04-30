@@ -14,10 +14,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   Image,
-  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -26,11 +24,12 @@ import {
   View,
 } from "react-native";
 
+import RBZImageViewer, {
+  type RBZImageViewerItem,
+} from "@/src/components/media/RBZImageViewer";
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
 import { useLetsBuzzActions } from "./LetsBuzzActions";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 /* -------------------------------------------------------------------------- */
 /* Types */
@@ -148,7 +147,9 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
   const [refreshing, setRefreshing] = useState(false);
   const [posts, setPosts] = useState<BuzzPost[]>([]);
   const [meId, setMeId] = useState("");
-  const [fullscreenPost, setFullscreenPost] = useState<BuzzPost | null>(null);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [imageViewerIndex, setImageViewerIndex] = useState(0);
+  const [imageViewerItems, setImageViewerItems] = useState<RBZImageViewerItem[]>([]);
 
   useEffect(() => {
     if (!targetPostId) return;
@@ -309,6 +310,23 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
     setRefreshing(false);
   }, [fetchMeId, loadPosts]);
 
+  const openImageViewer = useCallback((post: BuzzPost) => {
+    const u: BuzzUser = post.user || {};
+    const fullName = [u.firstName, u.lastName]
+      .filter(Boolean)
+      .join(" ") || u.username || "User";
+
+    setImageViewerItems([
+      {
+        id: post.id,
+        url: String(post.mediaUrl || ""),
+        title: fullName,
+      },
+    ]);
+    setImageViewerIndex(0);
+    setImageViewerVisible(true);
+  }, []);
+
   /* ----------------------------- Realtime ----------------------------- */
   useEffect(() => {
     boot();
@@ -364,7 +382,7 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
 
         {/* Media */}
         <Pressable 
-          onPress={() => setFullscreenPost(item)}
+          onPress={() => openImageViewer(item)}
           style={({ pressed }) => [
             styles.mediaContainer,
             pressed && styles.mediaPressed
@@ -470,34 +488,14 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
-      {/* Fullscreen Image Viewer */}
-      <Modal
-        visible={!!fullscreenPost}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFullscreenPost(null)}
-      >
-        <Pressable
-          style={styles.fullscreenBackdrop}
-          onPress={() => setFullscreenPost(null)}
-        >
-          <TouchableOpacity
-            style={styles.fullscreenCloseBtn}
-            onPress={() => setFullscreenPost(null)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="close" size={24} color={COLORS.text.light} />
-          </TouchableOpacity>
-
-          {!!fullscreenPost?.mediaUrl && (
-            <Image
-              source={{ uri: fullscreenPost.mediaUrl }}
-              style={styles.fullscreenImage}
-              resizeMode="contain"
-            />
-          )}
-        </Pressable>
-      </Modal>
+      <RBZImageViewer
+        visible={imageViewerVisible}
+        items={imageViewerItems}
+        initialIndex={imageViewerIndex}
+        title="Let'sBuzz"
+        onClose={() => setImageViewerVisible(false)}
+        onIndexChange={(index) => setImageViewerIndex(index)}
+      />
 
       {/* ✅ Centralized modals */}
       {ActionsModals}
@@ -634,27 +632,5 @@ const styles = StyleSheet.create({
   actionText: {
     ...TYPOGRAPHY.button,
     color: COLORS.text.secondary,
-  },
-  fullscreenBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.96)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fullscreenCloseBtn: {
-    position: "absolute",
-    top: 54,
-    right: 20,
-    zIndex: 20,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fullscreenImage: {
-    width: SCREEN_WIDTH,
-    height: "100%",
   },
 });

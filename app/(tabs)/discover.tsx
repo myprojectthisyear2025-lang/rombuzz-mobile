@@ -17,6 +17,7 @@
 import { API_BASE } from "@/src/config/api";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -24,6 +25,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -254,50 +256,15 @@ function hasAnyActiveFilter(filters: DiscoverFilters, topLookingFor: string) {
   );
 }
 
-function buildRelaxedFilters(filters: DiscoverFilters, stage: number): DiscoverFilters {
-  if (stage <= 0) return filters;
-
-  if (stage === 1) {
-    return {
-      ...filters,
-      relationshipStyle: [],
-      bodyType: [],
-      fitnessLevel: [],
-      smoking: [],
-      drinking: [],
-      workoutFrequency: [],
-      diet: [],
-      sleepSchedule: [],
-      educationLevel: [],
-      travelStyle: [],
-      petsPreference: [],
-    };
-  }
-
-  if (stage === 2) {
-    return {
-      ...filters,
-      vibe: [],
-      relationshipStyle: [],
-      bodyType: [],
-      fitnessLevel: [],
-      smoking: [],
-      drinking: [],
-      workoutFrequency: [],
-      diet: [],
-      sleepSchedule: [],
-      educationLevel: [],
-      travelStyle: [],
-      petsPreference: [],
-      zodiac: [],
-      loveLanguage: [],
-      interest: [],
-      onlineOnly: false,
-    };
-  }
-
+function buildExpandedFilters(filters: DiscoverFilters): DiscoverFilters {
   return {
     ...filters,
+
+    // ✅ HARD filters stay untouched:
+    // rangeMiles, ageMin, ageMax, gender, onlineOnly, verifiedOnly, photosOnly
+
+    // ✅ SOFT filters are relaxed only after user taps "Expand Search"
+    lookingFor: [],
     vibe: [],
     relationshipStyle: [],
     bodyType: [],
@@ -313,8 +280,6 @@ function buildRelaxedFilters(filters: DiscoverFilters, stage: number): DiscoverF
     zodiac: [],
     loveLanguage: [],
     interest: [],
-    onlineOnly: false,
-    verifiedOnly: false,
   };
 }
 
@@ -337,6 +302,9 @@ export default function DiscoverSwipeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ discoverFilters?: string }>();
+
+  const headerTopPadding =
+    Platform.OS === "ios" ? 8 : Math.max(insets.top, 8) + 6;
 
   const parsedFilters = useMemo(
     () => parseDiscoverFilters(params.discoverFilters),
@@ -405,11 +373,9 @@ const nextScale = useAnimatedStyle(() => ({
   // 🔒 hides adult intents; later you’ll gate with real premium/verification
   const [premiumMode, setPremiumMode] = useState(false);
 
-  // ✅ strict → fallback after strict pool is exhausted
+    // ✅ strict = exact filters. fallback = user manually expanded soft filters.
   const [phase, setPhase] = useState<"strict" | "fallback">("strict");
-  const [strictShownCount, setStrictShownCount] = useState(0);
-  const [didAutoFallback, setDidAutoFallback] = useState(false);
-  const [relaxStage, setRelaxStage] = useState(0);
+  const [expandedSearch, setExpandedSearch] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [buzzing, setBuzzing] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -426,10 +392,8 @@ const nextScale = useAnimatedStyle(() => ({
       setFilterLookingFor("");
     }
 
-    setPhase("strict");
-    setStrictShownCount(0);
-    setDidAutoFallback(false);
-    setRelaxStage(0);
+       setPhase("strict");
+    setExpandedSearch(false);
   }, [parsedFilters]);
 
   const authHeaders = useCallback(async () => {
@@ -444,11 +408,54 @@ const nextScale = useAnimatedStyle(() => ({
     };
   }, []);
 
+   const getFreshDeviceCoords = useCallback(async () => {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status !== "granted") {
+        console.warn("📍 Discover GPS permission denied");
+        return null;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const lat = Number(position?.coords?.latitude);
+      const lng = Number(position?.coords?.longitude);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      if (lat < -90 || lat > 90) return null;
+      if (lng < -180 || lng > 180) return null;
+
+      let country = "";
+      let isoCountryCode = "";
+
+      try {
+        const places = await Location.reverseGeocodeAsync({
+          latitude: lat,
+          longitude: lng,
+        });
+
+        const place = Array.isArray(places) ? places[0] : null;
+        country = String(place?.country || "").trim();
+        isoCountryCode = String(place?.isoCountryCode || "").trim();
+      } catch (geoErr) {
+        console.warn("📍 Discover reverse geocode failed:", geoErr);
+      }
+
+      return { lat, lng, country, isoCountryCode };
+    } catch (err) {
+      console.warn("📍 Discover GPS read failed:", err);
+      return null;
+    }
+  }, []);
+
    const fetchDiscover = useCallback(
     async (override?: {
       lookingFor?: string;
       phase?: "strict" | "fallback";
-      relaxStage?: number;
+      expanded?: boolean;
     }) => {
       setLoading(true);
       setMessage("");
@@ -464,16 +471,22 @@ const nextScale = useAnimatedStyle(() => ({
             ? override.phase
             : phase;
 
-        const nextRelaxStage =
-          typeof override?.relaxStage === "number"
-            ? override.relaxStage
-            : relaxStage;
+              const shouldExpand =
+          typeof override?.expanded === "boolean"
+            ? override.expanded
+            : expandedSearch;
 
-        const effective = buildRelaxedFilters(appliedFilters, nextRelaxStage);
+        const effective =
+          shouldExpand || nextPhase === "fallback"
+            ? buildExpandedFilters(appliedFilters)
+            : appliedFilters;
 
         const qs = new URLSearchParams();
 
-        if (lookingFor) qs.set("lookingFor", lookingFor);
+        const effectiveLookingFor =
+          shouldExpand || nextPhase === "fallback" ? "" : lookingFor;
+
+        if (effectiveLookingFor) qs.set("lookingFor", effectiveLookingFor);
         if (nextPhase) qs.set("phase", nextPhase);
 
         if (effective.rangeMiles > 0) {
@@ -508,11 +521,24 @@ const nextScale = useAnimatedStyle(() => ({
         if (effective.educationLevel[0]) {
           qs.set("educationLevel", effective.educationLevel[0]);
         }
-        if (effective.travelStyle[0]) {
+          if (effective.travelStyle[0]) {
           qs.set("travelStyle", effective.travelStyle[0]);
         }
         if (effective.petsPreference[0]) {
           qs.set("petsPreference", effective.petsPreference[0]);
+        }
+
+             const freshCoords = await getFreshDeviceCoords();
+
+        if (freshCoords) {
+          qs.set("lat", String(freshCoords.lat));
+          qs.set("lng", String(freshCoords.lng));
+
+          if (freshCoords.isoCountryCode) {
+            qs.set("viewerCountry", freshCoords.isoCountryCode);
+          } else if (freshCoords.country) {
+            qs.set("viewerCountry", freshCoords.country);
+          }
         }
 
         const headers = await authHeaders();
@@ -550,7 +576,15 @@ const nextScale = useAnimatedStyle(() => ({
         setLoading(false);
       }
     },
-    [authHeaders, appliedFilters, filterLookingFor, phase, relaxStage, router]
+       [
+      authHeaders,
+      appliedFilters,
+      expandedSearch,
+      filterLookingFor,
+      getFreshDeviceCoords,
+      phase,
+      router,
+    ]
   );
 
 
@@ -560,45 +594,24 @@ useFocusEffect(
   }, [fetchDiscover])
 );
 
-useEffect(() => {
-  if (loading) return;
-  if (current) return;
+const canExpandSearch =
+  !loading &&
+  !current &&
+  phase === "strict" &&
+  !expandedSearch &&
+  hasAnyActiveFilter(appliedFilters, filterLookingFor);
 
-  const isFiltered = hasAnyActiveFilter(appliedFilters, filterLookingFor);
-  if (!isFiltered) return;
+const handleExpandSearch = useCallback(async () => {
+  setExpandedSearch(true);
+  setPhase("fallback");
+  setMessage("Expanding search while keeping your hard filters…");
 
-  if (phase === "strict" && relaxStage < 3) {
-    const nextStage = relaxStage + 1;
-
-    setRelaxStage(nextStage);
-    setMessage(
-      nextStage === 1
-        ? "Strict results are done. Expanding lifestyle filters…"
-        : nextStage === 2
-        ? "Still narrow. Expanding to broader matches…"
-        : "Showing broader matches now…"
-    );
-
-    fetchDiscover({ phase: "strict", relaxStage: nextStage });
-    return;
-  }
-
-  if (phase === "strict" && !didAutoFallback) {
-    setDidAutoFallback(true);
-    setPhase("fallback");
-    setMessage("No more strict matches. Showing close matches…");
-    fetchDiscover({ phase: "fallback", relaxStage: 3 });
-  }
-}, [
-  loading,
-  current,
-  appliedFilters,
-  filterLookingFor,
-  phase,
-  relaxStage,
-  didAutoFallback,
-  fetchDiscover,
-]);
+  await fetchDiscover({
+    phase: "fallback",
+    expanded: true,
+    lookingFor: "",
+  });
+}, [fetchDiscover]);
 
 
 const removeTopCard = useCallback(() => {
@@ -623,13 +636,16 @@ const removeTopCard = useCallback(() => {
       photos: Array.isArray((current as any).photos) ? (current as any).photos : [],
       dob: current.dob,
 
-      city: current.city,
+          city: current.city,
       height: current.height,
       orientation: current.orientation,
       interests: current.interests || [],
-      hobbies: current.hobbies || [],
+         hobbies: current.hobbies || [],
       favorites: current.favorites || [],
       distanceMeters: current.distanceMeters,
+      distanceText: current.distanceText || "",
+      isOnline: !!current.isOnline,
+      status: current.status || "inactive",
       fieldVisibility: current.fieldVisibility || {},
       visibilityMode: current.visibilityMode || "full",
     };
@@ -708,17 +724,13 @@ router.push({
 // ======================================
 const onSwipeComplete = useCallback(
   (dir: "left" | "right") => {
-    if (phase === "strict" && hasAnyActiveFilter(appliedFilters, filterLookingFor)) {
-      setStrictShownCount((c) => c + 1);
-    }
-
     if (dir === "right") {
       handleBuzz();
     } else {
       handleSkip();
     }
   },
-  [handleBuzz, handleSkip, phase, appliedFilters, filterLookingFor]
+  [handleBuzz, handleSkip]
 );
 
 // ================================
@@ -758,11 +770,16 @@ const swipeGesture = Gesture.Pan()
     topBlurMode === "blurred" ? Math.round((1 - reveal) * 18) : 0;
 
   const age = computeAge(current?.dob);
+  const serverDistanceText =
+    typeof current?.distanceText === "string"
+      ? current.distanceText.trim()
+      : "";
+
   const distanceText =
-    typeof current?.distanceMeters === "number"
-      ? current.distanceMeters < 1000
-        ? `${current.distanceMeters}m away`
-        : `${(current.distanceMeters / 1000).toFixed(1)}km away`
+    serverDistanceText && serverDistanceText !== "—"
+      ? serverDistanceText
+      : typeof current?.distanceMeters === "number"
+      ? `${Math.max(1, Math.ceil(current.distanceMeters / 1000))} km away`
       : null;
 
   const onPickLookingFor = async (
@@ -778,20 +795,18 @@ const swipeGesture = Gesture.Pan()
 
     // reset strict cycle
     setPhase("strict");
-    setStrictShownCount(0);
-    setDidAutoFallback(false);
-    setRelaxStage(0);
+    setExpandedSearch(false);
 
     setMessage("");
-    await fetchDiscover({ lookingFor: key, phase: "strict", relaxStage: 0 });
+    await fetchDiscover({ lookingFor: key, phase: "strict", expanded: false });
 };
 
-  return (
+   return (
     <SafeAreaView style={styles.safe}>
       {/* Header */}
 <LinearGradient
   colors={[RBZ.c1, RBZ.c4]}
-  style={[styles.header, { paddingTop: insets.top + 6 }]}
+  style={[styles.header, { paddingTop: headerTopPadding }]}
 >
         <View style={styles.headerTop}>
           <Pressable
@@ -886,7 +901,7 @@ const swipeGesture = Gesture.Pan()
       </LinearGradient>
 
          {/* Content */}
-      <View style={styles.body}>
+         <View style={styles.body}>
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color={RBZ.c3} />
@@ -895,11 +910,40 @@ const swipeGesture = Gesture.Pan()
         ) : !current ? (
           <View style={styles.center}>
             <Ionicons name="sparkles" size={28} color={RBZ.c3} />
-            <Text style={styles.emptyTitle}>No more profiles</Text>
-            <Text style={styles.emptySub}>Try a different vibe or refresh.</Text>
-            <Pressable onPress={() => fetchDiscover()} style={styles.primaryBtn}>
-              <Text style={styles.primaryBtnText}>Refresh</Text>
-            </Pressable>
+            <Text style={styles.emptyTitle}>
+              {canExpandSearch ? "No strict matches left" : "No more profiles"}
+            </Text>
+
+            <Text style={styles.emptySub}>
+              {canExpandSearch
+                ? "Your hard filters are still respected. Expand Search will loosen lifestyle and preference filters only."
+                : expandedSearch
+                ? "Expanded search is active. Try changing filters or refresh."
+                : "Try a different vibe or refresh."}
+            </Text>
+
+            {canExpandSearch ? (
+              <Pressable onPress={handleExpandSearch} style={styles.primaryBtn}>
+                <Text style={styles.primaryBtnText}>Expand Search</Text>
+              </Pressable>
+            ) : (
+              <Pressable onPress={() => fetchDiscover()} style={styles.primaryBtn}>
+                <Text style={styles.primaryBtnText}>Refresh</Text>
+              </Pressable>
+            )}
+
+            {expandedSearch ? (
+              <Pressable
+                onPress={async () => {
+                  setExpandedSearch(false);
+                  setPhase("strict");
+                  await fetchDiscover({ phase: "strict", expanded: false });
+                }}
+                style={styles.secondaryBtn}
+              >
+                <Text style={styles.secondaryBtnText}>Back to Strict Filters</Text>
+              </Pressable>
+            ) : null}
           </View>
        ) : (
               <GestureHandlerRootView style={styles.deck}>
@@ -1021,17 +1065,17 @@ const swipeGesture = Gesture.Pan()
 }
 
 const CARD_W = Math.min(width - 28, 420);
-const CARD_H = Math.min(height - 250, 560);
+const CARD_H = Math.min(height - 280, 540);
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: RBZ.soft },
 
   header: {
     paddingTop: 10,
-    paddingBottom: 14,
+    paddingBottom: 10,
     paddingHorizontal: 14,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   headerTop: {
     flexDirection: "row",
@@ -1050,7 +1094,7 @@ const styles = StyleSheet.create({
   hTitle: { color: RBZ.white, fontSize: 22, fontWeight: "900" },
   hSub: { color: "rgba(255,255,255,0.86)", fontSize: 12, marginTop: 2 },
 
-  vibesRow: { paddingTop: 8, paddingBottom: 2, gap: 10, paddingHorizontal: 2 },
+  vibesRow: { paddingTop: 8, paddingBottom: 1, gap: 10, paddingHorizontal: 2 },
   vibeChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -1114,7 +1158,7 @@ const styles = StyleSheet.create({
   centerText: { color: RBZ.gray, fontWeight: "700" },
   emptyTitle: { color: RBZ.black, fontSize: 20, fontWeight: "900", marginTop: 6 },
   emptySub: { color: RBZ.gray, fontWeight: "600", textAlign: "center" },
-  primaryBtn: {
+   primaryBtn: {
     marginTop: 10,
     paddingHorizontal: 18,
     paddingVertical: 12,
@@ -1122,6 +1166,19 @@ const styles = StyleSheet.create({
     backgroundColor: RBZ.c1,
   },
   primaryBtnText: { color: RBZ.white, fontWeight: "900" },
+  secondaryBtn: {
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: "rgba(177,18,60,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(177,18,60,0.18)",
+  },
+  secondaryBtnText: {
+    color: RBZ.c1,
+    fontWeight: "900",
+  },
 
    deck: {
     flex: 1,
