@@ -19,6 +19,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
   targetPostId?: string;
+  targetType?: string;
+  ownerId?: string;
+  openComments?: boolean;
+  commentId?: string;
+  parentId?: string;
+  replyId?: string;
   onClose: () => void;
 };
 
@@ -29,13 +35,27 @@ const COLORS = {
 
 export default function LetsBuzzReelsFullscreen({
   targetPostId,
+  targetType,
+  ownerId,
+  openComments,
+  commentId,
+  parentId,
+  replyId,
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
-      <LetsBuzzReels targetPostId={targetPostId} />
+      <LetsBuzzReels
+        targetPostId={targetPostId}
+        targetType={targetType}
+        ownerId={ownerId}
+        openComments={openComments}
+        commentId={commentId}
+        parentId={parentId}
+        replyId={replyId}
+      />
 
       <View
         pointerEvents="box-none"

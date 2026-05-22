@@ -65,30 +65,33 @@
           "defaultChannel": "default"
         }
       ],
-      
-     [
-  "expo-camera",
-  {
-    "cameraPermission": "Allow RomBuzz to access your camera for photos and videos.",
-    "microphonePermission": "Allow RomBuzz to access your microphone for video recording.",
-    "recordAudioAndroid": true
-  }
-],
-[
-  "expo-av",
-  {
-    "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
-  }
-],
-[
-  "expo-media-library",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow RomBuzz to access your camera for photos and videos.",
+          "microphonePermission": "Allow RomBuzz to access your microphone for video recording.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow RomBuzz to access your microphone for voice messages."
+        }
+      ],
+      [
+        "expo-media-library",
         {
           "photosPermission": "Allow RomBuzz to access your photos and videos.",
           "savePhotosPermission": "Allow RomBuzz to save media to your device.",
           "isAccessMediaLocationEnabled": true,
           "requestAudioPermission": false
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "@react-native-community/datetimepicker",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,

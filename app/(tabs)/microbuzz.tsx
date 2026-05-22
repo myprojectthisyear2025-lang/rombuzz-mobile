@@ -15,6 +15,7 @@
  */
 
 import MatchCelebrateOverlay from "@/src/components/match/MatchCelebrateOverlay";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
 import { Ionicons } from "@expo/vector-icons";
@@ -133,6 +134,15 @@ type BuzzRequestPayload = {
   selfieUrl?: string;
 };
 
+type MicroBuzzReportTarget = {
+  id: string;
+  name?: string;
+  selfieUrl?: string;
+  distanceMeters?: number;
+  source: "mobile_microbuzz_incoming_buzz" | "mobile_microbuzz_nearby_preview";
+  context: "incoming_buzz_request" | "nearby_selfie_preview";
+};
+
 async function getToken() {
   return (await SecureStore.getItemAsync("RBZ_TOKEN")) || "";
 }
@@ -160,6 +170,10 @@ function metersLabel(m?: number) {
   if (!m && m !== 0) return "";
   if (m < 1000) return `${Math.round(m)}m`;
   return `${(m / 1000).toFixed(1)}km`;
+}
+
+function buzzRequestName(req?: BuzzRequestPayload | null) {
+  return [req?.firstName, req?.lastName].filter(Boolean).join(" ").trim() || "MicroBuzz user";
 }
 
 export default function MicroBuzzScreen() {
@@ -207,9 +221,16 @@ export default function MicroBuzzScreen() {
   const [selfiePreviewOpen, setSelfiePreviewOpen] = useState(false);
   const cameraRef = useRef<CameraView>(null as any);
 
-  // Buzz popup
+   // Buzz popup
   const [buzzReq, setBuzzReq] = useState<BuzzRequestPayload | null>(null);
   const [toast, setToast] = useState<{ title: string; sub?: string } | null>(null);
+
+  // Reporting
+  const [incomingReportMenuOpen, setIncomingReportMenuOpen] = useState(false);
+  const [previewReportMenuOpen, setPreviewReportMenuOpen] = useState(false);
+  const [previewReportUser, setPreviewReportUser] = useState<MicroBuzzReportTarget | null>(null);
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<MicroBuzzReportTarget | null>(null);
 
   const [matchOverlay, setMatchOverlay] = useState<{
     id: string;
@@ -835,8 +856,9 @@ export default function MicroBuzzScreen() {
                   }
                 }}
                 hitSlop={12}
-                onLongPress={() => {
+                 onLongPress={() => {
                   if (!mySelfieLocalUri) return;
+                  setPreviewReportUser(null);
                   setPreviewImageUri(mySelfieLocalUri);
                   setSelfiePreviewOpen(true);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1072,7 +1094,15 @@ export default function MicroBuzzScreen() {
                     <Pressable
                       key={u.id}
                       onPress={() => handleBuzz(u.id)}
-                      onLongPress={() => {
+                                        onLongPress={() => {
+                        setPreviewReportUser({
+                          id: String(u.id),
+                          name: String(u.name || "MicroBuzz user"),
+                          selfieUrl: u.selfieUrl,
+                          distanceMeters: u.distanceMeters,
+                          source: "mobile_microbuzz_nearby_preview",
+                          context: "nearby_selfie_preview",
+                        });
                         setPreviewImageUri(u.selfieUrl);
                         setSelfiePreviewOpen(true);
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1207,9 +1237,16 @@ export default function MicroBuzzScreen() {
               </LinearGradient>
 
               <View style={styles.buzzContent}>
-                <Pressable
+                             <Pressable
                   onPress={() => {
                     if (!buzzReq?.selfieUrl) return;
+                    setPreviewReportUser({
+                      id: String(buzzReq.fromId || ""),
+                      name: buzzRequestName(buzzReq),
+                      selfieUrl: buzzReq.selfieUrl,
+                      source: "mobile_microbuzz_incoming_buzz",
+                      context: "incoming_buzz_request",
+                    });
                     setPreviewImageUri(buzzReq.selfieUrl);
                     setSelfiePreviewOpen(true);
                   }}
@@ -1247,17 +1284,118 @@ export default function MicroBuzzScreen() {
                     </LinearGradient>
                   </Pressable>
 
-                  <Pressable
+                             <Pressable
                     onPress={() => setBuzzReq(null)}
                     style={styles.declineAction}
                   >
                     <Text style={styles.declineText}>Not now</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setIncomingReportMenuOpen(true);
+                    }}
+                    style={styles.buzzMoreAction}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="ellipsis-vertical" size={20} color={RBZ.ink} />
                   </Pressable>
                 </View>
               </View>
             </View>
           </View>
         </Modal>
+
+           {/* Incoming Buzz Report Menu */}
+        <Modal
+          visible={incomingReportMenuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIncomingReportMenuOpen(false)}
+        >
+          <Pressable
+            style={styles.microReportMenuOverlay}
+            onPress={() => setIncomingReportMenuOpen(false)}
+          >
+            <Pressable style={styles.microReportMenuCard} onPress={() => {}}>
+              <Pressable
+                style={styles.microReportMenuItem}
+                onPress={() => {
+                  if (!buzzReq?.fromId) return;
+
+                  setReportTarget({
+                    id: String(buzzReq.fromId),
+                    name: buzzRequestName(buzzReq),
+                    selfieUrl: buzzReq.selfieUrl,
+                    source: "mobile_microbuzz_incoming_buzz",
+                    context: "incoming_buzz_request",
+                  });
+                  setIncomingReportMenuOpen(false);
+                  setBuzzReq(null);
+                  setReportSheetOpen(true);
+                }}
+              >
+                <View style={styles.microReportIconBubble}>
+                  <Ionicons name="flag-outline" size={18} color={RBZ.c2} />
+                </View>
+
+                <View style={styles.microReportTextWrap}>
+                  <Text style={styles.microReportTitle}>Report</Text>
+                  <Text style={styles.microReportSubtitle}>
+                    Report this incoming buzz
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={styles.microReportCancelButton}
+                onPress={() => setIncomingReportMenuOpen(false)}
+              >
+                <Text style={styles.microReportCancelText}>Cancel</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {reportTarget ? (
+          <RBZReportSheet
+            visible={reportSheetOpen}
+            onClose={() => {
+              setReportSheetOpen(false);
+              setReportTarget(null);
+            }}
+            onSubmitted={() => {
+              setReportSheetOpen(false);
+              setReportTarget(null);
+            }}
+            target={{
+              targetType: "microbuzz",
+              targetId: String(reportTarget.id || ""),
+              reportedUserId: String(reportTarget.id || ""),
+              targetOwnerId: String(reportTarget.id || ""),
+              source: reportTarget.source,
+              title: reportTarget.name || "MicroBuzz user",
+              subtitle:
+                reportTarget.context === "incoming_buzz_request"
+                  ? "Incoming MicroBuzz request"
+                  : "Nearby MicroBuzz preview",
+              avatar: reportTarget.selfieUrl || "",
+              evidenceSnapshot: {
+                screen: "microbuzz",
+                context: reportTarget.context,
+                reportedUserId: String(reportTarget.id || ""),
+                reportedUserName: reportTarget.name || "",
+                reportedUserSelfie: reportTarget.selfieUrl || "",
+                distanceMeters: reportTarget.distanceMeters ?? null,
+                radiusKm: RADIUS_KM,
+                isActive,
+                hadIncomingBuzz: reportTarget.context === "incoming_buzz_request",
+                myCoordsAvailable: !!coordsRef.current,
+              },
+            }}
+          />
+        ) : null}
 
         {/* Selfie Preview Modal */}
         <Modal visible={selfiePreviewOpen} transparent animationType="fade">
@@ -1266,13 +1404,75 @@ export default function MicroBuzzScreen() {
             onPress={() => {
               setSelfiePreviewOpen(false);
               setPreviewImageUri("");
+              setPreviewReportMenuOpen(false);
+              setPreviewReportUser(null);
             }}
           >
+            {previewReportUser ? (
+              <Pressable
+                style={[styles.previewMenuButton, { top: insets.top + 14 }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setPreviewReportMenuOpen(true);
+                }}
+                hitSlop={10}
+              >
+                <Ionicons name="ellipsis-vertical" size={22} color={RBZ.white} />
+              </Pressable>
+            ) : null}
+
             <Image
               source={{ uri: previewImageUri }}
               style={[styles.previewImage, styles.unmirror]}
               resizeMode="contain"
             />
+          </Pressable>
+        </Modal>
+
+        {/* Preview Report Menu */}
+        <Modal
+          visible={previewReportMenuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewReportMenuOpen(false)}
+        >
+          <Pressable
+            style={styles.microReportMenuOverlay}
+            onPress={() => setPreviewReportMenuOpen(false)}
+          >
+            <Pressable style={styles.microReportMenuCard} onPress={() => {}}>
+              <Pressable
+                style={styles.microReportMenuItem}
+                onPress={() => {
+                  if (!previewReportUser) return;
+
+                  setReportTarget(previewReportUser);
+                  setPreviewReportMenuOpen(false);
+                  setSelfiePreviewOpen(false);
+                  setPreviewImageUri("");
+                  setPreviewReportUser(null);
+                  setReportSheetOpen(true);
+                }}
+              >
+                <View style={styles.microReportIconBubble}>
+                  <Ionicons name="flag-outline" size={18} color={RBZ.c2} />
+                </View>
+
+                <View style={styles.microReportTextWrap}>
+                  <Text style={styles.microReportTitle}>Report</Text>
+                  <Text style={styles.microReportSubtitle}>
+                    Report this MicroBuzz profile
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={styles.microReportCancelButton}
+                onPress={() => setPreviewReportMenuOpen(false)}
+              >
+                <Text style={styles.microReportCancelText}>Cancel</Text>
+              </Pressable>
+            </Pressable>
           </Pressable>
         </Modal>
 
@@ -1933,11 +2133,21 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: RBZ.ink,
   },
-  buzzActions: {
+   buzzActions: {
     flexDirection: "row",
     gap: 12,
     marginTop: 20,
     width: "100%",
+  },
+  buzzMoreAction: {
+    width: 46,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: RBZ.soft,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(11,11,16,0.08)",
   },
   acceptAction: {
     flex: 1,
@@ -1972,16 +2182,97 @@ const styles = StyleSheet.create({
   },
 
   // Preview modal
-  previewOverlay: {
+   previewOverlay: {
     flex: 1,
     backgroundColor: "rgba(11,11,16,0.95)",
     alignItems: "center",
     justifyContent: "center",
   },
+  previewMenuButton: {
+    position: "absolute",
+    right: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    zIndex: 20,
+    elevation: 20,
+  },
   previewImage: {
     width: "90%",
     height: "70%",
     borderRadius: 24,
+  },
+  microReportMenuOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(11,11,16,0.42)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  microReportMenuCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 22,
+    backgroundColor: RBZ.white,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(216,52,95,0.14)",
+    shadowColor: RBZ.ink,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 16,
+  },
+  microReportMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+  },
+  microReportIconBubble: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(216,52,95,0.10)",
+  },
+  microReportTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  microReportTitle: {
+    color: RBZ.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  microReportSubtitle: {
+    color: RBZ.gray,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  microReportCancelButton: {
+    minHeight: 44,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    backgroundColor: RBZ.soft,
+    borderWidth: 1,
+    borderColor: "rgba(11,11,16,0.08)",
+  },
+  microReportCancelText: {
+    color: RBZ.ink,
+    fontSize: 14,
+    fontWeight: "800",
   },
 
   // Camera modal

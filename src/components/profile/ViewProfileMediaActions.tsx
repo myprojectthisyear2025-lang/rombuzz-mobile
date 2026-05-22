@@ -1,44 +1,50 @@
 /**
  * ============================================================================
  * 📁 File: src/components/profile/ViewProfileMediaActions.tsx
- * 🎯 Purpose: Enhanced fullscreen media actions with modern social UI
+ * 🎯 Purpose: Fullscreen media actions for ViewProfile photos/reels.
  *
- * Features:
- *  - Glassmorphic floating action bar
- *  - Micro-interactions (haptic-style press feedback)
- *  - Gradient accent backgrounds
- *  - Reordered: Gift → Comment → Share
- *  - Unique circular icon design with soft shadows
+ * Used by:
+ *  - app/(tabs)/view-profile.tsx
+ *  - RBZImageViewer footer
+ *  - RBZVideoViewer footer
+ *
+ * What it does:
+ *  - Shows Gift / Comment / Share actions on matched user's fullscreen media
+ *  - Uses PrivateCommentsSheet for private comments
+ *  - Keeps media gifts + gift insights working
+ *  - Shares the viewed media directly to the media owner’s chat
+ *
+ * Comment rule:
+ *  - Comments are private between media owner and commenter.
+ *  - Backend enforces privacy.
+ *  - This component only opens the shared reusable comments sheet.
  * ============================================================================
  */
 
+import { getGiftSummary, type GiftSummaryResponse } from "@/src/api/gifts";
 import { API_BASE } from "@/src/config/api";
+import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
+import GiftInsightSheet from "@/src/components/gifts/GiftInsightSheet";
+import GiftPicker from "@/src/components/gifts/GiftPicker";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 type MediaKind = "photo" | "reel";
 
 type ViewProfileMediaItem = {
   id?: string;
+  _id?: string;
   mediaId?: string;
   ownerId?: string;
   userId?: string;
   url?: string;
   mediaUrl?: string;
+  fileUrl?: string;
+  videoUrl?: string;
+  imageUrl?: string;
   type?: string;
   caption?: string;
   comments?: any[];
@@ -51,12 +57,14 @@ type Props = {
   ownerName: string;
   ownerAvatar?: string;
   mediaKind: MediaKind;
+
   /**
    * Pass true from the photo viewer while the image is zoomed.
    * Photos hide the action icons while zoomed so the user can pan freely.
    * Reels ignore this prop.
    */
   isPhotoZoomed?: boolean;
+
   onRefresh?: () => Promise<void> | void;
 };
 
@@ -68,20 +76,7 @@ const RBZ = {
   white: "#ffffff",
   ink: "#111827",
   muted: "#6b7280",
-  line: "rgba(17,24,39,0.10)",
-  dark: "rgba(0,0,0,0.72)",
-  glass: "rgba(20, 20, 30, 0.75)",
-  glassBorder: "rgba(255,255,255,0.12)",
 } as const;
-
-const GIFT_OPTIONS = [
-  { key: "rose", label: "Rose", emoji: "🌹", gradient: ["#ff758c", "#ff7eb3"] },
-  { key: "heart", label: "Heart", emoji: "💖", gradient: ["#f43b47", "#ff6b6b"] },
-  { key: "teddy", label: "Teddy", emoji: "🧸", gradient: ["#d4a373", "#f7d1a0"] },
-  { key: "ring", label: "Ring", emoji: "💍", gradient: ["#c0c0aa", "#e0e0d0"] },
-  { key: "crown", label: "Crown", emoji: "👑", gradient: ["#ffd700", "#ffed4e"] },
-  { key: "sparkle", label: "Sparkle", emoji: "✨", gradient: ["#a8edea", "#fed6e3"] },
-] as const;
 
 function roomIdFor(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -93,6 +88,7 @@ function encodeRBZShare(payload: any) {
 
 async function authHeaders() {
   const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+
   return {
     "Content-Type": "application/json",
     Authorization: token ? `Bearer ${token}` : "",
@@ -102,17 +98,26 @@ async function authHeaders() {
 async function getMeId() {
   try {
     const cached = await SecureStore.getItemAsync("RBZ_USER");
+
     if (cached) {
       const parsed = JSON.parse(cached);
-      const id = parsed?.id || parsed?._id || parsed?.userId || parsed?.user?.id;
+      const id =
+        parsed?.id ||
+        parsed?._id ||
+        parsed?.userId ||
+        parsed?.user?.id ||
+        parsed?.user?._id ||
+        parsed?.user?.userId;
+
       if (id) return String(id);
     }
   } catch {}
 
-  const h = await authHeaders();
-  const res = await fetch(`${API_BASE}/users/me`, { headers: h });
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE}/users/me`, { headers });
   const data = await res.json().catch(() => ({}));
   const id = data?.user?.id || data?.id || data?._id || data?.userId;
+
   return id ? String(id) : "";
 }
 
@@ -121,46 +126,46 @@ function getMediaId(item: ViewProfileMediaItem) {
 }
 
 function getMediaUrl(item: ViewProfileMediaItem) {
-  return String(item?.mediaUrl || item?.url || item?.fileUrl || item?.videoUrl || item?.imageUrl || "").trim();
+  return String(
+    item?.mediaUrl ||
+      item?.url ||
+      item?.fileUrl ||
+      item?.videoUrl ||
+      item?.imageUrl ||
+      ""
+  ).trim();
 }
 
-function commentAuthorName(comment: any) {
-  const author = comment?.author || comment?.user || {};
-  const first = String(author?.firstName || comment?.firstName || "").trim();
-  const last = String(author?.lastName || comment?.lastName || "").trim();
-  const username = String(author?.username || comment?.username || "").trim();
-  const combined = [first, last].filter(Boolean).join(" ").trim();
-  return combined || username || "RomBuzz User";
+function getInitialCommentCount(item: ViewProfileMediaItem) {
+  return Array.isArray(item?.comments) ? item.comments.length : 0;
 }
 
-function commentBody(comment: any) {
-  return String(comment?.text || comment?.body || comment?.comment || "").trim();
-}
-
-function findMediaFromProfile(profileUser: any, mediaId: string) {
-  const sources = [
-    ...(Array.isArray(profileUser?.media) ? profileUser.media : []),
-    ...(Array.isArray(profileUser?.reels) ? profileUser.reels : []),
-    ...(Array.isArray(profileUser?.gallery) ? profileUser.gallery : []),
-    ...(Array.isArray(profileUser?.uploads) ? profileUser.uploads : []),
-  ];
-
-  return sources.find((m: any) => {
-    const id = String(m?.id || m?._id || m?.mediaId || "");
-    return id && id === String(mediaId);
-  });
-}
-
-// Action Button Component for cleaner code
-const ActionButton = ({ icon, onPress, variant = "photo", label, count }: any) => {
+const ActionButton = ({
+  icon,
+  onPress,
+  onLongPress,
+  variant = "photo",
+  label,
+  count,
+}: {
+  icon: any;
+  onPress: () => void;
+  onLongPress?: () => void;
+  variant?: "photo" | "reel";
+  label?: string;
+  count?: number;
+}) => {
   const [pressed, setPressed] = useState(false);
   const isReel = variant === "reel";
+  const hasCount = typeof count === "number" && count > 0;
 
   return (
     <Pressable
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={260}
       hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
       style={[
         isReel ? styles.reelActionItem : styles.photoActionButton,
@@ -168,17 +173,17 @@ const ActionButton = ({ icon, onPress, variant = "photo", label, count }: any) =
       ]}
     >
       <View style={isReel ? styles.reelIconBubble : styles.photoIconBubble}>
-        <Ionicons
-          name={icon}
-          size={isReel ? 28 : 23}
-          color={RBZ.white}
-        />
+        <Ionicons name={icon} size={isReel ? 28 : 23} color={RBZ.white} />
+
+        {!isReel && hasCount ? (
+          <View style={styles.photoCountBadge}>
+            <Text style={styles.photoCountText}>{count}</Text>
+          </View>
+        ) : null}
       </View>
 
       {isReel ? (
-        <Text style={styles.reelActionText}>
-          {typeof count === "number" ? count : label}
-        </Text>
+        <Text style={styles.reelActionText}>{hasCount ? count : label}</Text>
       ) : null}
     </Pressable>
   );
@@ -196,121 +201,121 @@ export default function ViewProfileMediaActions({
   const router = useRouter();
 
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [comments, setComments] = useState<any[]>(Array.isArray(item?.comments) ? item.comments : []);
-  const [commentText, setCommentText] = useState("");
-  const [sendingComment, setSendingComment] = useState(false);
+  const [commentsCount, setCommentsCount] = useState(getInitialCommentCount(item));
 
-  const [giftOpen, setGiftOpen] = useState(false);
-  const [sendingGift, setSendingGift] = useState(false);
+  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
+  const [giftInsightOpen, setGiftInsightOpen] = useState(false);
+  const [giftSummary, setGiftSummary] = useState<GiftSummaryResponse | null>(null);
+  const [giftSummaryLoading, setGiftSummaryLoading] = useState(false);
+
+  const [meId, setMeId] = useState("");
 
   const mediaId = useMemo(() => getMediaId(item), [item]);
   const mediaUrl = useMemo(() => getMediaUrl(item), [item]);
-  const commentsCount = comments.length || (Array.isArray(item?.comments) ? item.comments.length : 0);
+  const giftCount = Number(giftSummary?.totalCount || 0);
 
-  const loadComments = useCallback(async () => {
-    if (!ownerId || !mediaId) return;
+  const ownerUser = useMemo(
+    () => ({
+      id: String(ownerId || item?.ownerId || item?.userId || ""),
+      firstName: String(ownerName || "").split(" ")[0] || "",
+      lastName: String(ownerName || "").split(" ").slice(1).join(" ") || "",
+      avatar: ownerAvatar || "",
+    }),
+    [item?.ownerId, item?.userId, ownerAvatar, ownerId, ownerName]
+  );
 
-    setCommentsOpen(true);
-    setCommentsLoading(true);
+  useEffect(() => {
+    setCommentsCount(getInitialCommentCount(item));
+  }, [item]);
 
-    try {
-      const h = await authHeaders();
-      const res = await fetch(`${API_BASE}/users/${encodeURIComponent(ownerId)}`, { headers: h });
-      const data = await res.json().catch(() => ({}));
-      const media = findMediaFromProfile(data?.user, mediaId);
-      const nextComments = Array.isArray(media?.comments)
-        ? media.comments
-        : Array.isArray(item?.comments)
-        ? item.comments
-        : [];
-      setComments(nextComments);
-    } catch {
-      setComments(Array.isArray(item?.comments) ? item.comments : []);
-    } finally {
-      setCommentsLoading(false);
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const id = await getMeId();
+        if (alive) setMeId(id);
+      } catch {
+        if (alive) setMeId("");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const reloadGiftSummary = useCallback(async () => {
+    if (!ownerId || !mediaId) {
+      setGiftSummary(null);
+      return;
     }
-  }, [item, mediaId, ownerId]);
-
-  const sendComment = useCallback(async () => {
-    const text = commentText.trim();
-    if (!text || !ownerId || !mediaId || sendingComment) return;
 
     try {
-      setSendingComment(true);
-      const h = await authHeaders();
-      const res = await fetch(`${API_BASE}/media/${encodeURIComponent(ownerId)}/comment`, {
-        method: "POST",
-        headers: h,
-        body: JSON.stringify({
-          mediaId,
-          text,
-          parentId: null,
-        }),
+      setGiftSummaryLoading(true);
+
+      const summary = await getGiftSummary({
+        receiverId: String(ownerId),
+        targetType: "gallery_media",
+        targetId: String(mediaId),
+        includeTransactions: true,
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || data?.message || "Could not post comment.");
-
-      setCommentText("");
-      await loadComments();
-      await onRefresh?.();
-    } catch (e: any) {
-      Alert.alert("Comment", e?.message || "Could not post comment.");
+      setGiftSummary(summary);
+    } catch {
+      setGiftSummary(null);
     } finally {
-      setSendingComment(false);
+      setGiftSummaryLoading(false);
     }
-  }, [commentText, loadComments, mediaId, onRefresh, ownerId, sendingComment]);
+  }, [mediaId, ownerId]);
 
-  const sendGift = useCallback(
-    async (giftKey: string) => {
-      if (!ownerId || !mediaId || sendingGift) return;
+  useEffect(() => {
+    reloadGiftSummary();
+  }, [reloadGiftSummary]);
 
-      try {
-        setSendingGift(true);
-        const h = await authHeaders();
-        const res = await fetch(`${API_BASE}/media/${encodeURIComponent(ownerId)}/gifts`, {
-          method: "POST",
-          headers: h,
-          body: JSON.stringify({
-            mediaId,
-            giftKey,
-            amount: 1,
-          }),
-        });
+  const openGiftInsight = useCallback(async () => {
+    if (!ownerId || !mediaId || giftSummaryLoading) return;
 
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(
-            data?.error ||
-              data?.message ||
-              "Gallery media gifts are not ready on the backend yet."
-          );
-        }
+    if (!giftSummary) {
+      await reloadGiftSummary();
+    }
 
-        setGiftOpen(false);
-        Alert.alert("✨ Gift sent!", `You sent ${ownerName || "this user"} a ${giftKey} gift.`);
-        await onRefresh?.();
-      } catch (e: any) {
-        Alert.alert("Gift", e?.message || "Could not send gift.");
-      } finally {
-        setSendingGift(false);
-      }
-    },
-    [mediaId, onRefresh, ownerId, ownerName, sendingGift]
-  );
+    const currentCount = Number(giftSummary?.totalCount || 0);
+    if (currentCount <= 0) return;
+
+    setGiftInsightOpen(true);
+  }, [giftSummary, giftSummaryLoading, mediaId, ownerId, reloadGiftSummary]);
+
+  const openComments = useCallback(() => {
+    if (!ownerId || !mediaId) {
+      Alert.alert("Comments", "Missing media details.");
+      return;
+    }
+
+    setCommentsOpen(true);
+  }, [mediaId, ownerId]);
+
+  const handleCommentsChanged = useCallback((nextComments: any[]) => {
+    setCommentsCount(Array.isArray(nextComments) ? nextComments.length : 0);
+  }, []);
+
+  const handleGiftSent = useCallback(async () => {
+    await reloadGiftSummary();
+    await onRefresh?.();
+  }, [onRefresh, reloadGiftSummary]);
 
   const shareToOwner = useCallback(async () => {
     try {
-      const meId = await getMeId();
+      const myId = meId || (await getMeId());
       const targetOwnerId = String(ownerId || item?.ownerId || item?.userId || "").trim();
 
-      if (!meId || !targetOwnerId) throw new Error("Missing user id.");
-      if (meId === targetOwnerId) throw new Error("You cannot share this to yourself.");
+      if (!myId || !targetOwnerId) throw new Error("Missing user id.");
+      if (myId === targetOwnerId) throw new Error("You cannot share this to yourself.");
       if (!mediaId || !mediaUrl) throw new Error("Missing media details.");
 
-      const h = await authHeaders();
-      const roomId = roomIdFor(meId, targetOwnerId);
+      const headers = await authHeaders();
+      const roomId = roomIdFor(myId, targetOwnerId);
+
       const text = encodeRBZShare({
         type: "share_profile_media",
         mediaType: mediaKind,
@@ -323,12 +328,15 @@ export default function ViewProfileMediaActions({
 
       const res = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
         method: "POST",
-        headers: h,
+        headers,
         body: JSON.stringify({ text, to: targetOwnerId }),
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || data?.message || "Could not share media.");
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || "Could not share media.");
+      }
 
       router.push({
         pathname: "/chat/[peerId]" as any,
@@ -338,19 +346,29 @@ export default function ViewProfileMediaActions({
           avatar: ownerAvatar || "",
         },
       });
-    } catch (e: any) {
-      Alert.alert("Share", e?.message || "Could not share media.");
+    } catch (error: any) {
+      Alert.alert("Share", error?.message || "Could not share media.");
     }
-  }, [item, mediaId, mediaKind, mediaUrl, ownerAvatar, ownerId, ownerName, router]);
+  }, [item, meId, mediaId, mediaKind, mediaUrl, ownerAvatar, ownerId, ownerName, router]);
 
   return (
     <>
-      {/* Fullscreen media actions */}
       {mediaKind === "photo" ? (
         isPhotoZoomed ? null : (
           <View style={styles.photoActionsShell} pointerEvents="box-none">
-            <ActionButton icon="gift-outline" onPress={() => setGiftOpen(true)} />
-            <ActionButton icon="chatbubble-outline" onPress={loadComments} />
+            <ActionButton
+              icon="gift-outline"
+              count={giftCount}
+              onPress={() => setGiftPickerOpen(true)}
+              onLongPress={openGiftInsight}
+            />
+
+            <ActionButton
+              icon="chatbubble-outline"
+              count={commentsCount}
+              onPress={openComments}
+            />
+
             <ActionButton icon="paper-plane-outline" onPress={shareToOwner} />
           </View>
         )
@@ -359,153 +377,61 @@ export default function ViewProfileMediaActions({
           <ActionButton
             variant="reel"
             icon="gift-outline"
-           // label="Gift"
-            onPress={() => setGiftOpen(true)}
+            count={giftCount}
+            onPress={() => setGiftPickerOpen(true)}
+            onLongPress={openGiftInsight}
           />
 
           <ActionButton
             variant="reel"
             icon="chatbubble-outline"
-           // count={commentsCount}
-            onPress={loadComments}
+            label="Comments"
+            count={commentsCount}
+            onPress={openComments}
           />
 
           <ActionButton
             variant="reel"
             icon="paper-plane-outline"
-           // label="Share"
+            label="Share"
             onPress={shareToOwner}
           />
         </View>
       )}
 
-      {/* Comments Modal - Enhanced */}
-      <Modal
-        visible={commentsOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCommentsOpen(false)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setCommentsOpen(false)}>
-          <Pressable style={styles.commentSheet} onPress={() => {}}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>💬 Comments</Text> 
-              <Pressable onPress={() => setCommentsOpen(false)} style={styles.closeButton}>
-                <Ionicons name="close" size={18} color={RBZ.ink} />
-              </Pressable>
-            </View>
+      {ownerId && mediaId ? (
+        <PrivateCommentsSheet
+          visible={commentsOpen}
+          onClose={() => setCommentsOpen(false)}
+          targetType="gallery_media"
+          targetId={String(mediaId)}
+          ownerId={String(ownerId)}
+          currentUserId={String(meId || "")}
+          ownerUser={ownerUser}
+          title="Private Comments"
+          subtitle="Visible only to you and the media owner."
+          onChanged={handleCommentsChanged}
+        />
+      ) : null}
 
-            {commentsLoading ? (
-              <View style={styles.loadingBox}>
-                <ActivityIndicator color={RBZ.c2} size="large" />
-              </View>
-            ) : (
-              <ScrollView style={styles.commentsList} showsVerticalScrollIndicator={false}>
-                {comments.length > 0 ? (
-                  comments.map((comment, index) => (
-                    <View key={String(comment?.id || comment?._id || index)} style={styles.commentItem}>
-                      <View style={styles.commentAvatarPlaceholder}>
-                        <Text style={styles.commentAvatarText}>
-                          {commentAuthorName(comment).charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.commentContent}>
-                        <Text style={styles.commentAuthor}>{commentAuthorName(comment)}</Text>
-                        <Text style={styles.commentText}>{commentBody(comment)}</Text>
-                      </View>
-                    </View>
-                  ))
-                ) : (
-                  <View style={styles.emptyComments}>
-                    <LinearGradient
-                      colors={[RBZ.c2, RBZ.c4]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.emptyIconCircle}
-                    >
-                      <Ionicons name="chatbubble-ellipses-outline" size={32} color={RBZ.white} />
-                    </LinearGradient>
-                    <Text style={styles.emptyCommentsText}>No comments yet</Text>
-                    <Text style={styles.emptyCommentsSubtext}>Be the first to comment!</Text>
-                  </View>
-                )}
-              </ScrollView>
-            )}
+      <GiftPicker
+        visible={giftPickerOpen}
+        onClose={() => setGiftPickerOpen(false)}
+        receiverId={String(ownerId || "")}
+        placement="profile_media"
+        targetType="gallery_media"
+        targetId={String(mediaId || "")}
+        title="Send a Gift"
+        subtitle={`Send a gift to ${ownerName || "this user"}.`}
+        onSent={handleGiftSent}
+      />
 
-            <View style={styles.commentComposer}>
-              <TextInput
-                value={commentText}
-                onChangeText={setCommentText}
-                placeholder="Write a comment..."
-                placeholderTextColor={RBZ.muted}
-                style={styles.commentInput}
-                multiline
-              />
-              <Pressable
-                onPress={sendComment}
-                disabled={sendingComment || !commentText.trim()}
-                style={[
-                  styles.sendButton,
-                  (!commentText.trim() || sendingComment) && styles.sendButtonDisabled,
-                ]}
-              >
-                {sendingComment ? (
-                  <ActivityIndicator size="small" color={RBZ.white} />
-                ) : (
-                  <Ionicons name="send" size={16} color={RBZ.white} />
-                )}
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Gift Modal - Enhanced with gradients */}
-      <Modal
-        visible={giftOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setGiftOpen(false)}
-      >
-        <Pressable style={styles.modalBackdropCenter} onPress={() => setGiftOpen(false)}>
-          <Pressable style={styles.giftCard} onPress={() => {}}>
-            <LinearGradient
-              colors={["#fff", "#fef2f2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.giftCardGradient}
-            >
-              <Text style={styles.giftTitle}>🎁 Send a Gift</Text>
-              <Text style={styles.giftSubtitle}>Show some love! 💝</Text>
-
-              <View style={styles.giftGrid}>
-                {GIFT_OPTIONS.map((gift) => (
-                  <Pressable
-                    key={gift.key}
-                    onPress={() => sendGift(gift.key)}
-                    disabled={sendingGift}
-                    style={({ pressed }) => [
-                      styles.giftOption,
-                      pressed && styles.giftOptionPressed,
-                    ]}
-                  >
-                    <LinearGradient
-                      colors={gift.gradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.giftEmojiCircle}
-                    >
-                      <Text style={styles.giftEmoji}>{gift.emoji}</Text>
-                    </LinearGradient>
-                    <Text style={styles.giftLabel}>{gift.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </LinearGradient>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <GiftInsightSheet
+        visible={giftInsightOpen}
+        onClose={() => setGiftInsightOpen(false)}
+        summary={giftSummary}
+        currentUserId={meId}
+      />
     </>
   );
 }
@@ -522,7 +448,8 @@ const styles = StyleSheet.create({
     zIndex: 40,
     elevation: 40,
   },
-   reelActionsShell: {
+
+  reelActionsShell: {
     position: "absolute",
     right: 16,
     bottom: 135,
@@ -531,6 +458,7 @@ const styles = StyleSheet.create({
     zIndex: 40,
     elevation: 40,
   },
+
   photoActionButton: {
     width: 46,
     height: 46,
@@ -538,15 +466,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   reelActionItem: {
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
   },
+
   actionButtonPressed: {
     transform: [{ scale: 0.92 }],
     opacity: 0.82,
   },
+
   photoIconBubble: {
     width: 46,
     height: 46,
@@ -562,6 +493,28 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+
+  photoCountBadge: {
+    position: "absolute",
+    top: -7,
+    right: -7,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: RBZ.c2,
+    borderWidth: 1,
+    borderColor: RBZ.white,
+  },
+
+  photoCountText: {
+    color: RBZ.white,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
   reelIconBubble: {
     width: 44,
     height: 44,
@@ -572,6 +525,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.10)",
   },
+
   reelActionText: {
     color: "#fff",
     fontSize: 12,
@@ -579,218 +533,5 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.45)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalBackdropCenter: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 18,
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-  commentSheet: {
-    maxHeight: "78%",
-    minHeight: "48%",
-    backgroundColor: RBZ.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 10,
-    overflow: "hidden",
-  },
-  sheetHandle: {
-    width: 44,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(17,24,39,0.16)",
-    alignSelf: "center",
-    marginBottom: 10,
-  },
-  sheetHeader: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(17,24,39,0.08)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  sheetTitle: {
-    color: RBZ.ink,
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(17,24,39,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  loadingBox: {
-    height: 200,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  commentsList: {
-    paddingHorizontal: 16,
-    flex: 1,
-  },
-  commentItem: {
-    flexDirection: "row",
-    gap: 12,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(17,24,39,0.06)",
-  },
-  commentAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: RBZ.c2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  commentAvatarText: {
-    color: RBZ.white,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  commentContent: {
-    flex: 1,
-  },
-  commentAuthor: {
-    color: RBZ.ink,
-    fontSize: 13,
-    fontWeight: "900",
-    marginBottom: 3,
-  },
-  commentText: {
-    color: RBZ.ink,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  emptyComments: {
-    minHeight: 200,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 32,
-  },
-  emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  emptyCommentsText: {
-    color: RBZ.ink,
-    fontSize: 15,
-    fontWeight: "800",
-    marginTop: 8,
-  },
-  emptyCommentsSubtext: {
-    color: RBZ.muted,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  commentComposer: {
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(17,24,39,0.08)",
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 8,
-  },
-  commentInput: {
-    flex: 1,
-    minHeight: 42,
-    maxHeight: 96,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: "rgba(17,24,39,0.05)",
-    color: RBZ.ink,
-    fontSize: 14,
-  },
-  sendButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: RBZ.c2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sendButtonDisabled: {
-    opacity: 0.45,
-  },
-  giftCard: {
-    width: "100%",
-    maxWidth: 360,
-    borderRadius: 32,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-  giftCardGradient: {
-    padding: 20,
-  },
-  giftTitle: {
-    color: RBZ.ink,
-    fontSize: 20,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  giftSubtitle: {
-    color: RBZ.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 4,
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  giftGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    justifyContent: "center",
-  },
-  giftOption: {
-    width: "30%",
-    minWidth: 90,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 20,
-    backgroundColor: "rgba(216,52,95,0.06)",
-  },
-  giftOptionPressed: {
-    transform: [{ scale: 0.96 }],
-    backgroundColor: "rgba(216,52,95,0.12)",
-  },
-  giftEmojiCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
-  giftEmoji: {
-    fontSize: 28,
-  },
-  giftLabel: {
-    marginTop: 4,
-    color: RBZ.ink,
-    fontSize: 12,
-    fontWeight: "700",
   },
 });

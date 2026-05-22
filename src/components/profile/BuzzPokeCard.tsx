@@ -10,15 +10,29 @@
  * BEHAVIOR:
  * - Visible only for matched users
  * - Loads directed streak from GET /matchstreak/:otherUserId
- * - Sends buzz via POST /buzz
- * - Respects backend cooldown (3 seconds)
+ * - Sends normal free buzz via POST /buzz
+ * - Long press opens premium Buzz picker
+ * - Paid Buzzes require confirmation unless remembered
+ * - Paid Buzzes send through POST /premium-buzz/send
+ * - Respects backend cooldown
  * - Sends streak/time state back to parent via onMetaChange
  * ============================================================
  */
 
+import BuzzTypePicker from "@/src/components/buzz/BuzzTypePicker";
+import PaidBuzzConfirmSheet from "@/src/components/buzz/PaidBuzzConfirmSheet";
+import PremiumBuzzSenderBurst from "@/src/components/buzz/PremiumBuzzSenderBurst";
+import { useBuzzCoinBalance } from "@/src/components/buzz/useBuzzCoinBalance";
+import { useBuzzSelection } from "@/src/components/buzz/useBuzzSelection";
 import { API_BASE } from "@/src/config/api";
+import {
+  formatBuzzPrice,
+  getNormalBuzzType,
+  type BuzzType,
+} from "@/src/config/buzzTypes";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -36,6 +50,7 @@ const RBZ = {
   c3: "#e9486a",
   c4: "#b5179e",
   white: "#ffffff",
+  muted: "#6b7280",
 };
 
 export type BuzzPokeMeta = {
@@ -84,13 +99,36 @@ export default function BuzzPokeCard({
   matched,
   onMetaChange,
 }: Props) {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(false);
   const [buzzing, setBuzzing] = useState(false);
+  const [paidBuzzing, setPaidBuzzing] = useState(false);
   const [retryLeft, setRetryLeft] = useState(0);
   const [streak, setStreak] = useState<StreakPayload>({
     count: 0,
     lastBuzz: null,
   });
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingBuzzType, setPendingBuzzType] = useState<BuzzType | null>(null);
+  const [rememberChoice, setRememberChoice] = useState(false);
+  const [senderBurstType, setSenderBurstType] = useState<BuzzType | null>(null);
+
+  const {
+    selectedBuzzType,
+    selectedBuzzTypeId,
+    quickSendPaidBuzz,
+    saveSelection,
+  } = useBuzzSelection(userId);
+
+  const {
+    spendableBalance,
+    balanceLoading,
+    loadSpendableBalance,
+    updateSpendableBalanceFromPayload,
+  } = useBuzzCoinBalance();
 
   const streakCount = Number(streak?.count || 0);
 
@@ -105,6 +143,11 @@ export default function BuzzPokeCard({
     }, 1000);
     return () => clearTimeout(t);
   }, [retryLeft]);
+
+  useEffect(() => {
+    if (!matched) return;
+    loadSpendableBalance();
+  }, [loadSpendableBalance, matched]);
 
   const getToken = useCallback(async () => {
     return await SecureStore.getItemAsync("RBZ_TOKEN");
@@ -176,6 +219,14 @@ export default function BuzzPokeCard({
     loadStreak();
   }, [loadStreak]);
 
+  const showSenderBurst = useCallback((type: BuzzType) => {
+    setSenderBurstType(type);
+
+    setTimeout(() => {
+      setSenderBurstType(null);
+    }, 2200);
+  }, []);
+
   const sendBuzz = useCallback(async () => {
     if (!matched || !userId) return;
     if (buzzing) return;
@@ -234,30 +285,207 @@ export default function BuzzPokeCard({
     }
   }, [buzzing, emitMeta, getToken, matched, retryLeft, userId]);
 
+  const openBuyBuzzCoin = useCallback(() => {
+    setConfirmOpen(false);
+    setPendingBuzzType(null);
+    setRememberChoice(false);
+    setPickerOpen(false);
+
+    router.push("/premium" as any);
+  }, [router]);
+
+  const sendPaidBuzz = useCallback(
+    async (type: BuzzType, rememberAfterSend: boolean) => {
+      if (!matched || !userId) return;
+      if (!type.isPaid) {
+        await sendBuzz();
+        return;
+      }
+
+      if (paidBuzzing) return;
+      if (retryLeft > 0) return;
+
+      try {
+        setPaidBuzzing(true);
+
+        const token = await getToken();
+        if (!token) {
+          Alert.alert("Session expired", "Please log in again.");
+          return;
+        }
+
+        const res = await fetch(`${API_BASE}/premium-buzz/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            to: userId,
+            buzzType: type.id,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        updateSpendableBalanceFromPayload(data);
+
+        if (res.status === 402 || data?.code === "INSUFFICIENT_BUZZCOIN") {
+          setConfirmOpen(true);
+          setPendingBuzzType(type);
+          return;
+        }
+
+        if (res.status === 429) {
+          const retryInMs = Number(data?.retryInMs || 3000);
+          const retrySeconds = Math.max(1, Math.ceil(retryInMs / 1000));
+          setRetryLeft(retrySeconds);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to send premium Buzz");
+        }
+
+        if (rememberAfterSend) {
+          await saveSelection(type, true);
+        }
+
+        const nextCount = Number(data?.streak || streakCount || 0);
+        const nextLastBuzz = new Date().toISOString();
+
+        setStreak((prev) => ({
+          ...prev,
+          count: nextCount,
+          lastBuzz: nextLastBuzz,
+        }));
+
+        emitMeta(nextCount, nextLastBuzz);
+        showSenderBurst(type);
+        setRetryLeft(3);
+
+        setConfirmOpen(false);
+        setPendingBuzzType(null);
+        setRememberChoice(false);
+      } catch (err: any) {
+        Alert.alert(
+          "Premium Buzz failed",
+          err?.message || "Something went wrong."
+        );
+      } finally {
+        setPaidBuzzing(false);
+      }
+    },
+    [
+      emitMeta,
+      getToken,
+      matched,
+      paidBuzzing,
+      retryLeft,
+      saveSelection,
+      sendBuzz,
+      showSenderBurst,
+      streakCount,
+      updateSpendableBalanceFromPayload,
+      userId,
+    ]
+  );
+
+  const handleMainPress = useCallback(() => {
+    if (!selectedBuzzType.isPaid) {
+      sendBuzz();
+      return;
+    }
+
+    if (quickSendPaidBuzz) {
+      sendPaidBuzz(selectedBuzzType, true);
+      return;
+    }
+
+    setPendingBuzzType(selectedBuzzType);
+    setRememberChoice(false);
+    setConfirmOpen(true);
+  }, [quickSendPaidBuzz, selectedBuzzType, sendBuzz, sendPaidBuzz]);
+
+  const handleLongPress = useCallback(() => {
+    loadSpendableBalance();
+    setPickerOpen(true);
+  }, [loadSpendableBalance]);
+
+  const handleSelectBuzzType = useCallback(
+    async (type: BuzzType) => {
+      setPickerOpen(false);
+
+      if (!type.isPaid) {
+        await saveSelection(getNormalBuzzType(), false);
+        return;
+      }
+
+      setPendingBuzzType(type);
+      setRememberChoice(false);
+      setConfirmOpen(true);
+    },
+    [saveSelection]
+  );
+
+  const handleCancelConfirm = useCallback(() => {
+    if (paidBuzzing) return;
+
+    setConfirmOpen(false);
+    setPendingBuzzType(null);
+    setRememberChoice(false);
+  }, [paidBuzzing]);
+
+  const handleSendConfirmedPaidBuzz = useCallback(() => {
+    if (!pendingBuzzType) return;
+    sendPaidBuzz(pendingBuzzType, rememberChoice);
+  }, [pendingBuzzType, rememberChoice, sendPaidBuzz]);
+
   if (!matched) return null;
+
+  const buttonDisabled =
+    buzzing || paidBuzzing || retryLeft > 0 || loading;
+
+  const buttonText = buzzing
+    ? "Buzzing..."
+    : paidBuzzing
+    ? "Sending..."
+    : loading
+    ? "Loading..."
+    : retryLeft > 0
+    ? `Retry ${retryLeft}s`
+    : selectedBuzzType.isPaid
+    ? `${selectedBuzzType.emoji} ${selectedBuzzType.shortLabel}`
+    : "Buzz";
 
   return (
     <View style={styles.slot}>
       <Pressable
-        onPress={sendBuzz}
-        disabled={buzzing || retryLeft > 0 || loading}
+        onPress={handleMainPress}
+        onLongPress={handleLongPress}
+        delayLongPress={260}
+        disabled={buttonDisabled}
         style={({ pressed }) => [
           styles.buttonWrap,
-          pressed && !buzzing && retryLeft <= 0 ? { opacity: 0.94 } : null,
+          pressed && !buttonDisabled ? { opacity: 0.94 } : null,
         ]}
       >
         <LinearGradient
           colors={
-            buzzing || retryLeft > 0 || loading
+            buttonDisabled
               ? ["#d1d5db", "#9ca3af"]
+              : selectedBuzzType.isPaid
+              ? (selectedBuzzType.gradient as any)
               : [RBZ.c2, RBZ.c4]
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.button}
         >
-          {buzzing || loading ? (
+          {buzzing || paidBuzzing || loading ? (
             <ActivityIndicator size="small" color={RBZ.white} />
+          ) : selectedBuzzType.isPaid ? (
+            <Text style={styles.buttonEmoji}>{selectedBuzzType.emoji}</Text>
           ) : (
             <Ionicons
               name={retryLeft > 0 ? "time-outline" : "flash"}
@@ -266,17 +494,45 @@ export default function BuzzPokeCard({
             />
           )}
 
-          <Text style={styles.buttonText}>
-            {buzzing
-              ? "Buzzing..."
-              : loading
-              ? "Loading..."
-              : retryLeft > 0
-              ? `Retry ${retryLeft}s`
-              : "Buzz"}
-          </Text>
+          <View style={styles.buttonTextWrap}>
+            <Text numberOfLines={1} style={styles.buttonText}>
+              {buttonText}
+            </Text>
+
+            {selectedBuzzType.isPaid && !buttonDisabled ? (
+              <Text numberOfLines={1} style={styles.buttonSubText}>
+                {formatBuzzPrice(selectedBuzzType)}
+              </Text>
+            ) : null}
+          </View>
         </LinearGradient>
       </Pressable>
+
+      <BuzzTypePicker
+        visible={pickerOpen}
+        selectedBuzzTypeId={selectedBuzzTypeId}
+        spendableBalance={spendableBalance}
+        balanceLoading={balanceLoading}
+        onClose={() => setPickerOpen(false)}
+        onSelect={handleSelectBuzzType}
+      />
+
+      <PaidBuzzConfirmSheet
+        visible={confirmOpen}
+        buzzType={pendingBuzzType}
+        spendableBalance={spendableBalance}
+        rememberChoice={rememberChoice}
+        sending={paidBuzzing}
+        onRememberChoiceChange={setRememberChoice}
+        onCancel={handleCancelConfirm}
+        onSend={handleSendConfirmedPaidBuzz}
+        onBuyBuzzCoin={openBuyBuzzCoin}
+      />
+
+      <PremiumBuzzSenderBurst
+        visible={!!senderBurstType}
+        buzzType={senderBurstType}
+      />
     </View>
   );
 }
@@ -298,15 +554,30 @@ const styles = StyleSheet.create({
   button: {
     height: 50,
     borderRadius: 16,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 7,
+  },
+  buttonEmoji: {
+    fontSize: 17,
+  },
+  buttonTextWrap: {
+    minWidth: 0,
+    alignItems: "center",
   },
   buttonText: {
     color: RBZ.white,
     fontWeight: "900",
-    fontSize: 15,
+    fontSize: 14,
+    maxWidth: 78,
+  },
+  buttonSubText: {
+    marginTop: -1,
+    color: "rgba(255,255,255,0.86)",
+    fontWeight: "800",
+    fontSize: 10,
+    maxWidth: 78,
   },
 });

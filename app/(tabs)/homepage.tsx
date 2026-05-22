@@ -401,7 +401,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* UPGRADE CTA - PREMIUM DESIGN */}
+            {/* UPGRADE CTA - PREMIUM DESIGN */}
         <Pressable
           onPress={() => router.push("/upgrade")}
           style={({ pressed }) => [
@@ -429,6 +429,20 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={28} color="#8B4513" />
             </View>
           </LinearGradient>
+        </Pressable>
+
+        {/* TEMP DEV ONLY: Gift system test entry */}
+        <Pressable
+          onPress={() => router.push("/gift-test" as any)}
+          style={({ pressed }) => [
+            styles.giftTestButton,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.giftTestButtonText}>🎁 Open Gift Test</Text>
+          <Text style={styles.giftTestButtonSubtext}>
+            Temporary developer test screen
+          </Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -937,5 +951,38 @@ compactCardIconGlow: {
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 18,
+  },
+
+  giftTestButton: {
+    marginHorizontal: 20,
+    marginTop: 18,
+    marginBottom: 10,
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    backgroundColor: '#351024',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 105, 180, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#351024',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+
+  giftTestButtonText: {
+    color: RBZ.white,
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+
+  giftTestButtonSubtext: {
+    marginTop: 4,
+    color: 'rgba(255, 255, 255, 0.72)',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

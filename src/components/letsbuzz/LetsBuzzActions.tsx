@@ -3,104 +3,70 @@
  * 📁 File: src/components/letsbuzz/LetsBuzzActions.tsx
  * 🎯 Purpose: Centralized actions (Gift / Comment / Share) for LetsBuzz posts
  *
- * Guarantees:
- *  - Gift picker UI unchanged (emoji + label)
- *  - Gift insights:
- *      • Owner → all gifters + gifts
- *      • Gifter → ONLY what they sent
- *      • Others → nothing
- *  - Comments are private (owner + commenter)
- *  - Share → sends to owner chat + opens chat
+ * Uses:
+ *  - GiftPicker for sending gifts
+ *  - GiftInsightSheet for gift summary
+ *  - PrivateCommentsSheet for all private comment UI
+ *
+ * Comment rule:
+ *  - Comments are private between the post/media owner and the commenter.
+ *  - Backend enforces privacy.
+ *  - This file only opens the shared reusable comment sheet.
+ *
+ * Share rule:
+ *  - Share sends viewed content directly to the content owner’s personal chat.
  * ============================================================================
  */
+
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  FlatList,
-  Image,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Alert } from "react-native";
 
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
+import GiftPicker from "@/src/components/gifts/GiftPicker";
+import GiftInsightSheet from "@/src/components/gifts/GiftInsightSheet";
+import { getGiftSummary, type GiftSummaryResponse } from "@/src/api/gifts";
+import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 
 type BuzzUser = {
   id?: string;
+  _id?: string;
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  avatarUrl?: string;
+  photoUrl?: string;
+  profilePic?: string;
+  photos?: any[];
+  username?: string;
 };
 
-type GiftSummaryRow = {
-  userId: string;
-  user?: BuzzUser;
-  gifts?: Record<string, number>;
-  total?: number;
-};
-
-type GiftSummary = {
-  postId: string;
-  ownerId: string;
-  total: number;
-  byGift?: Record<string, number>;
-  byUser?: GiftSummaryRow[] | null;
-
-  // (we add this on the client, even if backend doesn't send it)
-  viewerRole?: "owner" | "gifter" | "viewer";
-};
-
-type BuzzComment = {
-  id: string;
-  userId: string;
-  text: string;
-  parentId: string | null;
-  createdAt: any;
-  updatedAt: any;
-  author?: BuzzUser;
-};
 type BuzzPost = {
-  id?: string;      // legacy
-  _id?: string;     // mongo
+  id?: string;
+  _id?: string;
   userId: string;
   mediaUrl?: string;
+  text?: string;
+  caption?: string;
+  type?: string;
+  createdAt?: any;
   user?: BuzzUser;
 
-  // ✅ gallery-backed letsbuzz feed support
+  // gallery-backed LetsBuzz feed support
   mediaId?: string;
   fromGallery?: boolean;
   commentsCount?: number;
 };
 
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  sub: "rgba(255,255,255,0.70)",
-  text: "rgba(255,255,255,0.92)",
-};
-
-const GIFT_OPTIONS = [
-  { key: "rose", label: "Rose", emoji: "🌹" },
-  { key: "heart", label: "Heart", emoji: "💖" },
-  { key: "teddy", label: "Teddy", emoji: "🧸" },
-  { key: "ring", label: "Ring", emoji: "💍" },
-  { key: "crown", label: "Crown", emoji: "👑" },
-  { key: "sparkle", label: "Sparkle", emoji: "✨" },
-] as const;
+type CommentTargetType = "gallery_media" | "buzz_post";
 
 async function authHeaders() {
   const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+
   return {
     "Content-Type": "application/json",
     Authorization: token ? `Bearer ${token}` : "",
@@ -110,8 +76,41 @@ async function authHeaders() {
 function roomIdFor(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
 }
+
 function getPostId(post: any) {
-  return post?.id || post?._id;
+  return String(post?.id || post?._id || "").trim();
+}
+
+function getTargetId(post: any) {
+  if (!post) return "";
+
+  if (post.fromGallery) {
+    return String(post.mediaId || post.id || post._id || "").trim();
+  }
+
+  return getPostId(post);
+}
+
+function getTargetType(post: any): CommentTargetType {
+  return post?.fromGallery ? "gallery_media" : "buzz_post";
+}
+
+function getOwnerName(user?: BuzzUser | null) {
+  const first = String(user?.firstName || "").trim();
+  const last = String(user?.lastName || "").trim();
+  const username = String(user?.username || "").trim();
+  return [first, last].filter(Boolean).join(" ").trim() || username || "RomBuzz User";
+}
+
+function getOwnerAvatar(user?: BuzzUser | null) {
+  return (
+    user?.avatar ||
+    user?.avatarUrl ||
+    user?.photoUrl ||
+    user?.profilePic ||
+    user?.photos?.[0] ||
+    "https://i.pravatar.cc/200?img=12"
+  );
 }
 
 function encodeRBZSharePost(payload: any) {
@@ -126,223 +125,108 @@ export function useLetsBuzzActions(meId: string) {
   // 🎁 Gifts
   const [giftPickerOpen, setGiftPickerOpen] = useState(false);
   const [giftInsightsOpen, setGiftInsightsOpen] = useState(false);
-  const [giftSummary, setGiftSummary] = useState<GiftSummary | null>(null);
+  const [giftSummary, setGiftSummary] = useState<GiftSummaryResponse | null>(null);
 
-  // 💬 Comments
-   // 💬 Comments
-   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [comments, setComments] = useState<BuzzComment[]>([]);
-  const [commentText, setCommentText] = useState("");
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
+    // 💬 Shared private comments sheet
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
-  // comment counts per post (so Posts/Reels can show “· N”)
+  // 🚩 Shared report sheet
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportPost, setReportPost] = useState<BuzzPost | null>(null);
+
+  // Comment counts per target. This keeps Posts/Reels badges working.
   const commentCountByPostRef = useRef<Record<string, number>>({});
-  const getKnownCommentCount = useCallback((postId?: string) => {
-    if (!postId) return 0;
-    return commentCountByPostRef.current[postId] || 0;
-  }, []);
-
   const [, forceCountsRerender] = useState(0);
 
-  const parseError = async (r: Response) => {
+  const getKnownCommentCount = useCallback((postId?: string) => {
+    if (!postId) return 0;
+    return commentCountByPostRef.current[String(postId)] || 0;
+  }, []);
 
+  const parseError = useCallback(async (res: Response) => {
     try {
-      const j = await r.json();
-      return j?.error || j?.message || "request_failed";
+      const json = await res.json();
+      return json?.error || json?.message || "request_failed";
     } catch {
       return "request_failed";
     }
-  };
-
-    const loadGalleryComments = useCallback(
-    async (post: BuzzPost) => {
-      const h = await authHeaders();
-
-      const ownerRes = await fetch(`${API_BASE}/users/${post.userId}`, { headers: h });
-      if (!ownerRes.ok) throw new Error(await parseError(ownerRes));
-
-      const ownerJson = await ownerRes.json();
-      const mediaList = Array.isArray(ownerJson?.user?.media) ? ownerJson.user.media : [];
-
-      const media = mediaList.find(
-        (m: any) => String(m?.id || "") === String(post.mediaId || post.id)
-      );
-
-       const rawList = Array.isArray(media?.comments)
-        ? media.comments.map((c: any) => ({
-            ...c,
-            author:
-              c?.userId === post.userId
-                ? post.user
-                : c?.userId === meId
-                ? { id: meId, firstName: "You" }
-                : { id: c?.userId, firstName: "User" },
-            canEdit: String(c?.userId || "") === String(meId),
-            canDelete:
-              String(c?.userId || "") === String(meId) ||
-              String(post.userId || "") === String(meId),
-            canReply:
-              String(c?.userId || "") === String(meId) ||
-              String(post.userId || "") === String(meId),
-          }))
-        : [];
-
-      const topLevel = rawList
-        .filter((c: any) => !c?.parentId)
-        .sort((a: any, b: any) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
-
-      const replies = rawList
-        .filter((c: any) => !!c?.parentId)
-        .sort((a: any, b: any) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
-
-      const list: any[] = [];
-      for (const parent of topLevel) {
-        list.push(parent);
-
-        const childReplies = replies.filter(
-          (r: any) => String(r?.parentId || "") === String(parent.id)
-        );
-
-        for (const child of childReplies) {
-          list.push(child);
-        }
-      }
-
-      const orphanReplies = replies.filter(
-        (r: any) => !topLevel.some((p: any) => String(p.id) === String(r.parentId))
-      );
-
-      for (const orphan of orphanReplies) {
-        list.push(orphan);
-      }
-
-      setComments(list);
-
-      const postKey = String(post.id || post._id || "");
-      commentCountByPostRef.current[postKey] = list.length;
-      forceCountsRerender((x) => x + 1);
-
-      return list;
-    },
-    [meId, parseError]
-  );
-
-  const replySeedFor = useCallback((name?: string) => {
-    const clean = String(name || "").trim().replace(/\s+/g, " ");
-    return clean ? `@${clean} ` : "";
   }, []);
 
-  const reloadCommentsForPost = useCallback(
-    async (post?: BuzzPost | null) => {
-      const target = post || activePost;
-      if (!target) return;
+  const activeGiftTargetId = useMemo(() => {
+    return getTargetId(activePost);
+  }, [activePost]);
 
-      if (target.fromGallery) {
-        await loadGalleryComments(target);
-        return;
-      }
+  const activeGiftTargetType = useMemo(() => {
+    return getTargetType(activePost);
+  }, [activePost]);
 
-      const h = await authHeaders();
-      const postId = getPostId(target);
-      if (!postId) throw new Error("missing_post_id");
+  const rememberCommentCount = useCallback((post: BuzzPost | null, count: number) => {
+    if (!post) return;
 
-      const r = await fetch(`${API_BASE}/buzz/posts/${postId}/comments`, { headers: h });
-      if (!r.ok) throw new Error(await parseError(r));
+    const safeCount = Math.max(0, Number(count || 0));
+    const targetId = getTargetId(post);
+    const postId = getPostId(post);
 
-      const j = await r.json();
-      const list = Array.isArray(j?.comments) ? j.comments : [];
-      setComments(list);
+    if (targetId) {
+      commentCountByPostRef.current[targetId] = safeCount;
+    }
 
-      commentCountByPostRef.current[String(postId)] = list.length;
-      forceCountsRerender((x) => x + 1);
-    },
-    [activePost, loadGalleryComments, parseError]
-  );
+    if (postId) {
+      commentCountByPostRef.current[postId] = safeCount;
+    }
+
+    forceCountsRerender((x) => x + 1);
+  }, []);
 
   /* ------------------------------------------------------------------ */
-  /* 📡 Realtime: comment socket sync                                    */
+  /* 📡 Realtime: comment socket badge sync                              */
   /* ------------------------------------------------------------------ */
   useEffect(() => {
-  let alive = true;
-  let socket: any = null;
+    let alive = true;
+    let socket: any = null;
 
-  let onNew: any = null;
-  let onDeleted: any = null;
-  let onReact: any = null;
-  let onUpdated: any = null;
+    let onNew: any = null;
+    let onDeleted: any = null;
 
-  (async () => {
-    socket = await getSocket();
-    if (!alive || !socket?.on || !socket?.off) return;
+    (async () => {
+      socket = await getSocket();
+      if (!alive || !socket?.on || !socket?.off) return;
 
-    const refreshIfActive = async (postId: string) => {
-      try {
-        if (!alive) return;
-        if (!activePost || !commentsOpen) return;
+      onNew = (payload: any) => {
+        const postId = String(payload?.postId || payload?.mediaId || payload?.targetId || "");
+        if (!postId) return;
 
-        const activeId = String(activePost.id || activePost._id || "");
-        if (activeId !== String(postId)) return;
+        commentCountByPostRef.current[postId] =
+          Number(commentCountByPostRef.current[postId] || 0) + 1;
 
-        await reloadCommentsForPost(activePost);
-      } catch {}
+        forceCountsRerender((x) => x + 1);
+      };
+
+      onDeleted = (payload: any) => {
+        const postId = String(payload?.postId || payload?.mediaId || payload?.targetId || "");
+        if (!postId) return;
+
+        commentCountByPostRef.current[postId] = Math.max(
+          0,
+          Number(commentCountByPostRef.current[postId] || 0) - 1
+        );
+
+        forceCountsRerender((x) => x + 1);
+      };
+
+      socket.on("comment:new", onNew);
+      socket.on("comment:deleted", onDeleted);
+    })();
+
+    return () => {
+      alive = false;
+
+      if (socket?.off) {
+        if (onNew) socket.off("comment:new", onNew);
+        if (onDeleted) socket.off("comment:deleted", onDeleted);
+      }
     };
-
-    onNew = async (p: any) => {
-      const postId = String(p?.postId || "");
-      if (!postId) return;
-
-      commentCountByPostRef.current[postId] =
-        (commentCountByPostRef.current[postId] || 0) + 1;
-
-      forceCountsRerender((x) => x + 1);
-      await refreshIfActive(postId);
-    };
-
-    onDeleted = async (p: any) => {
-      const postId = String(p?.postId || "");
-      if (!postId) return;
-
-      commentCountByPostRef.current[postId] = Math.max(
-        0,
-        (commentCountByPostRef.current[postId] || 0) - 1
-      );
-
-      forceCountsRerender((x) => x + 1);
-      await refreshIfActive(postId);
-    };
-
-    onReact = async (p: any) => {
-      const postId = String(p?.postId || "");
-      if (!postId) return;
-      await refreshIfActive(postId);
-    };
-
-    onUpdated = async (p: any) => {
-      const postId = String(p?.postId || "");
-      if (!postId) return;
-      await refreshIfActive(postId);
-    };
-
-    socket.on("comment:new", onNew);
-    socket.on("comment:deleted", onDeleted);
-    socket.on("comment:react", onReact);
-    socket.on("comment:reactRemoved", onReact);
-    socket.on("comment:updated", onUpdated);
-  })();
-
-  return () => {
-    alive = false;
-
-    if (socket?.off) {
-      if (onNew) socket.off("comment:new", onNew);
-      if (onDeleted) socket.off("comment:deleted", onDeleted);
-      if (onReact) socket.off("comment:react", onReact);
-      if (onReact) socket.off("comment:reactRemoved", onReact);
-      if (onUpdated) socket.off("comment:updated", onUpdated);
-    }
-  };
-}, [activePost, commentsOpen, reloadCommentsForPost]);
+  }, []);
 
   /* ------------------------------------------------------------------ */
   /* 🎁 Gift: picker                                                     */
@@ -352,220 +236,77 @@ export function useLetsBuzzActions(meId: string) {
     setGiftPickerOpen(true);
   }, []);
 
- const sendGift = useCallback(
-  async (giftKey: string) => {
-    if (!activePost) return;
-
-    const postId = getPostId(activePost);
-    if (!postId) return;
-
+  /* ------------------------------------------------------------------ */
+  /* 🎁 Gift: insights                                                   */
+  /* ------------------------------------------------------------------ */
+  const openGiftInsights = useCallback(async (post: BuzzPost) => {
     try {
-      const h = await authHeaders();
-      const r = await fetch(`${API_BASE}/buzz/posts/${postId}/gifts`, {
-        method: "POST",
-        headers: h,
-        body: JSON.stringify({ giftKey, amount: 1 }),
+      const targetId = getTargetId(post);
+      const targetType = getTargetType(post);
+
+      if (!targetId) return;
+
+      const res = await getGiftSummary({
+        receiverId: String(post.userId || ""),
+        targetType,
+        targetId,
+        includeTransactions: true,
       });
-        if (!r.ok) throw new Error(await parseError(r));
 
-        setGiftPickerOpen(false);
-      } catch (e: any) {
-        Alert.alert("Gift", e?.message ? String(e.message) : "Failed to send gift.");
+      if (!res?.rows?.length && Number(res?.totalCount || 0) <= 0) {
+        return;
       }
-    },
-    [activePost]
-  );
 
-  /* ------------------------------------------------------------------ */
-  /* 🎁 Gift: insights (long press)                                      */
-  /* ------------------------------------------------------------------ */
-  const openGiftInsights = useCallback(
-    async (post: BuzzPost) => {
-      try {
-        const h = await authHeaders();
-        const r = await fetch(`${API_BASE}/buzz/posts/${getPostId(post)}/gifts/summary`, {
-          headers: h,
-        });
-
-        if (!r.ok) throw new Error(await parseError(r));
-
-        const j = (await r.json()) as GiftSummary;
-        const isOwner = String(post.userId) === String(meId);
-
-        // Owner: show all gifters (backend already returns byUser)
-        if (isOwner) {
-          j.viewerRole = "owner";
-          setActivePost(post);
-          setGiftSummary(j);
-          setGiftInsightsOpen(true);
-          return;
-        }
-
-        // Gifter: only show what they sent.
-        // NOTE: This REQUIRES backend patch (below) to return byUser=[{userId:me,...}] for gifters.
-        const mine = Array.isArray(j.byUser)
-          ? j.byUser.filter((u) => String(u.userId) === String(meId))
-          : [];
-
-        if (!mine.length) {
-          // Everyone else sees nothing (silent)
-          return;
-        }
-
-        j.byUser = mine;
-        j.viewerRole = "gifter";
-        setActivePost(post);
-        setGiftSummary(j);
-        setGiftInsightsOpen(true);
-      } catch {
-        // Silent by design
-      }
-    },
-    [meId]
-  );
+      setActivePost(post);
+      setGiftSummary(res);
+      setGiftInsightsOpen(true);
+    } catch {
+      // Silent by design.
+      // Gift privacy is controlled by backend.
+    }
+  }, []);
 
   /* ------------------------------------------------------------------ */
   /* 💬 Comments                                                         */
   /* ------------------------------------------------------------------ */
-const openComments = useCallback(async (post: BuzzPost) => {
-  try {
-    setActivePost(post);
-    setCommentText("");
-    setEditingCommentId(null);
-    setReplyingTo(null);
+   const openComments = useCallback((post: BuzzPost) => {
+    const targetId = getTargetId(post);
 
-    if (post.fromGallery) {
-      await loadGalleryComments(post);
-      setCommentsOpen(true);
+    if (!targetId) {
+      Alert.alert("Comments", "Missing post/media id.");
       return;
     }
 
-    const h = await authHeaders();
-    const postId = getPostId(post);
-    if (!postId) throw new Error("missing_post_id");
-
-    const r = await fetch(`${API_BASE}/buzz/posts/${postId}/comments`, { headers: h });
-    if (!r.ok) throw new Error(await parseError(r));
-
-    const j = await r.json();
-    const list = Array.isArray(j?.comments) ? j.comments : [];
-    setComments(list);
-
-    commentCountByPostRef.current[postId] = list.length;
-    forceCountsRerender((x) => x + 1);
-
-    setCommentsOpen(true);
-  } catch (e: any) {
-    setCommentsOpen(false);
-    Alert.alert("Comments", e?.message ? String(e.message) : "Failed to load comments.");
-  }
-}, [loadGalleryComments, parseError]);
-   const sendComment = useCallback(async () => {
-    if (!activePost) return;
-    const rawText = commentText.trim();
-    if (!rawText) return;
-
-    try {
-      const h = await authHeaders();
-
-      // ✅ gallery-backed letsbuzz media comment flow
-      if (activePost.fromGallery) {
-        const mediaId = String(activePost.mediaId || activePost.id);
-        if (!mediaId) throw new Error("missing_media_id");
-
-        if (editingCommentId) {
-          const r = await fetch(
-            `${API_BASE}/media/${activePost.userId}/comment/${editingCommentId}`,
-            {
-              method: "PATCH",
-              headers: h,
-              body: JSON.stringify({
-                mediaId,
-                text: rawText,
-              }),
-            }
-          );
-
-          if (!r.ok) throw new Error(await parseError(r));
-
-          setCommentText("");
-          setEditingCommentId(null);
-          setReplyingTo(null);
-          await reloadCommentsForPost(activePost);
-          return;
-        }
-
-           const textToSend =
-          replyingTo && !rawText.startsWith("@")
-            ? `${replySeedFor(replyingTo.name)}${rawText}`
-            : rawText;
-
-        const r = await fetch(`${API_BASE}/media/${activePost.userId}/comment`, {
-          method: "POST",
-          headers: h,
-          body: JSON.stringify({
-            mediaId,
-            text: textToSend,
-            parentId: replyingTo ? String(replyingTo.id) : null,
-          }),
-        });
-
-        if (!r.ok) throw new Error(await parseError(r));
-
-        setCommentText("");
-        setEditingCommentId(null);
-        setReplyingTo(null);
-        await reloadCommentsForPost(activePost);
-        return;
-      }
-
-      const postId = getPostId(activePost);
-      if (!postId) throw new Error("missing_post_id");
-
-      if (editingCommentId) {
-        const r = await fetch(
-          `${API_BASE}/buzz/posts/${postId}/comments/${editingCommentId}`,
-          {
-            method: "PATCH",
-            headers: h,
-            body: JSON.stringify({ text: rawText }),
-          }
-        );
-        if (!r.ok) throw new Error(await parseError(r));
-
-        setCommentText("");
-        setEditingCommentId(null);
-        setReplyingTo(null);
-      } else {
-        const r = await fetch(`${API_BASE}/buzz/posts/${postId}/comments`, {
-          method: "POST",
-          headers: h,
-          body: JSON.stringify({
-            text: rawText,
-            parentId: replyingTo ? String(replyingTo.id) : null,
-          }),
-        });
-        if (!r.ok) throw new Error(await parseError(r));
-
-        setCommentText("");
-        setEditingCommentId(null);
-        setReplyingTo(null);
-      }
-
-      await reloadCommentsForPost(activePost);
-    } catch (e: any) {
-      Alert.alert("Comments", e?.message ? String(e.message) : "Failed to send comment.");
+    if (!post?.userId) {
+      Alert.alert("Comments", "Missing owner id.");
+      return;
     }
-  }, [
-    activePost,
-    commentText,
-    editingCommentId,
-    replyingTo,
-    parseError,
-    reloadCommentsForPost,
-    replySeedFor,
-  ]);
-   /* ------------------------------------------------------------------ */
+
+    setActivePost(post);
+    setCommentsOpen(true);
+  }, []);
+
+  /* ------------------------------------------------------------------ */
+  /* 🚩 Report                                                           */
+  /* ------------------------------------------------------------------ */
+  const openReport = useCallback((post: BuzzPost) => {
+    const targetId = getTargetId(post);
+
+    if (!targetId) {
+      Alert.alert("Report", "Missing post/media id.");
+      return;
+    }
+
+    if (!post?.userId) {
+      Alert.alert("Report", "Missing post owner id.");
+      return;
+    }
+
+    setReportPost(post);
+    setReportSheetOpen(true);
+  }, []);
+
+  /* ------------------------------------------------------------------ */
   /* ✈️ Share                                                            */
   /* ------------------------------------------------------------------ */
   const shareToOwner = useCallback(
@@ -573,531 +314,158 @@ const openComments = useCallback(async (post: BuzzPost) => {
       try {
         const ownerId = String(post.userId || "");
         const my = String(meId || "");
+
         if (!ownerId || !my) throw new Error("missing_user_id");
         if (ownerId === my) throw new Error("cant_share_to_self");
 
-        const roomId = roomIdFor(my, ownerId);
-        const h = await authHeaders();
-
-        const postId = getPostId(post);
+        const postId = getTargetId(post);
         if (!postId) throw new Error("missing_post_id");
+
+        const roomId = roomIdFor(my, ownerId);
+        const headers = await authHeaders();
 
         const text = encodeRBZSharePost({
           type: "share_post",
           postId,
           ownerId,
           mediaUrl: post.mediaUrl || "",
+          targetType: getTargetType(post),
         });
 
-        const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
+        const res = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
           method: "POST",
-          headers: h,
+          headers,
           body: JSON.stringify({ text, to: ownerId }),
         });
 
-             if (!r.ok) throw new Error(await parseError(r));
+        if (!res.ok) throw new Error(await parseError(res));
 
         router.push({
           pathname: "/chat/[peerId]" as any,
           params: {
             peerId: ownerId,
-            name:
-              [post?.user?.firstName, post?.user?.lastName].filter(Boolean).join(" ") ||
-              "RomBuzz User",
-            avatar:
-              post?.user?.avatar ||
-              "https://i.pravatar.cc/200?img=12",
+            name: getOwnerName(post.user),
+            avatar: getOwnerAvatar(post.user),
           },
         });
-      } catch (e: any) {
-        const msg = e?.message ? String(e.message) : "Could not share post.";
-        Alert.alert("Share", msg);
+      } catch (error: any) {
+        const message = error?.message ? String(error.message) : "Could not share post.";
+        Alert.alert("Share", message);
       }
     },
-    [meId, router]
+    [meId, parseError, router]
   );
 
   /* ------------------------------------------------------------------ */
-  /* ✅ Modals (render once)                                              */
+  /* ✅ Modals                                                           */
   /* ------------------------------------------------------------------ */
   const ActionsModals = useMemo(() => {
-    const role = giftSummary?.viewerRole || "viewer";
-    const isOwnerView = role === "owner";
-    const isGifterView = role === "gifter";
+    const commentTargetId = getTargetId(activePost);
+    const commentTargetType = getTargetType(activePost);
 
     return (
       <>
-        {/* 🎁 Gift Picker */}
-        <Modal visible={giftPickerOpen} transparent animationType="fade" onRequestClose={() => setGiftPickerOpen(false)}>
-          <Pressable style={styles.backdropCenter} onPress={() => setGiftPickerOpen(false)}>
-            <Pressable style={styles.modalCard} onPress={() => {}}>
-              <Text style={styles.modalTitle}>Send a gift</Text>
+        {activePost && activeGiftTargetId ? (
+          <GiftPicker
+            visible={giftPickerOpen}
+            onClose={() => setGiftPickerOpen(false)}
+            receiverId={String(activePost.userId || "")}
+            placement="posts"
+            targetType={activeGiftTargetType}
+            targetId={activeGiftTargetId}
+            title="Send a Gift"
+            subtitle="Pick a gift for this post."
+            onSent={() => {
+              setGiftPickerOpen(false);
+            }}
+          />
+        ) : null}
 
-              <View style={styles.giftGrid}>
-                {GIFT_OPTIONS.map((g) => (
-                  <TouchableOpacity key={g.key} style={styles.giftItem} onPress={() => sendGift(g.key)}>
-                    <Text style={styles.giftEmoji}>{g.emoji}</Text>
-                    <Text style={styles.giftLabel}>{g.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        {/* 🎁 Gift Insights (Bottom Sheet) */}
-        <Modal visible={giftInsightsOpen} transparent animationType="slide" onRequestClose={() => setGiftInsightsOpen(false)}>
-          <Pressable style={styles.backdropBottom} onPress={() => setGiftInsightsOpen(false)}>
-            <Pressable style={styles.sheet} onPress={() => {}}>
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>{isOwnerView ? "Gifts Received" : "Gifts You Sent"}</Text>
-                <TouchableOpacity onPress={() => setGiftInsightsOpen(false)}>
-                  <Ionicons name="close" size={22} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.privateHint}>
-                {isOwnerView ? "Visible only to you." : "Visible only to you (what you sent)."}
-              </Text>
-
-              {isOwnerView && (
-                <FlatList
-                  data={giftSummary?.byUser || []}
-                  keyExtractor={(u) => String(u.userId)}
-                  contentContainerStyle={{ paddingBottom: 16 }}
-                  renderItem={({ item }) => {
-                    const usr = item.user || {};
-                    const name = `${usr.firstName || ""} ${usr.lastName || ""}`.trim() || "User";
-
-                    return (
-                      <View style={styles.giftUserRow}>
-                        <TouchableOpacity
-                          style={styles.giftUserLeft}
-                          onPress={() => router.push(`/view-profile?id=${item.userId}` as any)}
-                        >
-                          <Image source={{ uri: usr.avatar || "https://via.placeholder.com/80" }} style={styles.giftUserAvatar} />
-                          <Text style={styles.giftUserName}>{name}</Text>
-                        </TouchableOpacity>
-
-                        <View style={styles.giftList}>
-                          {Object.entries(item.gifts || {}).map(([k, v]) => {
-                            const opt = GIFT_OPTIONS.find((x) => x.key === k);
-                            const label = opt ? `${opt.emoji} ×${v}` : `${k} ×${v}`;
-                            return (
-                              <View key={k} style={styles.giftBadge}>
-                                <Text style={styles.giftBadgeText}>{label}</Text>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    );
-                  }}
-                  ListEmptyComponent={
-                    <View style={styles.center}>
-                      <Text style={{ color: RBZ.sub }}>No gifts yet.</Text>
-                    </View>
-                  }
-                />
-              )}
-
-              {isGifterView && (
-                <View style={{ paddingTop: 8 }}>
-                  {giftSummary?.byUser?.[0]?.gifts && Object.keys(giftSummary.byUser[0].gifts).length > 0 ? (
-                    <View style={styles.giftListGifter}>
-                      {Object.entries(giftSummary.byUser[0].gifts || {}).map(([k, v]) => {
-                        const opt = GIFT_OPTIONS.find((x) => x.key === k);
-                        const label = opt ? `${opt.emoji} ${opt.label} ×${v}` : `${k} ×${v}`;
-                        return (
-                          <View key={k} style={styles.giftBadgeBig}>
-                            <Text style={styles.giftBadgeText}>{label}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <View style={styles.center}>
-                      <Text style={{ color: RBZ.sub }}>No gifts sent yet.</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        {/* 💬 Comments (Bottom Sheet) */}
-        <Modal visible={commentsOpen} transparent animationType="slide" onRequestClose={() => setCommentsOpen(false)}>
-          <Pressable style={styles.backdropBottom} onPress={() => setCommentsOpen(false)}>
-            <Pressable style={styles.sheet} onPress={() => {}}>
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Private Comments</Text>
-                <TouchableOpacity onPress={() => setCommentsOpen(false)}>
-                  <Ionicons name="close" size={22} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.privateHint}>Visible only to you and the post owner.</Text>
-
-              <FlatList
-                data={comments}
-                keyExtractor={(c) => String(c.id)}
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingBottom: 12 }}
-                            renderItem={({ item }) => {
-                  const a = item.author || {};
-                  const nm = `${a.firstName || ""} ${a.lastName || ""}`.trim() || "User";
-                  const isReply = !!item.parentId;
-
-                  const parentComment = isReply
-                    ? comments.find((c) => String(c.id) === String(item.parentId))
-                    : null;
-
-                  const parentAuthor = parentComment?.author || {};
-                  const parentName =
-                    `${parentAuthor.firstName || ""} ${parentAuthor.lastName || ""}`.trim() ||
-                    (parentComment?.userId === meId ? "You" : "User");
-
-                  return (
-               <View
-                 style={[
-                   styles.commentRow,
-                   isReply ? styles.replyCommentRow : null,
-                 ]}
-               >
-  <Image source={{ uri: a.avatar || "https://via.placeholder.com/80" }} style={styles.commentAvatar} />
-
-  <View style={{ flex: 1 }}>
-    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-      <Text style={styles.commentName}>{nm}</Text>
-
-       {(item as any).canEdit || (item as any).canDelete || (item as any).canReply ? (
-        <TouchableOpacity
-          onPress={() => {
-            const actions: any[] = [];
-
-            if ((item as any).canReply) {
-              actions.push({
-                text: "Reply",
-                onPress: () => {
-                  setEditingCommentId(null);
-                  setReplyingTo({
-                    id: String(item.id),
-                    name: nm,
-                  });
-                  setCommentText(replySeedFor(nm));
-                },
-              });
-            }
-
-            if ((item as any).canEdit) {
-              actions.push({
-                text: "Edit",
-                onPress: () => {
-                  setReplyingTo(null);
-                  setEditingCommentId(String(item.id));
-                  setCommentText(item.text);
-                },
-              });
-            }
-
-            if ((item as any).canDelete) {
-              actions.push({
-                text: "Delete",
-                style: "destructive",
-                onPress: async () => {
-                  try {
-                    if (!activePost) return;
-                    const h = await authHeaders();
-
-                    if (activePost.fromGallery) {
-                      const mediaId = String(activePost.mediaId || activePost.id);
-                      if (!mediaId) throw new Error("missing_media_id");
-
-                      const r = await fetch(
-                        `${API_BASE}/media/${activePost.userId}/comment/${item.id}`,
-                        {
-                          method: "DELETE",
-                          headers: h,
-                          body: JSON.stringify({ mediaId }),
-                        }
-                      );
-
-                      if (!r.ok) throw new Error(await parseError(r));
-
-                      if (editingCommentId === String(item.id)) {
-                        setEditingCommentId(null);
-                        setCommentText("");
-                      }
-
-                      if (replyingTo?.id === String(item.id)) {
-                        setReplyingTo(null);
-                        setCommentText("");
-                      }
-
-                      await reloadCommentsForPost(activePost);
-                      return;
-                    }
-
-                    const postId = getPostId(activePost);
-                    if (!postId) return;
-
-                    const r = await fetch(
-                      `${API_BASE}/buzz/posts/${postId}/comments/${item.id}`,
-                      { method: "DELETE", headers: h }
-                    );
-
-                    if (!r.ok) throw new Error(await parseError(r));
-
-                    if (editingCommentId === String(item.id)) {
-                      setEditingCommentId(null);
-                      setCommentText("");
-                    }
-
-                    if (replyingTo?.id === String(item.id)) {
-                      setReplyingTo(null);
-                      setCommentText("");
-                    }
-
-                    await reloadCommentsForPost(activePost);
-                  } catch (e: any) {
-                    Alert.alert("Comments", e?.message || "Delete failed");
-                  }
-                },
-              });
-            }
-
-            actions.push({ text: "Cancel", style: "cancel" });
-            Alert.alert("Comment", "Choose action", actions);
+        <GiftInsightSheet
+          visible={giftInsightsOpen}
+          summary={giftSummary}
+          onClose={() => {
+            setGiftInsightsOpen(false);
+            setGiftSummary(null);
           }}
-        >
-          <Ionicons name="ellipsis-horizontal" size={18} color={RBZ.sub} />
-        </TouchableOpacity>
-      ) : null}
-    </View>
+        />
 
-     {isReply ? (
-      <Text style={styles.replyMetaText}>Replying to {parentName}</Text>
-    ) : null}
+          {activePost && commentTargetId ? (
+          <PrivateCommentsSheet
+            visible={commentsOpen}
+            onClose={() => setCommentsOpen(false)}
+            targetType={commentTargetType}
+            targetId={commentTargetId}
+            ownerId={String(activePost.userId || "")}
+            currentUserId={String(meId || "")}
+            ownerUser={activePost.user || null}
+            title="Private Comments"
+            subtitle="Visible only to you and the post owner."
+            onChanged={(comments) => {
+              rememberCommentCount(activePost, comments.length);
+            }}
+          />
+        ) : null}
 
-    <Text style={styles.commentText}>{item.text}</Text>
-  </View>
-</View>
-
-                  );
-                }}
-                ListEmptyComponent={
-                  <View style={styles.center}>
-                    <Text style={{ color: RBZ.sub }}>No comments yet.</Text>
-                  </View>
-                }
-              />
-
-                    {(editingCommentId || replyingTo) ? (
-                <View style={styles.composeModeRow}>
-                  <Text style={styles.composeModeText}>
-                    {editingCommentId
-                      ? "Editing comment"
-                      : replyingTo
-                      ? `Replying to ${replyingTo.name}`
-                      : ""}
-                  </Text>
-
-                  <TouchableOpacity
-                    onPress={() => {
-                      setEditingCommentId(null);
-                      setReplyingTo(null);
-                      setCommentText("");
-                    }}
-                  >
-                    <Text style={styles.composeModeCancel}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-
-              <View style={styles.inputRow}>
-                <TextInput
-                  value={commentText}
-                  onChangeText={setCommentText}
-                  placeholder={
-                    editingCommentId
-                      ? "Edit your private comment…"
-                      : replyingTo
-                      ? "Write your reply…"
-                      : "Write a private comment…"
-                  }
-                  placeholderTextColor={RBZ.sub}
-                  style={styles.input}
-                />
-                <TouchableOpacity style={styles.sendBtn} onPress={sendComment}>
-                  <LinearGradient
-                    colors={[RBZ.c1, RBZ.c2, RBZ.c3, RBZ.c4]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.sendBtnInner}
-                  >
-                    <Ionicons name="send" size={16} color="#fff" />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        {reportPost && getTargetId(reportPost) ? (
+          <RBZReportSheet
+            visible={reportSheetOpen}
+            onClose={() => {
+              setReportSheetOpen(false);
+              setReportPost(null);
+            }}
+            onSubmitted={() => {
+              setReportSheetOpen(false);
+              setReportPost(null);
+            }}
+            target={{
+              targetType: "post",
+              targetId: getTargetId(reportPost),
+              reportedUserId: String(reportPost.userId || ""),
+              targetOwnerId: String(reportPost.userId || ""),
+              source: "mobile_letsbuzz_post",
+              title: getOwnerName(reportPost.user),
+              subtitle: "LetsBuzz post",
+              avatar: getOwnerAvatar(reportPost.user),
+              evidenceSnapshot: {
+                screen: "letsbuzz_posts",
+                contentType: "post",
+                letsBuzzTargetType: getTargetType(reportPost),
+                postId: getPostId(reportPost),
+                mediaId: String(reportPost.mediaId || ""),
+                ownerId: String(reportPost.userId || ""),
+                authorName: getOwnerName(reportPost.user),
+                authorAvatar: getOwnerAvatar(reportPost.user),
+                caption: String(reportPost.text || reportPost.caption || ""),
+                mediaUrl: String(reportPost.mediaUrl || ""),
+                createdAt: reportPost.createdAt || null,
+              },
+            }}
+          />
+        ) : null}
       </>
     );
   }, [
-    giftPickerOpen,
-    giftInsightsOpen,
-    commentsOpen,
-    giftSummary,
-    comments,
-    commentText,
-    editingCommentId,
-    replyingTo,
+    activeGiftTargetId,
+    activeGiftTargetType,
     activePost,
-    sendGift,
-    sendComment,
-    router,
+    commentsOpen,
+    giftInsightsOpen,
+    giftPickerOpen,
+    giftSummary,
+    meId,
+    rememberCommentCount,
+    reportPost,
+    reportSheetOpen,
   ]);
-   return {
+
+  return {
     openGiftPicker,
     openGiftInsights,
     openComments,
+    openReport,
     shareToOwner,
     getKnownCommentCount,
     ActionsModals,
   };
-
 }
-
-const styles = StyleSheet.create({
-  center: { alignItems: "center", justifyContent: "center", paddingVertical: 18 },
-
-  backdropCenter: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "center",
-    padding: 16,
-  },
-  backdropBottom: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
-
-  modalCard: {
-    backgroundColor: "#12121a",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    padding: 14,
-  },
-  modalTitle: { color: "#fff", fontSize: 16, fontWeight: "900", marginBottom: 10 },
-
-  giftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  giftItem: {
-    width: "31%",
-    backgroundColor: "rgba(255,255,255,0.07)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    borderRadius: 16,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  giftEmoji: { fontSize: 26 },
-  giftLabel: { color: "#fff", marginTop: 6, fontWeight: "800", fontSize: 12 },
-
-  sheet: {
-    backgroundColor: "#12121a",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    padding: 14,
-    height: "78%",
-  },
-  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sheetTitle: { color: "#fff", fontSize: 16, fontWeight: "900" },
-
-  privateHint: { color: RBZ.sub, marginTop: 6, marginBottom: 10, fontSize: 12 },
-
-  giftUserRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.08)",
-  },
-  giftUserLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
-  giftUserAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.1)" },
-  giftUserName: { color: "#fff", fontWeight: "900", fontSize: 14 },
-
-  giftList: { flexDirection: "row", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "55%" },
-  giftBadge: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  giftBadgeBig: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  giftBadgeText: { color: "#fff", fontWeight: "800", fontSize: 12 },
-  giftListGifter: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-
-  commentRow: { flexDirection: "row", gap: 10, paddingVertical: 10 },
-  replyCommentRow: {
-    marginLeft: 22,
-    paddingLeft: 10,
-    borderLeftWidth: 1,
-    borderLeftColor: "rgba(255,255,255,0.10)",
-  },
-  commentAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(255,255,255,0.10)" },
-  commentName: { color: "#fff", fontWeight: "900", fontSize: 13 },
-  replyMetaText: {
-    color: RBZ.sub,
-    fontSize: 11,
-    marginTop: 2,
-    marginBottom: 2,
-  },
-  commentText: { color: RBZ.text, marginTop: 3, lineHeight: 18 },
-  composeModeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-    paddingHorizontal: 2,
-  },
-  composeModeText: {
-    color: RBZ.sub,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  composeModeCancel: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  inputRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  input: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: "#fff",
-  },
-  sendBtn: { width: 44, height: 44, borderRadius: 14, overflow: "hidden" },
-  sendBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
-});

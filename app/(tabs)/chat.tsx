@@ -104,11 +104,40 @@ const safePreviewText = (lastMessage: any, myId: string) => {
 
   const isMine = !!myId && !!senderId && String(senderId) === String(myId);
 
-  const withMinePrefix = (value: string) => {
+   const withMinePrefix = (value: string) => {
     const clean = String(value || "").trim();
     if (!clean) return "Say Hello!";
     return isMine ? `You: ${clean}` : clean;
   };
+
+  const directType = String(lastMessage?.type || "").toLowerCase();
+  if (
+    directType === "video_call" ||
+    directType === "video-call" ||
+    directType === "call" ||
+    directType === "call_history"
+  ) {
+    const status = String(
+      lastMessage?.status ||
+        lastMessage?.callStatus ||
+        lastMessage?.lastReason ||
+        ""
+    ).toLowerCase();
+
+    if (status === "missed" || status === "ring_timeout" || status === "no_answer") {
+      return withMinePrefix("Missed video call");
+    }
+
+    if (status === "declined") {
+      return withMinePrefix("Video call declined");
+    }
+
+    if (status === "canceled") {
+      return withMinePrefix("Video call canceled");
+    }
+
+    return withMinePrefix("Video call ended");
+  }
 
   // Most direct preview
   if (typeof lastMessage?.preview === "string" && lastMessage.preview.trim()) {
@@ -146,7 +175,7 @@ const safePreviewText = (lastMessage: any, myId: string) => {
         return withMinePrefix("🎬 Shared a reel");
       }
 
-      if (payload?.type === "share_profile_media") {
+         if (payload?.type === "share_profile_media") {
         const mediaType = String(payload?.mediaType || "").toLowerCase();
 
         if (mediaType === "reel" || mediaType === "video") {
@@ -158,6 +187,30 @@ const safePreviewText = (lastMessage: any, myId: string) => {
         }
 
         return withMinePrefix("📎 Shared profile media");
+      }
+
+      if (payload?.type === "chat_gift") {
+        const giftName =
+          String(
+            payload?.gift?.name ||
+              payload?.giftName ||
+              payload?.name ||
+              ""
+          ).trim();
+
+        return withMinePrefix(giftName ? `🎁 Sent ${giftName}` : "🎁 Sent a gift");
+      }
+
+      if (payload?.type === "gift") {
+        const giftName =
+          String(
+            payload?.gift?.name ||
+              payload?.giftName ||
+              payload?.name ||
+              ""
+          ).trim();
+
+        return withMinePrefix(giftName ? `🎁 Sent ${giftName}` : "🎁 Sent a gift");
       }
     } catch {
       // fall through
@@ -384,12 +437,17 @@ useEffect(() => {
 
 //listener for active chat updates (to prevent showing unread badge when already in that chat)
 useEffect(() => {
-  const handler = (e: any) => {
-    activePeerRef.current = e?.detail?.peerId || null;
+  const handler = (payload: any) => {
+    const peerId = String(payload?.peerId || payload?.detail?.peerId || "");
+    activePeerRef.current = peerId || null;
   };
 
+  const sub = DeviceEventEmitter.addListener("rbz:chat:active", handler);
+
   globalThis.addEventListener?.("rbz:chat:active", handler);
+
   return () => {
+    sub.remove();
     globalThis.removeEventListener?.("rbz:chat:active", handler);
   };
 }, []);
@@ -457,39 +515,9 @@ useEffect(() => {
     })();
   }, []);
 
-
-  // ✅ When Chat tab is tapped: clear unread on SERVER + keep badge at 0
-  useEffect(() => {
-    const handler = async () => {
-      try {
-        // optimistic UI immediately
-        setUnreadMap({});
-        setUnreadTotal(0);
-        await setJSONStore(UNREAD_MAP_KEY, {});
-        await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, "0").catch(() => {});
-        persistUnreadTotal(0);
-
-        // server clear (truth)
-        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-        if (!token) return;
-
-        const r = await fetch(`${API_BASE}/chat/mark-all-read`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const j = await r.json().catch(() => ({}));
-        const summary = j?.summary || { total: 0, byPeer: {} };
-
-        const applied = await applyUnreadSummary(summary);
-        setUnreadMap(applied.byPeer || {});
-        setUnreadTotal(applied.total || 0);
-      } catch {}
-    };
-
-    const sub = DeviceEventEmitter.addListener("rbz:chat:tab-opened", handler);
-    return () => sub.remove();
-  }, []);
+  // ✅ Do NOT clear unread when Chat tab opens.
+  // The chat list must show per-person unread badges.
+  // Unread for a peer is cleared only when openChat(peer) opens that thread.
 
 
 

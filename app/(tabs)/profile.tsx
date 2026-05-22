@@ -27,7 +27,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -732,6 +732,32 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const {
+    post,
+    targetType,
+    ownerId,
+    openComments,
+    commentId,
+    parentId,
+    replyId,
+  } = useLocalSearchParams<{
+    post?: string;
+    targetType?: string;
+    ownerId?: string;
+    openComments?: string;
+    commentId?: string;
+    parentId?: string;
+    replyId?: string;
+  }>();
+
+  const deepLinkTargetId = post ? String(post) : "";
+  const deepLinkTargetType = targetType ? String(targetType) : "";
+  const deepLinkOwnerId = ownerId ? String(ownerId) : "";
+  const deepLinkOpenComments = String(openComments || "") === "1";
+  const deepLinkCommentId = commentId ? String(commentId) : "";
+  const deepLinkParentId = parentId ? String(parentId) : "";
+  const deepLinkReplyId = replyId ? String(replyId) : "";
+
 const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -826,6 +852,12 @@ const hydratedOnceRef = useRef(false);
   };
 
 const [tab, setTab] = useState<"info" | "gallery" | "notes">("gallery");
+
+useEffect(() => {
+  if (deepLinkTargetId) {
+    setTab("gallery");
+  }
+}, [deepLinkTargetId]);
 
 const showBioOnly = editTarget === "bio";
 const showInterestsOnly = editTarget === "interests";
@@ -1693,12 +1725,12 @@ setStoryOpen(true);
 
 
  <Pressable
-  onPress={() => setEditTarget("all")}
+  onPress={() => router.push("../wallet" as any)}
   style={[styles.actionBtn, { backgroundColor: RBZ.c3 }]}
 >
 
-    <Ionicons name="create-outline" size={16} color={RBZ.white} />
-    <Text style={styles.actionBtnText}>Edit</Text>
+    <Ionicons name="wallet-outline" size={16} color={RBZ.white} />
+    <Text style={styles.actionBtnText}>Wallet</Text>
   </Pressable>
 </View>
 
@@ -1846,11 +1878,18 @@ setStoryOpen(true);
       (item, index, arr) =>
         arr.findIndex((x) => String(x.url) === String(item.url)) === index
     )}
-    uploading={uploading}
+      uploading={uploading}
     setUploading={setUploading}
     apiFetch={apiFetch}
     apiJson={apiJson}
     onRefresh={onRefresh}
+    deepLinkTargetId={deepLinkTargetId}
+    deepLinkTargetType={deepLinkTargetType}
+    deepLinkOwnerId={deepLinkOwnerId}
+    deepLinkOpenComments={deepLinkOpenComments}
+    deepLinkCommentId={deepLinkCommentId}
+    deepLinkParentId={deepLinkParentId}
+    deepLinkReplyId={deepLinkReplyId}
   />
 )}
 {tab === "notes" && <PrivateNotesTab />}

@@ -21,6 +21,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -67,6 +68,9 @@ export type ChatAttachPayload = {
   };
   gift?: {
     locked: boolean;
+    priceBC?: number;
+    amount?: number;
+    currency?: "BC";
   };
   overlayText?: string;
 };
@@ -88,6 +92,7 @@ export default function ChatPlusModal({
   // Preview controls
   const [mode, setMode] = useState<Mode>("keep");
   const [giftLocked, setGiftLocked] = useState(false);
+  const [giftPriceText, setGiftPriceText] = useState("");
   const [overlayText, setOverlayText] = useState("");
   const [typingText, setTypingText] = useState(false);
 
@@ -109,6 +114,13 @@ export default function ChatPlusModal({
     return undefined;
   }, [mode]);
 
+  const giftPriceBC = useMemo(() => {
+    const raw = String(giftPriceText || "").replace(/[^\d]/g, "");
+    const n = Math.floor(Number(raw) || 0);
+    if (n <= 0) return 0;
+    return Math.min(n, 10000);
+  }, [giftPriceText]);
+
   // Prevent screenshot/screenrecord ONLY while preview open
   useEffect(() => {
     (async () => {
@@ -128,10 +140,11 @@ export default function ChatPlusModal({
     };
   }, [selected]);
 
-  const resetAll = () => {
+   const resetAll = () => {
     setSelected(null);
     setMode("keep");
     setGiftLocked(false);
+    setGiftPriceText("");
     setOverlayText("");
     setTypingText(false);
     setLoading(false);
@@ -212,6 +225,11 @@ export default function ChatPlusModal({
   const sendNow = async () => {
     if (!selected?.uri) return;
 
+    if (giftLocked && giftPriceBC <= 0) {
+      Alert.alert("Set unlock price", "Enter the BuzzCoin price needed to unlock this media.");
+      return;
+    }
+
     const payload = {
       type: "media" as const,
       mediaType: selected.mediaType,
@@ -219,7 +237,12 @@ export default function ChatPlusModal({
         mode,
         maxViews: maxViews as any,
       },
-      gift: { locked: !!giftLocked },
+      gift: {
+        locked: !!giftLocked,
+        priceBC: giftLocked ? giftPriceBC : 0,
+        amount: giftLocked ? giftPriceBC : 0,
+        currency: "BC" as const,
+      },
       overlayText: overlayText?.trim() ? overlayText.trim() : "",
       localUri: selected.uri,
     };
@@ -299,9 +322,12 @@ export default function ChatPlusModal({
             </View>
           )}
 
-          {/* Preview full screen */}
+                {/* Preview full screen */}
           <Modal visible={!!selected} animationType="slide" onRequestClose={resetAll}>
-            <View style={styles.previewWrap}>
+            <KeyboardAvoidingView
+              style={styles.previewWrap}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
               {/* media */}
               {selected?.mediaType === "video" ? (
                 <Video
@@ -362,42 +388,74 @@ export default function ChatPlusModal({
                   <ModePill id="twice" label="View twice" />
                 </View>
 
+                <View style={styles.giftLockPanel}>
+                  <View style={styles.giftLockTopRow}>
+                    <Pressable
+                      onPress={() => setGiftLocked((p) => !p)}
+                      style={[
+                        styles.giftBtn,
+                        giftLocked ? { backgroundColor: RBZ.c1, borderColor: "transparent" } : null,
+                      ]}
+                    >
+                      <Ionicons name="gift" size={16} color={giftLocked ? RBZ.white : RBZ.c1} />
+                      <Text style={[styles.giftText, giftLocked ? { color: RBZ.white } : null]}>
+                        Gift media
+                      </Text>
+                    </Pressable>
+
+                    {giftLocked ? (
+                      <View style={styles.pricePreviewPill}>
+                        <Ionicons name="diamond" size={13} color={RBZ.c2} />
+                        <Text style={styles.pricePreviewText}>{giftPriceBC || 0} BC</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {giftLocked ? (
+                    <View style={styles.priceInputRow}>
+                      <Ionicons name="lock-closed" size={16} color={RBZ.c2} />
+                      <TextInput
+                        value={giftPriceText}
+                        onChangeText={(txt) => setGiftPriceText(txt.replace(/[^\d]/g, ""))}
+                        placeholder="Unlock price"
+                        placeholderTextColor="rgba(255,255,255,0.52)"
+                        keyboardType="number-pad"
+                        style={styles.priceInput}
+                        maxLength={5}
+                      />
+                      <Text style={styles.priceUnit}>BC</Text>
+                    </View>
+                  ) : null}
+                </View>
+
                 <View style={styles.bottomRow}>
-                  {/* Gift lock */}
-                  <Pressable
-                    onPress={() => setGiftLocked((p) => !p)}
-                    style={[
-                      styles.giftBtn,
-                      giftLocked ? { backgroundColor: RBZ.c1, borderColor: "transparent" } : null,
-                    ]}
-                  >
-                    <Ionicons name="gift" size={16} color={giftLocked ? RBZ.white : RBZ.c1} />
-                    <Text style={[styles.giftText, giftLocked ? { color: RBZ.white } : null]}>
-                      Gift lock
+                  <View style={styles.sendHintWrap}>
+                    <Text style={styles.hint}>
+                      {giftLocked
+                        ? "Receiver must pay once to unlock forever."
+                        : mode === "keep"
+                        ? "Stays in chat."
+                        : mode === "once"
+                        ? "Opens once, then locks."
+                        : "Opens twice, then locks."}
                     </Text>
-                  </Pressable>
+                  </View>
 
                   <Pressable onPress={sendNow} style={styles.sendNowBtn} disabled={loading}>
                     {loading ? (
                       <ActivityIndicator color={RBZ.white} />
                     ) : (
                       <>
-                        <Ionicons name="send" size={16} color={RBZ.white} />
-                        <Text style={styles.sendNowText}>Send</Text>
+                        <Ionicons name={giftLocked ? "lock-closed" : "send"} size={16} color={RBZ.white} />
+                        <Text style={styles.sendNowText}>
+                          {giftLocked ? "Send locked" : "Send"}
+                        </Text>
                       </>
                     )}
                   </Pressable>
                 </View>
-
-                <Text style={styles.hint}>
-                  {mode === "keep"
-                    ? "Stays in chat."
-                    : mode === "once"
-                    ? "Opens once, then locks (needs backend for global delete)."
-                    : "Opens twice, then locks (needs backend for global delete)."}
-                </Text>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
         </Pressable>
       </Pressable>
@@ -523,7 +581,26 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 12, fontWeight: "900", color: RBZ.white },
 
-  bottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+   bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  giftLockPanel: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(0,0,0,0.26)",
+    padding: 10,
+    gap: 10,
+  },
+  giftLockTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
   giftBtn: {
     flexDirection: "row",
     gap: 8,
@@ -536,6 +613,46 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.10)",
   },
   giftText: { color: RBZ.white, fontWeight: "900" },
+  pricePreviewPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    height: 34,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.92)",
+  },
+  pricePreviewText: {
+    color: RBZ.c2,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  priceInputRow: {
+    height: 46,
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.20)",
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+  priceInput: {
+    flex: 1,
+    color: RBZ.white,
+    fontSize: 16,
+    fontWeight: "900",
+    paddingVertical: 0,
+  },
+  priceUnit: {
+    color: "rgba(255,255,255,0.82)",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  sendHintWrap: {
+    flex: 1,
+  },
 
   sendNowBtn: {
     flexDirection: "row",
@@ -544,17 +661,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 14,
     height: 44,
-    minWidth: 110,
+    minWidth: 120,
     borderRadius: 14,
     backgroundColor: RBZ.c2,
   },
   sendNowText: { color: RBZ.white, fontWeight: "900" },
 
   hint: {
-    textAlign: "center",
+    textAlign: "left",
     color: "rgba(255,255,255,0.78)",
     fontSize: 12,
     fontWeight: "700",
+    lineHeight: 17,
   },
 });
  

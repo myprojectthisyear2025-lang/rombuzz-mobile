@@ -1,7 +1,7 @@
 /**
  * ============================================================
  * File: app/chat/thread-info/[peerId].tsx
- * Screen: RomBuzz Chat Thread Info
+ * Screen: RomBuzz Chat Thread Info - Premium UI
  * ============================================================
  */
 
@@ -19,12 +19,22 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  Modal,
+  TouchableOpacity,
+  Dimensions
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from 'expo-haptics';
 
+import ChatGiftInsightsSheet from "@/src/components/chat/ChatGiftInsightsSheet";
+import GiftPicker from "@/src/components/gifts/GiftPicker";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
+import { startVideoCall } from "@/src/features/videoCall/videoCallApi";
+
+const { width } = Dimensions.get('window');
 
 const RBZ = {
   c1: "#b1123c",
@@ -36,6 +46,8 @@ const RBZ = {
   gray: "#6b7280",
   soft: "#f5f6fa",
   line: "rgba(0,0,0,0.08)",
+  success: "#10b981",
+  warning: "#f59e0b",
 };
 
 function makeRoomId(a: string, b: string) {
@@ -92,11 +104,16 @@ export default function ThreadInfo() {
 
   const displayName = nickname.trim() ? nickname.trim() : baseName;
 
-  const [tone, setTone] = useState<"default" | "soft" | "loud">("default");
+   const [tone, setTone] = useState<"default" | "soft" | "loud">("default");
 
-  const [media, setMedia] = useState<MediaItem[]>([]);
+     const [media, setMedia] = useState<MediaItem[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
   const [pinnedCount, setPinnedCount] = useState(0);
+  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
+  const [giftInsightsOpen, setGiftInsightsOpen] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [startingVideoCall, setStartingVideoCall] = useState(false);
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -125,6 +142,7 @@ export default function ThreadInfo() {
 
   const confirmNickname = async () => {
     if (!myId || !peerId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const next = draftNick.trim();
     setNickname(next);
@@ -148,6 +166,7 @@ export default function ThreadInfo() {
 
   const saveTone = async (next: "default" | "soft" | "loud") => {
     if (!myId || !peerId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTone(next);
 
     const key = toneKey(myId, peerId);
@@ -228,6 +247,7 @@ export default function ThreadInfo() {
   }, [roomId, myId, peerId]);
 
    const openViewProfile = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({
       pathname: "/(tabs)/view-profile" as any,
       params: {
@@ -238,7 +258,38 @@ export default function ThreadInfo() {
     });
   };
 
+    const handleStartVideoCall = async () => {
+    if (!peerId || startingVideoCall) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setStartingVideoCall(true);
+
+    try {
+      const result = await startVideoCall(peerId);
+
+      router.push({
+        pathname: "/video-call/[callId]",
+        params: {
+          callId: result.call.id,
+          channelName: result.call.channelName,
+          appId: result.token?.appId || "",
+          token: result.token?.token || "",
+          uid: result.token?.uid || "",
+          role: "caller",
+        },
+      });
+    } catch (err: any) {
+      Alert.alert(
+        "Video call",
+        err?.message || "Could not start the video call."
+      );
+    } finally {
+      setStartingVideoCall(false);
+    }
+  };
+
   const blockUser = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     try {
       const token = await SecureStore.getItemAsync("RBZ_TOKEN");
       const r = await fetch(`${API_BASE}/users/blocks/${peerId}`, {
@@ -246,14 +297,17 @@ export default function ThreadInfo() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) Alert.alert("Blocked", `${displayName} is blocked.`);
-      else Alert.alert("Block failed", j?.error || "Try again");
+      if (r.ok) {
+        setIsBlocked(true);
+        Alert.alert("Blocked", `${displayName} is blocked.`);
+      } else Alert.alert("Block failed", j?.error || "Try again");
     } catch {
       Alert.alert("Block failed", "Try again");
     }
   };
 
   const unblockUser = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const token = await SecureStore.getItemAsync("RBZ_TOKEN");
       const r = await fetch(`${API_BASE}/users/blocks/${peerId}`, {
@@ -261,15 +315,18 @@ export default function ThreadInfo() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) Alert.alert("Unblocked", `${displayName} is unblocked.`);
-      else Alert.alert("Unblock failed", j?.error || "Try again");
+      if (r.ok) {
+        setIsBlocked(false);
+        Alert.alert("Unblocked", `${displayName} is unblocked.`);
+      } else Alert.alert("Unblock failed", j?.error || "Try again");
     } catch {
       Alert.alert("Unblock failed", "Try again");
     }
   };
 
-  const reportUser = async () => {
-    Alert.alert("Report sent", "Thanks. We’ll review this report.");
+   const reportUser = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setReportSheetOpen(true);
   };
 
   const deleteChatForMe = async () => {
@@ -286,19 +343,88 @@ export default function ThreadInfo() {
     router.back();
   };
 
-  const ActionBtn = ({
+  const sendChatGiftMessage = async (payload: {
+    giftId: string;
+    transactionId: string;
+    priceBC: number;
+  }) => {
+    if (!myId || !peerId || !roomId) return;
+
+    try {
+      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+
+      const rbzPayload = {
+        type: "chat_gift",
+        gift: {
+          giftId: payload.giftId,
+          transactionId: payload.transactionId,
+          priceBC: payload.priceBC,
+          senderId: myId,
+          receiverId: peerId,
+          roomId,
+          opened: false,
+          sentAt: Date.now(),
+        },
+      };
+
+      const res = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          text: `::RBZ::${JSON.stringify(rbzPayload)}`,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || "Gift sent, but chat message failed.");
+      }
+    } catch (err: any) {
+      Alert.alert(
+        "Gift message",
+        err?.message || "Gift was sent, but the chat gift bubble could not be created."
+      );
+    }
+  };
+
+   const ActionBtn = ({
     icon,
     label,
     onPress,
+    onLongPress,
   }: {
     icon: any;
     label: string;
     onPress: () => void;
+    onLongPress?: () => void;
   }) => (
-    <Pressable onPress={onPress} style={styles.actionBtn}>
-      <View style={styles.actionIconWrap}>
-        <Ionicons name={icon} size={18} color={RBZ.white} />
-      </View>
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      onLongPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onLongPress?.();
+      }}
+      delayLongPress={260}
+      style={({ pressed }) => [
+        styles.actionBtn,
+        pressed && styles.actionBtnPressed
+      ]}
+    >
+      <LinearGradient
+        colors={[RBZ.c2, RBZ.c4]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.actionIconWrap}
+      >
+        <Ionicons name={icon} size={20} color={RBZ.white} />
+      </LinearGradient>
       <Text style={styles.actionLabel}>{label}</Text>
     </Pressable>
   );
@@ -316,13 +442,27 @@ export default function ThreadInfo() {
     onPress: () => void;
     danger?: boolean;
   }) => (
-    <Pressable onPress={onPress} style={styles.row}>
-      <View style={[styles.rowIcon, danger ? { backgroundColor: "rgba(177,18,60,0.12)" } : null]}>
-        <Ionicons name={icon} size={18} color={danger ? RBZ.c1 : RBZ.c4} />
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.row,
+        pressed && styles.rowPressed
+      ]}
+    >
+      <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
+        <LinearGradient
+          colors={danger ? [RBZ.c1, RBZ.c3] : [RBZ.c4, RBZ.c2]}
+          style={styles.rowIconGradient}
+        >
+          <Ionicons name={icon} size={18} color={RBZ.white} />
+        </LinearGradient>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.rowTitle, danger ? { color: RBZ.c1 } : null]}>{title}</Text>
-        {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
+        <Text style={[styles.rowTitle, danger && styles.rowTitleDanger]}>{title}</Text>
+        {sub && <Text style={styles.rowSub}>{sub}</Text>}
       </View>
       <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
     </Pressable>
@@ -330,9 +470,20 @@ export default function ThreadInfo() {
 
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
-      <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={RBZ.white} />
+      <LinearGradient
+        colors={[RBZ.c1, RBZ.c4, RBZ.c2]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.backBtn,
+            pressed && styles.backBtnPressed
+          ]}
+        >
+          <Ionicons name="arrow-back" size={22} color={RBZ.white} />
         </Pressable>
 
         <View style={{ flex: 1 }} />
@@ -341,7 +492,10 @@ export default function ThreadInfo() {
           onPress={() =>
             Alert.alert("More", "More options can live here later (mutual settings, etc).")
           }
-          style={styles.backBtn}
+          style={({ pressed }) => [
+            styles.backBtn,
+            pressed && styles.backBtnPressed
+          ]}
         >
           <Ionicons name="ellipsis-horizontal" size={20} color={RBZ.white} />
         </Pressable>
@@ -351,23 +505,40 @@ export default function ThreadInfo() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
       >
-        <View style={styles.card}>
-          <Pressable onPress={openViewProfile} style={styles.identity}>
-            <Image source={{ uri: avatar }} style={styles.bigAvatar} />
+        {/* Premium Profile Card */}
+        <View style={styles.cardPremium}>
+          <Pressable
+            onPress={openViewProfile}
+            style={({ pressed }) => [
+              styles.identity,
+              pressed && styles.identityPressed
+            ]}
+          >
+            <View style={styles.avatarContainer}>
+              <Image source={{ uri: avatar }} style={styles.bigAvatar} />
+              <LinearGradient
+                colors={["transparent", RBZ.c1]}
+                style={styles.avatarOverlay}
+              />
+              <View style={styles.onlineBadge} />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.name} numberOfLines={1}>
                 {displayName}
               </Text>
-              <Text style={styles.sub} numberOfLines={1}>
-                RomBuzz Match
-              </Text>
+              <View style={styles.matchBadge}>
+                <Ionicons name="heart" size={12} color={RBZ.c1} />
+                <Text style={styles.matchText}>RomBuzz Match</Text>
+              </View>
             </View>
-            <Ionicons name="open-outline" size={18} color={RBZ.c4} />
+            <View style={styles.profileArrow}>
+              <Ionicons name="arrow-forward" size={18} color={RBZ.white} />
+            </View>
           </Pressable>
 
           <View style={styles.actionsRow}>
-            <ActionBtn
-              icon="navigate-outline"
+                     <ActionBtn
+              icon="map"
               label="Meet"
               onPress={() =>
                 router.push({
@@ -377,37 +548,49 @@ export default function ThreadInfo() {
               }
             />
             <ActionBtn
-              icon="gift-outline"
+              icon="gift"
               label="Gift"
-              onPress={() => Alert.alert("Gifts", "Open gifts flow")}
+              onPress={() => setGiftPickerOpen(true)}
+              onLongPress={() => setGiftInsightsOpen(true)}
             />
             <ActionBtn
-              icon="videocam-outline"
-              label="Video"
-              onPress={() => Alert.alert("Video call", "Start video call")}
+              icon="videocam"
+              label={startingVideoCall ? "Calling..." : "Video"}
+              onPress={handleStartVideoCall}
             />
           </View>
         </View>
 
+        {/* Nickname Section */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Nickname</Text>
+          <View style={styles.sectionHeader}>
+            <LinearGradient
+              colors={[RBZ.c4, RBZ.c2]}
+              style={styles.sectionIcon}
+            >
+              <Ionicons name="pricetag" size={16} color={RBZ.white} />
+            </LinearGradient>
+            <Text style={styles.sectionTitle}>Custom Nickname</Text>
+          </View>
           <Text style={styles.sectionHint}>
-            Only you see this name in your chat list & header.
+            Only you see this name in your chat list & header
           </Text>
 
           <View style={styles.nickRow}>
-            <Ionicons name="pricetag-outline" size={18} color={RBZ.c4} />
-            <TextInput
-              value={draftNick}
-              onFocus={() => setEditingNick(true)}
-              onChangeText={setDraftNick}
-              placeholder={`Set a nickname for ${baseName}`}
-              placeholderTextColor={RBZ.gray}
-              style={styles.nickInput}
-            />
+            <View style={styles.nickInputContainer}>
+              <Ionicons name="person-outline" size={18} color={RBZ.c4} />
+              <TextInput
+                value={draftNick}
+                onFocus={() => setEditingNick(true)}
+                onChangeText={setDraftNick}
+                placeholder={`Set a nickname for ${baseName}`}
+                placeholderTextColor={RBZ.gray}
+                style={styles.nickInput}
+              />
+            </View>
 
             {editingNick ? (
-              <View style={{ flexDirection: "row", gap: 6 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
                 <Pressable onPress={cancelNickname} style={styles.cancelBtn}>
                   <Ionicons name="close" size={16} color={RBZ.white} />
                 </Pressable>
@@ -424,13 +607,14 @@ export default function ThreadInfo() {
                   }}
                   style={styles.clearBtn}
                 >
-                  <Ionicons name="close" size={16} color={RBZ.white} />
+                  <Ionicons name="close" size={14} color={RBZ.white} />
                 </Pressable>
               )
             )}
           </View>
         </View>
 
+        {/* Media Sections */}
         <Pressable
           onPress={() =>
             router.push({
@@ -438,11 +622,19 @@ export default function ThreadInfo() {
               params: { peerId, name: baseName, avatar },
             })
           }
-          style={styles.card}
+          style={({ pressed }) => [
+            styles.card,
+            pressed && styles.cardPressed
+          ]}
         >
           <View style={styles.row}>
             <View style={styles.rowIcon}>
-              <Ionicons name="images-outline" size={18} color={RBZ.c4} />
+              <LinearGradient
+                colors={[RBZ.c4, RBZ.c2]}
+                style={styles.rowIconGradient}
+              >
+                <Ionicons name="images" size={18} color={RBZ.white} />
+              </LinearGradient>
             </View>
 
             <View style={{ flex: 1 }}>
@@ -461,11 +653,19 @@ export default function ThreadInfo() {
               params: { peerId, name: baseName, avatar },
             })
           }
-          style={styles.card}
+          style={({ pressed }) => [
+            styles.card,
+            pressed && styles.cardPressed
+          ]}
         >
           <View style={styles.row}>
             <View style={styles.rowIcon}>
-              <Ionicons name="gift-outline" size={18} color={RBZ.c4} />
+              <LinearGradient
+                colors={[RBZ.c1, RBZ.c3]}
+                style={styles.rowIconGradient}
+              >
+                <Ionicons name="gift" size={18} color={RBZ.white} />
+              </LinearGradient>
             </View>
 
             <View style={{ flex: 1 }}>
@@ -477,8 +677,17 @@ export default function ThreadInfo() {
           </View>
         </Pressable>
 
+        {/* Alert Tone Section */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Alert Tone</Text>
+          <View style={styles.sectionHeader}>
+            <LinearGradient
+              colors={[RBZ.c2, RBZ.c3]}
+              style={styles.sectionIcon}
+            >
+              <Ionicons name="volume-high" size={16} color={RBZ.white} />
+            </LinearGradient>
+            <Text style={styles.sectionTitle}>Notification Tone</Text>
+          </View>
           <View style={styles.tonesRow}>
             {(["default", "soft", "loud"] as const).map((t) => {
               const active = tone === t;
@@ -486,20 +695,28 @@ export default function ThreadInfo() {
                 <Pressable
                   key={t}
                   onPress={() => saveTone(t)}
-                  style={[styles.toneChip, active ? styles.toneChipActive : null]}
+                  style={({ pressed }) => [
+                    styles.toneChip,
+                    active && styles.toneChipActive,
+                    pressed && styles.toneChipPressed
+                  ]}
                 >
-                  <Text style={[styles.toneText, active ? { color: RBZ.white } : null]}>
-                    {t.toUpperCase()}
+                  <Text style={[styles.toneText, active && styles.toneTextActive]}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
                   </Text>
+                  {active && (
+                    <View style={styles.toneActiveDot} />
+                  )}
                 </Pressable>
               );
             })}
           </View>
         </View>
 
-        <View style={[styles.card, { paddingBottom: 14 + insets.bottom }]}>
+        {/* Settings Section */}
+        <View style={[styles.card, { paddingBottom: 14 + insets.bottom, marginBottom: 20 }]}>
           <Row
-            icon="bookmark-outline"
+            icon="bookmark"
             title="Pinned messages"
             sub={
               pinnedCount === 0
@@ -515,34 +732,95 @@ export default function ThreadInfo() {
               })
             }
           />
-          <Row
-            icon="sparkles-outline"
-            title="Shared gifts"
-            sub="Coming in v2"
-            onPress={() => Alert.alert("Shared gifts", "Coming soon")}
-          />
 
           <View style={styles.hr} />
 
-          <Row icon="ban-outline" title="Block" sub="Stop this user from contacting you" onPress={blockUser} />
-          <Row icon="checkmark-circle-outline" title="Unblock" sub="Allow messages again" onPress={unblockUser} />
-
-          <Row icon="flag-outline" title="Report" sub="Tell us what happened" onPress={reportUser} danger />
+          <Row
+            icon="ban"
+            title="Block"
+            sub="Stop this user from contacting you"
+            onPress={blockUser}
+          />
+          <Row
+            icon="checkmark-circle"
+            title="Unblock"
+            sub="Allow messages again"
+            onPress={unblockUser}
+          />
 
           <Row
-            icon="trash-outline"
+            icon="flag"
+            title="Report"
+            sub="Tell us what happened"
+            onPress={reportUser}
+            danger
+          />
+
+          <Row
+            icon="trash"
             title="Delete chat"
             sub="Removes from your list (for you only)"
             onPress={() =>
-              Alert.alert("Delete chat", "Remove this chat from your list?", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: deleteChatForMe },
-              ])
+              Alert.alert(
+                "Delete chat",
+                "Remove this chat from your list? This action cannot be undone.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Delete", style: "destructive", onPress: deleteChatForMe },
+                ]
+              )
             }
             danger
           />
         </View>
       </ScrollView>
+
+      <GiftPicker
+        visible={giftPickerOpen}
+        onClose={() => setGiftPickerOpen(false)}
+        receiverId={peerId}
+        placement="chat"
+        targetType="chat"
+        targetId={roomId}
+        title="Send a Gift"
+        subtitle={`Send a gift to ${displayName}.`}
+        onSent={sendChatGiftMessage}
+      />
+
+         <ChatGiftInsightsSheet
+        visible={giftInsightsOpen}
+        onClose={() => setGiftInsightsOpen(false)}
+        myId={myId}
+        peerId={peerId}
+        roomId={roomId}
+        peerName={displayName}
+      />
+
+      <RBZReportSheet
+        visible={reportSheetOpen}
+        onClose={() => setReportSheetOpen(false)}
+        target={{
+          targetType: "chat_conversation",
+          targetId: roomId,
+          reportedUserId: peerId,
+          targetOwnerId: peerId,
+          source: "mobile_chat_thread_info",
+          title: displayName,
+          subtitle: "Private chat conversation",
+          avatar,
+          evidenceSnapshot: {
+            screen: "chat_thread_info",
+            roomId,
+            reportedUserId: peerId,
+            reportedUserName: displayName,
+            reportedUserAvatar: avatar,
+            reporterUserId: myId,
+            pinnedCount,
+            sharedMediaCount: media.length,
+            isBlocked,
+          },
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -551,121 +829,283 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: RBZ.soft },
 
   header: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: RBZ.c1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
   },
   backBtn: {
     width: 40,
     height: 40,
-    borderRadius: 999,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    backdropFilter: "blur(10px)",
+  },
+  backBtnPressed: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    transform: [{ scale: 0.95 }],
   },
 
   card: {
-    marginHorizontal: 12,
-    marginTop: 12,
+    marginHorizontal: 16,
+    marginTop: 16,
     backgroundColor: RBZ.white,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    padding: 12,
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardPremium: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    backgroundColor: RBZ.white,
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: RBZ.c4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  cardPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
 
-  identity: { flexDirection: "row", alignItems: "center", gap: 12 },
-  bigAvatar: { width: 62, height: 62, borderRadius: 20, backgroundColor: RBZ.soft },
-  name: { fontSize: 18, fontWeight: "900", color: RBZ.ink },
-  sub: { marginTop: 3, fontSize: 12, color: RBZ.gray, fontWeight: "700" },
-
-  actionsRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  actionBtn: {
-    flex: 1,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    paddingVertical: 10,
+  identity: {
+    flexDirection: "row",
     alignItems: "center",
-    backgroundColor: RBZ.soft,
+    gap: 14,
   },
-  actionIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+  identityPressed: {
+    opacity: 0.8,
+  },
+  avatarContainer: {
+    position: "relative",
+  },
+  bigAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 24,
+    backgroundColor: RBZ.soft,
+    borderWidth: 3,
+    borderColor: RBZ.white,
+  },
+  avatarOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 30,
+    borderBottomLeftRadius: 21,
+    borderBottomRightRadius: 21,
+  },
+  onlineBadge: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: RBZ.success,
+    borderWidth: 2,
+    borderColor: RBZ.white,
+  },
+  name: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: RBZ.ink,
+    letterSpacing: -0.3,
+  },
+  matchBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    backgroundColor: "rgba(177,18,60,0.08)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+  },
+  matchText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: RBZ.c1,
+  },
+  profileArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: RBZ.c2,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
   },
-  actionLabel: { fontSize: 12, fontWeight: "900", color: RBZ.ink },
 
-  sectionTitle: { fontSize: 14, fontWeight: "900", color: RBZ.ink },
-  sectionHint: { marginTop: 6, fontSize: 12, color: RBZ.gray, fontWeight: "700" },
+  actionsRow: { flexDirection: "row", gap: 12, marginTop: 20 },
+  actionBtn: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: RBZ.soft,
+    borderWidth: 1,
+    borderColor: RBZ.line,
+  },
+  actionBtnPressed: {
+    transform: [{ scale: 0.95 }],
+    backgroundColor: "rgba(216,52,95,0.05)",
+  },
+  actionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    shadowColor: RBZ.c2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  actionLabel: { fontSize: 12, fontWeight: "700", color: RBZ.ink, marginTop: 4 },
+
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  sectionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: RBZ.ink },
+  sectionHint: { fontSize: 12, color: RBZ.gray, marginBottom: 12, lineHeight: 16 },
 
   nickRow: {
-    marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     backgroundColor: RBZ.soft,
-    borderRadius: 14,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    height: 50,
     borderWidth: 1,
     borderColor: RBZ.line,
-    paddingHorizontal: 12,
-    height: 46,
   },
-  nickInput: { flex: 1, fontSize: 14, fontWeight: "800", color: RBZ.ink },
+  nickInputContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  nickInput: { flex: 1, fontSize: 14, fontWeight: "500", color: RBZ.ink, paddingVertical: 12 },
   clearBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 999,
-    backgroundColor: RBZ.c2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: RBZ.gray,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  tonesRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  tonesRow: { flexDirection: "row", gap: 12, marginTop: 8 },
   toneChip: {
     flex: 1,
-    height: 40,
-    borderRadius: 14,
-    borderWidth: 1,
+    height: 44,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: RBZ.line,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: RBZ.soft,
+    position: "relative",
   },
-  toneChipActive: { backgroundColor: RBZ.c2, borderColor: "transparent" },
-  toneText: { fontSize: 12, fontWeight: "900", color: RBZ.ink },
+  toneChipActive: {
+    backgroundColor: RBZ.c2,
+    borderColor: RBZ.c2,
+    shadowColor: RBZ.c2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  toneChipPressed: {
+    transform: [{ scale: 0.97 }],
+  },
+  toneText: { fontSize: 13, fontWeight: "700", color: RBZ.ink },
+  toneTextActive: { color: RBZ.white },
+  toneActiveDot: {
+    position: "absolute",
+    bottom: -4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: RBZ.white,
+  },
 
-  hr: { height: 1, backgroundColor: RBZ.line, marginVertical: 10 },
+  hr: { height: 1, backgroundColor: RBZ.line, marginVertical: 8 },
 
-  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  rowPressed: {
+    opacity: 0.7,
+  },
   rowIcon: {
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     borderRadius: 14,
+    overflow: "hidden",
+  },
+  rowIconDanger: {
+    shadowColor: RBZ.c1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  rowIconGradient: {
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(181,23,158,0.10)",
   },
-  rowTitle: { fontSize: 14, fontWeight: "900", color: RBZ.ink },
-  rowSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: RBZ.gray },
+  rowTitle: { fontSize: 15, fontWeight: "700", color: RBZ.ink },
+  rowTitleDanger: { color: RBZ.c1 },
+  rowSub: { marginTop: 4, fontSize: 12, fontWeight: "500", color: RBZ.gray },
 
   okBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 999,
-    backgroundColor: RBZ.c3,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: RBZ.success,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: RBZ.success,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cancelBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 999,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: RBZ.gray,
     alignItems: "center",
     justifyContent: "center",

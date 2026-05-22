@@ -15,7 +15,11 @@
  * ============================================================
  */
 
+import PremiumBuzzReceiverOverlay, {
+  type PremiumBuzzOverlayPayload,
+} from "@/src/components/buzz/PremiumBuzzReceiverOverlay";
 import { API_BASE } from "@/src/config/api";
+import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
 import { getSocket, onNotification } from "@/src/lib/socket";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -24,6 +28,7 @@ import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  AppState,
   DeviceEventEmitter,
   Dimensions,
   Image,
@@ -108,6 +113,20 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
   /* -------------------------------
+     💎 PREMIUM BUZZ GLOBAL OVERLAY
+     - Receiver sees bouncing sender avatar on any tab screen
+     - User can disable this later from settings
+  -------------------------------- */
+
+  const PREMIUM_BUZZ_ANIMATIONS_KEY = "RBZ_PREMIUM_BUZZ_ANIMATIONS_ENABLED";
+
+  const [premiumBuzzOverlayPayload, setPremiumBuzzOverlayPayload] =
+    useState<PremiumBuzzOverlayPayload | null>(null);
+
+  const [premiumBuzzOverlayVisible, setPremiumBuzzOverlayVisible] =
+    useState(false);
+
+  /* -------------------------------
      ROUTE AWARE SWIPE ENABLE
   -------------------------------- */
 
@@ -122,26 +141,92 @@ export default function TabLayout() {
       - resets when leaving Chat tab
   -------------------------------- */
 
-  const UNREAD_TOTAL_KEY = "RBZ_unread_total";
+   const UNREAD_TOTAL_KEY = "RBZ_unread_total";
+  const UNREAD_MAP_KEY = "RBZ_unread_map";
+
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const prevTabRef = useRef<string | null>(null);
+
+   // ✅ Bottom layout owns live chat unread now.
+  // Do NOT depend on chat.tsx being mounted.
+  const chatUnreadSeenIdsRef = useRef<Record<string, number>>({});
+  const chatUnreadSyncTimerRef = useRef<any>(null);
+
+  // ✅ Active chat thread guard.
+  // If Tom is already inside Kylie thread, Kylie messages should NOT bump layout badge.
+  const activeChatPeerRef = useRef<string | null>(null);
 
   // ✅ Unique pulse animation for Chat tab (every 3 sec when unread > 0)
   const chatPulse = useRef(new Animated.Value(0)).current;
   const pulseTimerRef = useRef<any>(null);
 
-   const resetChatUnreadTotal = async () => {
-    setChatUnreadTotal(0);
+  const publishChatUnreadTotal = async (total: number) => {
+    const safeTotal = Math.max(0, Number(total || 0) || 0);
+
+    setChatUnreadTotal(safeTotal);
+
     try {
-      await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, "0");
+      await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, String(safeTotal));
     } catch {}
 
-    // ✅ RN-safe event bus
     try {
-      DeviceEventEmitter.emit("rbz:unread:total", { total: 0 });
+      DeviceEventEmitter.emit("rbz:unread:total", { total: safeTotal });
     } catch {}
   };
 
+   const applyChatUnreadSummary = async (summary: any) => {
+    const rawByPeer =
+      summary?.byPeer && typeof summary.byPeer === "object" ? summary.byPeer : {};
+
+    const safeByPeer: Record<string, number> = {};
+    Object.keys(rawByPeer || {}).forEach((k) => {
+      safeByPeer[String(k)] = Math.max(0, Number(rawByPeer[k] || 0) || 0);
+    });
+
+    // ✅ If user is already inside a peer thread, do not show unread for that peer.
+    const activePeer = activeChatPeerRef.current;
+    if (activePeer && safeByPeer[activePeer]) {
+      delete safeByPeer[activePeer];
+    }
+
+    // ✅ Recalculate total from filtered peer map.
+    // Do not blindly trust summary.total because it may include the active open thread.
+    const total = Object.values(safeByPeer).reduce((sum, n) => {
+      return sum + Math.max(0, Number(n || 0) || 0);
+    }, 0);
+
+    try {
+      await SecureStore.setItemAsync(UNREAD_MAP_KEY, JSON.stringify(safeByPeer));
+      await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, String(total));
+    } catch {}
+
+    setChatUnreadTotal(total);
+
+    try {
+      DeviceEventEmitter.emit("rbz:unread:total", { total });
+      DeviceEventEmitter.emit("rbz:unread:summary", {
+        total,
+        byPeer: safeByPeer,
+      });
+    } catch {}
+  };
+
+  const fetchChatUnreadSummary = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+      if (!token) return;
+
+      const r = await fetch(`${API_BASE}/chat/unread-summary`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await r.json().catch(() => ({}));
+      await applyChatUnreadSummary({
+        total: Number(j?.total || 0) || 0,
+        byPeer: j?.byPeer && typeof j.byPeer === "object" ? j.byPeer : {},
+      });
+    } catch {}
+  };
 
   const runChatPulseOnce = () => {
     chatPulse.stopAnimation();
@@ -189,22 +274,34 @@ export default function TabLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatUnreadTotal]);
 
-  // Load total once + live subscribe to updates
-    useEffect(() => {
+   // ✅ Load cached total + server truth + live local events
+  useEffect(() => {
     let alive = true;
 
     const load = async () => {
       const raw = await SecureStore.getItemAsync(UNREAD_TOTAL_KEY);
       const n = Number(raw || 0) || 0;
+
       if (!alive) return;
       setChatUnreadTotal(n);
+
+      // ✅ Then server truth, so badge is correct even after cold start.
+      fetchChatUnreadSummary();
     };
 
-    const sub = DeviceEventEmitter.addListener(
+    const totalSub = DeviceEventEmitter.addListener(
       "rbz:unread:total",
       (payload: any) => {
         const total = Number(payload?.total ?? 0) || 0;
-        setChatUnreadTotal(total);
+        setChatUnreadTotal(Math.max(0, total));
+      }
+    );
+
+    const summarySub = DeviceEventEmitter.addListener(
+      "rbz:unread:summary",
+      (payload: any) => {
+        const total = Number(payload?.total ?? 0) || 0;
+        setChatUnreadTotal(Math.max(0, total));
       }
     );
 
@@ -212,8 +309,156 @@ export default function TabLayout() {
 
     return () => {
       alive = false;
-      sub.remove();
+      totalSub.remove();
+      summarySub.remove();
     };
+  }, []);
+
+  // ✅ Track which chat thread is currently open.
+  // Thread screen should emit:
+  // DeviceEventEmitter.emit("rbz:chat:active", { peerId })
+  // DeviceEventEmitter.emit("rbz:chat:active", { peerId: null }) on leave
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("rbz:chat:active", (payload: any) => {
+      const peerId = String(payload?.peerId || "");
+      activeChatPeerRef.current = peerId || null;
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  // ✅ Persistent bottom bar socket listener.
+  // This is the important fix:
+  // _layout.tsx stays mounted, so the chat badge updates even when user is NOT on chat.tsx.
+  useEffect(() => {
+    let alive = true;
+    let s: any;
+
+    const getMyId = async () => {
+      try {
+        const raw = await SecureStore.getItemAsync("RBZ_USER");
+        const u = raw ? JSON.parse(raw) : null;
+        return String(u?.id || u?._id || "");
+      } catch {
+        return "";
+      }
+    };
+
+    const scheduleServerSync = () => {
+      if (chatUnreadSyncTimerRef.current) {
+        clearTimeout(chatUnreadSyncTimerRef.current);
+      }
+
+      chatUnreadSyncTimerRef.current = setTimeout(() => {
+        fetchChatUnreadSummary();
+      }, 650);
+    };
+
+    const onUnreadUpdate = async (summary: any) => {
+      await applyChatUnreadSummary(summary);
+    };
+
+       const onIncomingMessage = async (raw: any) => {
+      const msg = raw?.message ? raw.message : raw;
+      const msgId = String(msg?.id || "");
+      if (!msgId) return;
+
+      const fromId = String(
+        msg?.from || msg?.fromId || msg?.senderId || msg?.userId || ""
+      );
+
+      const myId = await getMyId();
+      if (!myId || !fromId) return;
+
+      // ✅ Do not count your own outgoing message.
+      if (String(fromId) === String(myId)) return;
+
+      // ✅ If Tom is already inside Kylie thread, Kylie messages are read/live.
+      // Do NOT bump bottom layout count.
+      if (
+        activeChatPeerRef.current &&
+        String(activeChatPeerRef.current) === String(fromId)
+      ) {
+        scheduleServerSync();
+        return;
+      }
+
+      // ✅ Dedupe same incoming message from chat:message + direct:message.
+      const now = Date.now();
+      const last = chatUnreadSeenIdsRef.current[msgId] || 0;
+      if (now - last < 8000) return;
+
+      chatUnreadSeenIdsRef.current[msgId] = now;
+
+      Object.keys(chatUnreadSeenIdsRef.current).forEach((k) => {
+        if (now - (chatUnreadSeenIdsRef.current[k] || 0) > 8000) {
+          delete chatUnreadSeenIdsRef.current[k];
+        }
+      });
+
+      // ✅ Optimistic instant bottom badge.
+      setChatUnreadTotal((prev) => {
+        const next = Math.max(0, Number(prev || 0) + 1);
+
+        SecureStore.setItemAsync(UNREAD_TOTAL_KEY, String(next)).catch(() => {});
+        DeviceEventEmitter.emit("rbz:unread:total", { total: next });
+
+        return next;
+      });
+
+      // ✅ Server truth shortly after.
+      scheduleServerSync();
+    };
+
+    (async () => {
+      s = await getSocket();
+      if (!alive || !s) return;
+
+      const myId = await getMyId();
+
+      try {
+        if (myId) {
+          s.emit("register", myId);
+          s.emit("user:register", myId);
+        }
+      } catch {}
+
+      s.on("chat:unread:update", onUnreadUpdate);
+      s.on("chat:message", onIncomingMessage);
+      s.on("direct:message", onIncomingMessage);
+
+      // ✅ Fresh server truth when socket connects/reconnects.
+      s.on("connect", fetchChatUnreadSummary);
+
+      fetchChatUnreadSummary();
+    })();
+
+    return () => {
+      alive = false;
+
+      if (chatUnreadSyncTimerRef.current) {
+        clearTimeout(chatUnreadSyncTimerRef.current);
+        chatUnreadSyncTimerRef.current = null;
+      }
+
+      if (!s) return;
+
+      s.off("chat:unread:update", onUnreadUpdate);
+      s.off("chat:message", onIncomingMessage);
+      s.off("direct:message", onIncomingMessage);
+      s.off("connect", fetchChatUnreadSummary);
+    };
+  }, []);
+
+  // ✅ Foreground sync: if app wakes up, fetch real unread count.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        fetchChatUnreadSummary();
+      }
+    });
+
+    return () => sub.remove();
   }, []);
 
 
@@ -222,8 +467,6 @@ export default function TabLayout() {
     const curr = tabName ? String(tabName) : null;
     prevTabRef.current = curr;
   }, [segments?.join("/")]);
-
-
   const isRootTab =
     segments?.[0] === "(tabs)" &&
     segments.length === 2 &&
@@ -338,7 +581,7 @@ export default function TabLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifToken, tabName]);
 
-  // realtime bump
+   // realtime bump
   useEffect(() => {
     if (!notifToken) return;
 
@@ -361,6 +604,67 @@ export default function TabLayout() {
     };
   }, [notifToken]);
 
+  // ✅ Premium Buzz receiver animation.
+  // Backend emits this after paid Buzz succeeds:
+  // socket.emit("premium_buzz:received", payload)
+  useEffect(() => {
+    let alive = true;
+    let s: any;
+
+    const isPremiumBuzzAnimationEnabled = async () => {
+      try {
+        const raw = await SecureStore.getItemAsync(PREMIUM_BUZZ_ANIMATIONS_KEY);
+
+        // Default ON. Only exact "false" disables it.
+        return raw !== "false";
+      } catch {
+        return true;
+      }
+    };
+
+    const onPremiumBuzzReceived = async (payload: any) => {
+      if (!payload) return;
+
+      const enabled = await isPremiumBuzzAnimationEnabled();
+      if (!enabled) return;
+
+      const senderId = String(
+        payload?.senderId || payload?.fromId || payload?.userId || ""
+      );
+
+      if (!senderId) return;
+      if (!alive) return;
+
+      setPremiumBuzzOverlayPayload({
+        buzzTypeId: String(
+          payload?.buzzTypeId || payload?.buzzType || payload?.animationKey || ""
+        ),
+        senderId,
+        senderName: String(payload?.senderName || payload?.fromName || "Someone"),
+        senderAvatar: String(payload?.senderAvatar || payload?.avatar || ""),
+      });
+
+      setPremiumBuzzOverlayVisible(true);
+
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
+    };
+
+    (async () => {
+      s = await getSocket();
+      if (!alive || !s) return;
+
+      s.on("premium_buzz:received", onPremiumBuzzReceived);
+    })();
+
+    return () => {
+      alive = false;
+
+      if (!s) return;
+      s.off("premium_buzz:received", onPremiumBuzzReceived);
+    };
+  }, []);
 
   /* -------------------------------
      NOTIFICATION SHAKE (UNCHANGED)
@@ -432,23 +736,17 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
+           <Tabs.Screen
         name="chat"
         options={{
-          // ✅ When Chat tab is tapped, clear badge immediately (UX requirement)
-            tabBarButton: (props: any) => (
+          // ✅ Do NOT clear unread when user only opens the Chat tab.
+          // Per-person unread badges must stay visible in the chat list.
+          // Unread clears only when the actual conversation thread is opened.
+          tabBarButton: (props: any) => (
             <Pressable
               {...props}
               onPress={(e) => {
                 props?.onPress?.(e);
-
-                // ✅ UX: clear badge immediately on tap
-                resetChatUnreadTotal();
-
-                // ✅ RN-safe event bus → chat list will clear + mark-all-read on server
-                try {
-                  DeviceEventEmitter.emit("rbz:chat:tab-opened");
-                } catch {}
               }}
             />
           ),
@@ -457,8 +755,6 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => (
             <TabIconWrap active={focused}>
               <View style={{ position: "relative" }}>
-
-
 
                 {/* ✅ Pulse ring appears only when unread exists */}
                 {chatUnreadTotal > 0 && (
@@ -616,19 +912,40 @@ export default function TabLayout() {
      FINAL RENDER
   ============================================================ */
 
-  // ❌ No swipe outside root tabs
+    const PremiumBuzzOverlayNode = (
+    <PremiumBuzzReceiverOverlay
+      visible={premiumBuzzOverlayVisible}
+      payload={premiumBuzzOverlayPayload}
+      onClose={() => {
+        setPremiumBuzzOverlayVisible(false);
+        setPremiumBuzzOverlayPayload(null);
+      }}
+    />
+  );
+
+     // ❌ No swipe outside root tabs
   if (!isRootTab) {
-    return <View style={{ flex: 1 }}>{TabsContent}</View>;
+    return (
+      <View style={{ flex: 1 }}>
+        {TabsContent}
+        {PremiumBuzzOverlayNode}
+        <IncomingCallOverlay />
+      </View>
+    );
   }
 
   // ✅ Swipe only on root tabs
-  return (
+   return (
     <PanGestureHandler
       onHandlerStateChange={onSwipeEnd}
       activeOffsetX={[-18, 18]}
       failOffsetY={[-12, 12]}
     >
-      <View style={{ flex: 1 }}>{TabsContent}</View>
+      <View style={{ flex: 1 }}>
+        {TabsContent}
+        {PremiumBuzzOverlayNode}
+        <IncomingCallOverlay />
+      </View>
     </PanGestureHandler>
   );
 }

@@ -1,12 +1,18 @@
 /**
  * ============================================================================
  * 📁 File: src/components/letsbuzz/LetsBuzzReels.tsx
- * 🎯 Purpose:  Reels Experience
+ * 🎯 Purpose: Reels Experience for LetsBuzz
  *
- * ✅ Fixes in this version:
- *  - ✅ Pause/Play ONLY when single-tapping the CENTER tap-zone
- *  - ✅ Name, like, comment, gift, share, mute/unmute are fully clickable (don’t pause video)
- *  - ✅ Removed the fullscreen invisible touch layer that was stealing all presses
+ * What it does:
+ *  - Loads matched users' LetsBuzz reels from /feed/letsbuzz
+ *  - Supports gallery-backed reel likes, gifts, comments, and sharing
+ *  - Uses PrivateCommentsSheet for all private comments
+ *  - Keeps fullscreen support through LetsBuzzReelsFullscreen
+ *
+ * Comment rule:
+ *  - Comments are private between the reel/media owner and the commenter.
+ *  - Backend enforces privacy.
+ *  - This file only opens the reusable PrivateCommentsSheet.
  * ============================================================================
  */
 
@@ -29,12 +35,16 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
+import { getGiftSummary, type GiftSummaryResponse } from "@/src/api/gifts";
 import { API_BASE } from "@/src/config/api";
+import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
+import GiftInsightSheet from "@/src/components/gifts/GiftInsightSheet";
+import GiftPicker from "@/src/components/gifts/GiftPicker";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { getSocket } from "@/src/lib/socket";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -44,7 +54,11 @@ type BuzzUser = {
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  avatarUrl?: string;
+  photoUrl?: string;
+  profilePic?: string;
   username?: string;
+  photos?: any[];
 };
 
 type BuzzPost = {
@@ -64,29 +78,7 @@ type BuzzPost = {
   caption?: string;
   mediaId?: string;
   fromGallery?: boolean;
-  sourceType?: "gallery" | "post" | string;};
-
-type BuzzComment = {
-  id: string;
-  userId: string;
-  text: string;
-  parentId: string | null;
-
-  createdAt?: any;
-  editedAt?: any;
-
-  author?: {
-    firstName?: string;
-    lastName?: string;
-    avatar?: string;
-    id?: string;
-    username?: string;
-  };
-
-  // permissions (set client-side)
-  canEdit?: boolean;
-  canDelete?: boolean;
-  canReply?: boolean;
+  sourceType?: "gallery" | "post" | string;
 };
 
 const RBZ = {
@@ -98,18 +90,17 @@ const RBZ = {
   sub: "rgba(255,255,255,0.70)",
   dark: "#0a0a0f",
   darker: "#050507",
-  translucent: "rgba(10, 10, 15, 0.85)",
   border: "rgba(255,255,255,0.12)",
 };
 
-const GIFT_OPTIONS = [
-  { key: "rose", label: "Rose", emoji: "🌹", color: "#ff6b9d" },
-  { key: "heart", label: "Heart", emoji: "💖", color: "#ff4757" },
-  { key: "teddy", label: "Teddy", emoji: "🧸", color: "#ff9f43" },
-  { key: "ring", label: "Ring", emoji: "💍", color: "#2ed573" },
-  { key: "crown", label: "Crown", emoji: "👑", color: "#ffd32a" },
-  { key: "sparkle", label: "Sparkle", emoji: "✨", color: "#18dcff" },
-];
+async function authHeaders() {
+  const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+
+  return {
+    "Content-Type": "application/json",
+    Authorization: token ? `Bearer ${token}` : "",
+  };
+}
 
 function roomIdFor(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -119,16 +110,10 @@ function encodeRBZSharePost(payload: any) {
   return `::RBZ::${JSON.stringify(payload)}`;
 }
 
-async function authHeaders() {
-  const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-  return {
-    "Content-Type": "application/json",
-    Authorization: token ? `Bearer ${token}` : "",
-  };
-}
-
 function hasCaptionTag(caption: any, tag: string) {
-  return String(caption || "").toLowerCase().includes(String(tag || "").toLowerCase());
+  return String(caption || "")
+    .toLowerCase()
+    .includes(String(tag || "").toLowerCase());
 }
 
 function stripCaptionTags(caption: any) {
@@ -137,18 +122,64 @@ function stripCaptionTags(caption: any) {
     .replace(/\s{2,}/g, " ")
     .trim();
 }
-function replySeedFor(name?: string) {
-  const clean = String(name || "").trim().replace(/\s+/g, " ");
-  return clean ? `@${clean} ` : "";
-}
 
 function countHeartReactions(reactions: Record<string, any> = {}) {
-  return Object.values(reactions || {}).filter((v) => v === "❤️").length;
+  return Object.values(reactions || {}).filter((value) => value === "❤️").length;
 }
 
-export default function LetsBuzzReels({ targetPostId }: { targetPostId?: string }) {
-  const router = useRouter();
+function getGiftTargetId(post: BuzzPost | null) {
+  if (!post) return "";
 
+  return String(post.fromGallery ? post.mediaId || post.id || "" : post.id || "");
+}
+
+function getGiftDisplayKey(post: BuzzPost | null) {
+  return String(post?.id || "");
+}
+
+function getGiftTargetType(post: BuzzPost | null) {
+  return post?.fromGallery ? "gallery_media" : "buzz_post";
+}
+
+function getOwnerName(user?: BuzzUser | null) {
+  const first = String(user?.firstName || "").trim();
+  const last = String(user?.lastName || "").trim();
+  const username = String(user?.username || "").trim();
+
+  return [first, last].filter(Boolean).join(" ").trim() || username || "RomBuzz User";
+}
+
+function getOwnerAvatar(user?: BuzzUser | null) {
+  return (
+    user?.avatar ||
+    user?.avatarUrl ||
+    user?.photoUrl ||
+    user?.profilePic ||
+    user?.photos?.[0] ||
+    "https://i.pravatar.cc/200?img=12"
+  );
+}
+
+type LetsBuzzReelsProps = {
+  targetPostId?: string;
+  targetType?: string;
+  ownerId?: string;
+  openComments?: boolean;
+  commentId?: string;
+  parentId?: string;
+  replyId?: string;
+};
+
+export default function LetsBuzzReels({
+  targetPostId,
+  targetType,
+  ownerId,
+  openComments: deepLinkOpenComments,
+  commentId,
+  parentId,
+  replyId,
+}: LetsBuzzReelsProps) {
+  const router = useRouter();
   const listRef = useRef<FlatList<BuzzPost>>(null);
 
   const [loading, setLoading] = useState(true);
@@ -157,30 +188,29 @@ export default function LetsBuzzReels({ targetPostId }: { targetPostId?: string 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [meId, setMeId] = useState("");
 
-  // Video states
   const videoRefs = useRef<Record<string, any>>({});
-const [muted, setMuted] = useState(false); 
- const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [paused, setPaused] = useState(false);
 
-  // Modals
-   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [activeReel, setActiveReel] = useState<BuzzPost | null>(null);
-  const [comments, setComments] = useState<BuzzComment[]>([]);
-  const [commentText, setCommentText] = useState("");
 
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
-  // visible-to-me comment counts per reel (private comments)
   const commentCountByPostRef = useRef<Record<string, number>>({});
   const [, forceCommentCountsRerender] = useState(0);
 
-  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
-  const [giftTotal, setGiftTotal] = useState<{ [key: string]: number }>({});
+    const [giftPickerOpen, setGiftPickerOpen] = useState(false);
+  const [giftTotal, setGiftTotal] = useState<Record<string, number>>({});
+  const [giftInsightsOpen, setGiftInsightsOpen] = useState(false);
+  const [giftSummary, setGiftSummary] = useState<GiftSummaryResponse | null>(null);
 
-  // Animation values
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportReel, setReportReel] = useState<BuzzPost | null>(null);
+  const [reelMenuOpen, setReelMenuOpen] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const likeAnim = useRef(new Animated.Value(0)).current;
   const doubleTapAnim = useRef(new Animated.Value(0)).current;
+  const lastTapRef = useRef(0);
 
   const socket = useMemo(() => {
     try {
@@ -190,71 +220,80 @@ const [muted, setMuted] = useState(false);
     }
   }, []);
 
-  // Gesture handler for double tap to like (CENTER ONLY)
-  const lastTapRef = useRef(0);
-
   const currentReel = reels[currentIndex] || null;
 
   const fullName = useMemo(() => {
-    const fn = String(currentReel?.user?.firstName || "").trim();
-    const ln = String(currentReel?.user?.lastName || "").trim();
-    const un = String(currentReel?.user?.username || "").trim();
-    const combined = `${fn}${fn && ln ? " " : ""}${ln}`.trim();
-    return combined || un || fn || "";
-  }, [currentReel?.user?.firstName, currentReel?.user?.lastName, currentReel?.user?.username]);
+    return getOwnerName(currentReel?.user);
+  }, [currentReel?.user]);
 
-  const fetchMeId = useCallback(async () => {
+   const fetchMeId = useCallback(async () => {
     try {
-      const h = await authHeaders();
-      const r = await fetch(`${API_BASE}/users/me`, { headers: h });
-      const j = await r.json();
-      const id = j?.user?.id || j?.id || j?.userId || "";
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/users/me`, { headers });
+      const json = await res.json();
+
+      const id = json?.user?.id || json?.id || json?.userId || "";
       if (id) setMeId(String(id));
     } catch {}
   }, []);
 
+  const openComments = useCallback((post: BuzzPost) => {
+    const targetId = getGiftTargetId(post);
+
+    if (!targetId) {
+      Alert.alert("Comments", "Missing reel/media id.");
+      return;
+    }
+
+    if (!post?.userId) {
+      Alert.alert("Comments", "Missing reel owner id.");
+      return;
+    }
+
+    setActiveReel(post);
+    setCommentsOpen(true);
+  }, []);
+
   const loadReels = useCallback(async () => {
     try {
-      const h = await authHeaders();
+      const headers = await authHeaders();
 
-      // ✅ make sure we know who "me" is before filtering my own reels out
       let myId = String(meId || "");
       if (!myId) {
         try {
-          const meRes = await fetch(`${API_BASE}/users/me`, { headers: h });
+          const meRes = await fetch(`${API_BASE}/users/me`, { headers });
           const meJson = await meRes.json();
+
           myId = String(meJson?.user?.id || meJson?.id || meJson?.userId || "");
           if (myId) setMeId(myId);
         } catch {}
       }
 
-      // ✅ source of truth for gallery-backed LetsBuzz reels
-      const r = await fetch(`${API_BASE}/feed/letsbuzz`, { headers: h });
-      const j = await r.json();
+      const res = await fetch(`${API_BASE}/feed/letsbuzz`, { headers });
+      const json = await res.json();
 
-      const raw: any[] = Array.isArray(j?.items) ? j.items : [];
+      const raw: any[] = Array.isArray(json?.items) ? json.items : [];
+
       const baseList: BuzzPost[] = raw
-        .map((p: any): BuzzPost => {
-          const mediaId = String(p?.id || p?._id || "");
-          const caption = String(p?.caption || "");
+        .map((item: any): BuzzPost => {
+          const mediaId = String(item?.id || item?._id || "");
+          const caption = String(item?.caption || "");
 
           return {
             id: mediaId,
             mediaId,
-            userId: String(p?.userId || ""),
-            mediaUrl: String(p?.mediaUrl || ""),
-            type: (String(p?.type || "video") as BuzzPost["type"]),
+            userId: String(item?.userId || ""),
+            mediaUrl: String(item?.mediaUrl || ""),
+            type: String(item?.type || "video"),
             caption,
             text: stripCaptionTags(caption),
-            createdAt: p?.createdAt,
-            privacy: (
-              hasCaptionTag(caption, "scope:private")
-                ? "private"
-                : hasCaptionTag(caption, "scope:matches")
-                ? "matches"
-                : "public"
-            ) as BuzzPost["privacy"],
-            user: p?.user,
+            createdAt: item?.createdAt,
+            privacy: hasCaptionTag(caption, "scope:private")
+              ? "private"
+              : hasCaptionTag(caption, "scope:matches")
+              ? "matches"
+              : "public",
+            user: item?.user,
             likesCount: 0,
             commentsCount: 0,
             isLiked: false,
@@ -262,55 +301,69 @@ const [muted, setMuted] = useState(false);
             sourceType: "gallery",
           };
         })
-        .filter((p) => !!p.id && !!p.userId && !!p.mediaUrl);
+        .filter((item) => !!item.id && !!item.userId && !!item.mediaUrl);
 
-      // ✅ only actual LetsBuzz reels
-      const onlyReels = baseList.filter((p) => {
-        const type = String(p?.type || "").toLowerCase();
-        const caption = String(p?.caption || "").toLowerCase();
-        const hasMedia = !!String(p?.mediaUrl || "").trim();
+      const onlyReels = baseList.filter((item) => {
+        const type = String(item?.type || "").toLowerCase();
+        const caption = String(item?.caption || "").toLowerCase();
+        const hasMedia = !!String(item?.mediaUrl || "").trim();
 
         const isVideo = type === "video" || type === "reel";
         const isReelTag = caption.includes("kind:reel");
         const isLetsBuzz = caption.includes("intent:letsbuzz");
         const notPrivate = !caption.includes("scope:private");
-        const notMine = !myId || String(p.userId) !== String(myId);
+        const notMine = !myId || String(item.userId) !== String(myId);
 
         return hasMedia && isVideo && isReelTag && isLetsBuzz && notPrivate && notMine;
       });
 
-      // ✅ hydrate real comments + reactions from owner's public profile media array
       const hydrated = await Promise.all(
-        onlyReels.map(async (p) => {
+        onlyReels.map(async (item) => {
           try {
-            const ur = await fetch(`${API_BASE}/users/${p.userId}`, { headers: h });
-            const uj = await ur.json();
-            const mediaList = Array.isArray(uj?.user?.media) ? uj.user.media : [];
-            const media = mediaList.find((m: any) => String(m?.id || "") === String(p.mediaId || p.id));
+            const userRes = await fetch(`${API_BASE}/users/${item.userId}`, { headers });
+            const userJson = await userRes.json();
 
-            if (!media) return p;
+            const mediaList = Array.isArray(userJson?.user?.media)
+              ? userJson.user.media
+              : [];
+
+            const media = mediaList.find(
+              (mediaItem: any) =>
+                String(mediaItem?.id || mediaItem?._id || mediaItem?.mediaId || "") ===
+                String(item.mediaId || item.id)
+            );
+
+            if (!media) return item;
 
             const reactions = media?.reactions || {};
             const comments = Array.isArray(media?.comments) ? media.comments : [];
 
+            const visibleCommentCount = comments.length;
+            commentCountByPostRef.current[String(item.id)] = visibleCommentCount;
+            commentCountByPostRef.current[String(item.mediaId || item.id)] = visibleCommentCount;
+
             return {
-              ...p,
+              ...item,
               likesCount: countHeartReactions(reactions),
-              commentsCount: comments.length,
+              commentsCount: visibleCommentCount,
               isLiked: reactions?.[myId] === "❤️",
             };
           } catch {
-            return p;
+            return item;
           }
         })
       );
 
-      setReels(hydrated);
+         setReels(hydrated);
 
       if (targetPostId) {
-        const idx = hydrated.findIndex((p) => String(p?.id) === String(targetPostId));
+        const idx = hydrated.findIndex((item) => String(item?.id) === String(targetPostId));
+
         if (idx >= 0) {
+          const targetReel = hydrated[idx];
+
           setCurrentIndex(idx);
+
           setTimeout(() => {
             try {
               listRef.current?.scrollToIndex({
@@ -319,73 +372,85 @@ const [muted, setMuted] = useState(false);
                 viewPosition: 0,
               });
             } catch {}
-          }, 0);
+
+            if (deepLinkOpenComments && targetReel) {
+              openComments(targetReel);
+            }
+          }, 150);
         }
       }
 
-      Animated.timing(fadeAnim, {
+       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 300,
         useNativeDriver: true,
       }).start();
-    } catch (e) {
-      console.log("LetsBuzzReels load error:", e);
+    } catch (error) {
+      console.log("LetsBuzzReels load error:", error);
     }
-  }, [fadeAnim, targetPostId, meId]);
+  }, [deepLinkOpenComments, fadeAnim, meId, openComments, targetPostId]);
+  const loadGiftSummary = useCallback(async (post: BuzzPost | null) => {
+    try {
+      const displayKey = getGiftDisplayKey(post);
+      const targetId = getGiftTargetId(post);
 
-  const loadGiftSummary = useCallback(
-    async (postId: string, fromGallery?: boolean) => {
-      try {
-        // ✅ do not fake gallery gift endpoints that were not uploaded
-        if (fromGallery) {
-          setGiftTotal((prev) => ({ ...prev, [postId]: 0 }));
-          return;
-        }
+      if (!displayKey || !targetId || !post) return;
 
-        const h = await authHeaders();
-        const r = await fetch(`${API_BASE}/buzz/posts/${postId}/gifts/summary`, { headers: h });
-        const j = await r.json();
+      const summary = await getGiftSummary({
+        receiverId: String(post.userId || ""),
+        targetType: getGiftTargetType(post),
+        targetId,
+        includeTransactions: false,
+      });
 
-        if (r.ok) {
-          setGiftTotal((prev) => ({ ...prev, [postId]: Number(j?.total || 0) }));
-        }
-      } catch {}
-    },
-    []
-  );
+      setGiftTotal((prev) => ({
+        ...prev,
+        [displayKey]: Number(summary?.totalCount || 0),
+      }));
+    } catch {
+      const displayKey = getGiftDisplayKey(post);
 
-  const handleLike = useCallback(
+      if (displayKey) {
+        setGiftTotal((prev) => ({
+          ...prev,
+          [displayKey]: 0,
+        }));
+      }
+    }
+  }, []);
+
+   const handleLike = useCallback(
     async (post: BuzzPost | null, doubleTap = false) => {
       if (!post) return;
 
       try {
-        const h = await authHeaders();
+        const headers = await authHeaders();
 
         if (post.fromGallery) {
-          const r = await fetch(`${API_BASE}/media/${post.userId}/react`, {
+          const res = await fetch(`${API_BASE}/media/${post.userId}/react`, {
             method: "POST",
-            headers: h,
+            headers,
             body: JSON.stringify({
               mediaId: String(post.mediaId || post.id),
               emoji: "❤️",
             }),
           });
 
-          const j = await r.json();
+          const json = await res.json();
 
-          if (r.ok) {
-            const likesCount = Number(j?.counts?.["❤️"] || 0);
-            const liked = j?.mine === "❤️";
+          if (res.ok) {
+            const likesCount = Number(json?.counts?.["❤️"] || 0);
+            const liked = json?.mine === "❤️";
 
             setReels((prev) =>
-              prev.map((p) =>
-                p.id === post.id
+              prev.map((item) =>
+                item.id === post.id
                   ? {
-                      ...p,
+                      ...item,
                       isLiked: liked,
                       likesCount,
                     }
-                  : p
+                  : item
               )
             );
 
@@ -409,21 +474,21 @@ const [muted, setMuted] = useState(false);
           return;
         }
 
-        const r = await fetch(`${API_BASE}/buzz/posts/${post.id}/like`, {
+        const res = await fetch(`${API_BASE}/buzz/posts/${post.id}/like`, {
           method: "POST",
-          headers: h,
+          headers,
         });
 
-        if (r.ok) {
+        if (res.ok) {
           setReels((prev) =>
-            prev.map((p) =>
-              p.id === post.id
+            prev.map((item) =>
+              item.id === post.id
                 ? {
-                    ...p,
-                    isLiked: !p.isLiked,
-                    likesCount: (p.likesCount || 0) + (p.isLiked ? -1 : 1),
+                    ...item,
+                    isLiked: !item.isLiked,
+                    likesCount: (item.likesCount || 0) + (item.isLiked ? -1 : 1),
                   }
-                : p
+                : item
             )
           );
 
@@ -448,218 +513,31 @@ const [muted, setMuted] = useState(false);
     [likeAnim]
   );
 
-  const openComments = useCallback(
-    async (post: BuzzPost) => {
-      try {
-        setActiveReel(post);
-        setCommentText("");
-        setEditingCommentId(null);
-        setReplyingTo(null);
-
-        const h = await authHeaders();
-
-        if (post.fromGallery) {
-          const ownerRes = await fetch(`${API_BASE}/users/${post.userId}`, { headers: h });
-          const ownerJson = await ownerRes.json();
-
-          const mediaList = Array.isArray(ownerJson?.user?.media) ? ownerJson.user.media : [];
-          const media = mediaList.find(
-            (m: any) => String(m?.id || "") === String(post.mediaId || post.id)
-          );
-
-                 const rawList: BuzzComment[] = Array.isArray(media?.comments)
-            ? media.comments.map((c: any) => ({
-                ...c,
-                author:
-                  c?.userId === post.userId
-                    ? post.user
-                    : c?.userId === meId
-                    ? { id: meId, firstName: "You" }
-                    : { id: c?.userId, firstName: "User" },
-
-                canEdit: String(c?.userId || "") === String(meId),
-                canDelete:
-                  String(c?.userId || "") === String(meId) ||
-                  String(post.userId || "") === String(meId),
-                canReply:
-                  String(c?.userId || "") === String(meId) ||
-                  String(post.userId || "") === String(meId),
-              }))
-            : [];
-
-          // thread order: parent then its replies
-          const topLevel = rawList
-            .filter((c) => !c.parentId)
-            .sort((a: any, b: any) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
-          const replies = rawList
-            .filter((c) => !!c.parentId)
-            .sort((a: any, b: any) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
-
-          const list: BuzzComment[] = [];
-          for (const parent of topLevel) {
-            list.push(parent);
-            for (const child of replies.filter((r) => String(r.parentId) === String(parent.id))) {
-              list.push(child);
-            }
-          }
-          for (const orphan of replies.filter((r) => !topLevel.some((p) => String(p.id) === String(r.parentId)))) {
-            list.push(orphan);
-          }
-
-          setComments(list);
-
-          commentCountByPostRef.current[String(post.id)] = list.length;
-          forceCommentCountsRerender((x) => x + 1);
-
-          setReels((prev) =>
-            prev.map((p) =>
-              p.id === post.id
-                ? {
-                    ...p,
-                    commentsCount: list.length,
-                  }
-                : p
-            )
-          );
-
-          setCommentsOpen(true);
-          return;
-        }
-
-        const postId = String(post.id || "");
-        if (!postId) return;
-
-        const r = await fetch(`${API_BASE}/buzz/posts/${postId}/comments`, { headers: h });
-        const j = await r.json();
-        const list = Array.isArray(j?.comments) ? j.comments : [];
-        setComments(list);
-
-        commentCountByPostRef.current[postId] = list.length;
-        forceCommentCountsRerender((x) => x + 1);
-
-        setCommentsOpen(true);
-      } catch {}
-    },
-    [meId]
-  );
-
-  const sendComment = useCallback(async () => {
-    if (!activeReel) return;
-    const text = commentText.trim();
-    if (!text) return;
-
+  const openGiftInsights = useCallback(async (post: BuzzPost | null) => {
     try {
-      const h = await authHeaders();
+      if (!post) return;
 
-      // ✅ Gallery-backed media comments (supports parentId/edit now)
-      if (activeReel.fromGallery) {
-        const mediaId = String(activeReel.mediaId || activeReel.id);
-        if (!mediaId) return;
+      const targetId = getGiftTargetId(post);
+      if (!targetId) return;
 
-        // EDIT
-        if (editingCommentId) {
-          const r = await fetch(
-            `${API_BASE}/media/${activeReel.userId}/comment/${editingCommentId}`,
-            {
-              method: "PATCH",
-              headers: h,
-              body: JSON.stringify({ mediaId, text }),
-            }
-          );
-          if (!r.ok) return;
-
-          setCommentText("");
-          setEditingCommentId(null);
-          setReplyingTo(null);
-          await openComments(activeReel);
-          return;
-        }
-
-        // CREATE / REPLY
-        const r = await fetch(`${API_BASE}/media/${activeReel.userId}/comment`, {
-          method: "POST",
-          headers: h,
-          body: JSON.stringify({
-            mediaId,
-            text,
-            parentId: replyingTo ? String(replyingTo.id) : null,
-          }),
-        });
-
-        if (r.ok) {
-          setCommentText("");
-          setEditingCommentId(null);
-          setReplyingTo(null);
-          await openComments(activeReel);
-        }
-        return;
-      }
-
-      // ✅ Legacy buzz post comments
-      const postId = String(activeReel.id || "");
-      if (!postId) return;
-
-      // EDIT
-      if (editingCommentId) {
-        const r = await fetch(`${API_BASE}/buzz/posts/${postId}/comments/${editingCommentId}`, {
-          method: "PATCH",
-          headers: h,
-          body: JSON.stringify({ text }),
-        });
-        if (!r.ok) return;
-
-        setCommentText("");
-        setEditingCommentId(null);
-        setReplyingTo(null);
-        await openComments(activeReel);
-        return;
-      }
-
-      // CREATE / REPLY
-      const r = await fetch(`${API_BASE}/buzz/posts/${postId}/comments`, {
-        method: "POST",
-        headers: h,
-        body: JSON.stringify({
-          text,
-          parentId: replyingTo ? String(replyingTo.id) : null,
-        }),
+      const summary = await getGiftSummary({
+        receiverId: String(post.userId || ""),
+        targetType: getGiftTargetType(post),
+        targetId,
+        includeTransactions: true,
       });
 
-      if (r.ok) {
-        setCommentText("");
-        setEditingCommentId(null);
-        setReplyingTo(null);
-        await openComments(activeReel);
-      }
-    } catch {}
-  }, [activeReel, commentText, editingCommentId, replyingTo, openComments]);
-
-  const sendGift = useCallback(
-    async (giftKey: string) => {
-      if (!activeReel) return;
-
-      // ✅ gallery gift route file was not uploaded, so do not fake it here
-      if (activeReel.fromGallery) {
-        setGiftPickerOpen(false);
+      if (!summary?.rows?.length && Number(summary?.totalCount || 0) <= 0) {
         return;
       }
 
-      try {
-        const h = await authHeaders();
-        const r = await fetch(`${API_BASE}/buzz/posts/${activeReel.id}/gifts`, {
-          method: "POST",
-          headers: h,
-          body: JSON.stringify({ giftKey, amount: 1 }),
-        });
-
-        if (r.ok) {
-          loadGiftSummary(activeReel.id);
-          setGiftPickerOpen(false);
-        }
-      } catch {}
-    },
-    [activeReel, loadGiftSummary]
-  );
+      setActiveReel(post);
+      setGiftSummary(summary);
+      setGiftInsightsOpen(true);
+    } catch {
+      // Backend controls privacy. If viewer is not owner/gifter, nothing opens.
+    }
+  }, []);
 
   const shareToAuthor = useCallback(
     async (post: BuzzPost) => {
@@ -675,7 +553,7 @@ const [muted, setMuted] = useState(false);
           throw new Error("cant_share_to_self");
         }
 
-        const h = await authHeaders();
+        const headers = await authHeaders();
         const roomId = roomIdFor(my, ownerId);
 
         const text = encodeRBZSharePost({
@@ -685,36 +563,34 @@ const [muted, setMuted] = useState(false);
           mediaUrl: post.mediaUrl || "",
         });
 
-        const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
+        const res = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
           method: "POST",
-          headers: h,
+          headers,
           body: JSON.stringify({ text, to: ownerId }),
         });
 
-        if (!r.ok) {
-          let msg = "Could not share reel.";
+        if (!res.ok) {
+          let message = "Could not share reel.";
+
           try {
-            const j = await r.json();
-            msg = j?.error || j?.message || msg;
+            const json = await res.json();
+            message = json?.error || json?.message || message;
           } catch {}
-          throw new Error(msg);
+
+          throw new Error(message);
         }
 
         router.push({
           pathname: "/chat/[peerId]" as any,
           params: {
             peerId: ownerId,
-            name:
-              [post?.user?.firstName, post?.user?.lastName].filter(Boolean).join(" ") ||
-              post?.user?.username ||
-              "RomBuzz User",
-            avatar:
-              post?.user?.avatar ||
-              "https://i.pravatar.cc/200?img=12",
+            name: getOwnerName(post.user),
+            avatar: getOwnerAvatar(post.user),
           },
-        });      } catch (e: any) {
-        const msg = e?.message ? String(e.message) : "Could not share reel.";
-        Alert.alert("Share", msg);
+        });
+      } catch (error: any) {
+        const message = error?.message ? String(error.message) : "Could not share reel.";
+        Alert.alert("Share", message);
       }
     },
     [meId, router]
@@ -746,6 +622,7 @@ const [muted, setMuted] = useState(false);
   const animateDoubleTap = useCallback(
     (_x: number, _y: number) => {
       doubleTapAnim.setValue(0);
+
       Animated.sequence([
         Animated.timing(doubleTapAnim, {
           toValue: 1,
@@ -763,9 +640,35 @@ const [muted, setMuted] = useState(false);
     [doubleTapAnim]
   );
 
+  const handleCommentsChanged = useCallback(
+    (nextComments: any[]) => {
+      if (!activeReel) return;
+
+      const count = Array.isArray(nextComments) ? nextComments.length : 0;
+      const displayKey = String(activeReel.id || "");
+      const targetKey = getGiftTargetId(activeReel);
+
+      if (displayKey) commentCountByPostRef.current[displayKey] = count;
+      if (targetKey) commentCountByPostRef.current[targetKey] = count;
+
+      forceCommentCountsRerender((value) => value + 1);
+
+      setReels((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(activeReel.id)
+            ? {
+                ...item,
+                commentsCount: count,
+              }
+            : item
+        )
+      );
+    },
+    [activeReel]
+  );
+
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
         setLoading(true);
@@ -778,34 +681,61 @@ const [muted, setMuted] = useState(false);
 
     if (!socket) return;
 
-    const onCommentNew = (evt: any) => {
-      const postId = String(evt?.postId || "");
-      if (commentsOpen && activeReel?.id && String(activeReel.id) === postId) {
-        openComments(activeReel);
+    const onCommentNew = (event: any) => {
+      const postId = String(event?.postId || event?.mediaId || event?.targetId || "");
+      if (!postId) return;
+
+      commentCountByPostRef.current[postId] =
+        Number(commentCountByPostRef.current[postId] || 0) + 1;
+
+      forceCommentCountsRerender((value) => value + 1);
+    };
+
+    const onCommentDeleted = (event: any) => {
+      const postId = String(event?.postId || event?.mediaId || event?.targetId || "");
+      if (!postId) return;
+
+      commentCountByPostRef.current[postId] = Math.max(
+        0,
+        Number(commentCountByPostRef.current[postId] || 0) - 1
+      );
+
+      forceCommentCountsRerender((value) => value + 1);
+    };
+
+    const onGiftNew = (event: any) => {
+      const postId = String(event?.postId || event?.targetId || "");
+      if (!postId) return;
+
+      const matched = reels.find(
+        (item) =>
+          String(item.id) === postId ||
+          String(item.mediaId || "") === postId ||
+          getGiftTargetId(item) === postId
+      );
+
+      if (matched) {
+        loadGiftSummary(matched);
       }
     };
 
-      const onGiftNew = (evt: any) => {
-      const postId = String(evt?.postId || "");
-      if (!postId) return;
+      socket.on?.("comment:new", onCommentNew);
+    socket.on?.("comment:deleted", onCommentDeleted);
+    socket.on?.("buzz:gift:new", onGiftNew);
 
-      const matched = reels.find((p) => String(p.id) === postId);
-      loadGiftSummary(postId, matched?.fromGallery);
-    };
-
-    socket.on?.("comment:new", onCommentNew);
-    socket.on?.("comment:deleted", onCommentNew);
-    socket.on?.("comment:updated", onCommentNew);    socket.on?.("buzz:gift:new", onGiftNew);
     return () => {
       cancelled = true;
+
       socket.off?.("comment:new", onCommentNew);
-      socket.off?.("comment:deleted", onCommentNew);
-      socket.off?.("comment:updated", onCommentNew);      socket.off?.("buzz:gift:new", onGiftNew);
+      socket.off?.("comment:deleted", onCommentDeleted);
+      socket.off?.("buzz:gift:new", onGiftNew);
     };
-  }, [fetchMeId, loadReels, socket, openComments, loadGiftSummary]);  useEffect(() => {
+  }, [fetchMeId, loadGiftSummary, loadReels, socket]);
+
+  useEffect(() => {
     if (!currentReel?.id) return;
-    loadGiftSummary(currentReel.id, currentReel.fromGallery);
-  }, [currentReel?.id, currentReel?.fromGallery, loadGiftSummary]);
+    loadGiftSummary(currentReel);
+  }, [currentReel?.id, currentReel?.mediaId, currentReel?.fromGallery, loadGiftSummary]);
 
   if (loading) {
     return (
@@ -821,7 +751,9 @@ const [muted, setMuted] = useState(false);
       <View style={styles.emptyContainer}>
         <Ionicons name="videocam-outline" size={64} color={RBZ.sub} />
         <Text style={styles.emptyTitle}>No reels yet</Text>
-        <Text style={styles.emptyText}>Matched reels from your connections will appear here</Text>
+        <Text style={styles.emptyText}>
+          Matched reels from your connections will appear here
+        </Text>
       </View>
     );
   }
@@ -830,9 +762,8 @@ const [muted, setMuted] = useState(false);
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Main Reels Container */}
       <View style={styles.reelsContainer}>
-               <FlatList
+        <FlatList
           ref={listRef}
           data={reels}
           keyExtractor={(item) => item.id}
@@ -843,9 +774,8 @@ const [muted, setMuted] = useState(false);
               tintColor="#fff"
             />
           }
-                    renderItem={({ item, index }) => (
+          renderItem={({ item, index }) => (
             <View style={styles.reelContainer}>
-              {/* Video Background */}
               <View style={styles.videoWrap}>
                 <Video
                   ref={(ref) => {
@@ -862,38 +792,42 @@ const [muted, setMuted] = useState(false);
                   onError={() => {}}
                 />
 
-                {/* FULL VIDEO TAP LAYER: tap anywhere except overlay buttons */}
-                {index === currentIndex && (
+                {index === currentIndex ? (
                   <Pressable
                     style={styles.videoTapLayer}
-                    onPress={(e: any) => {
+                    onPress={(event: any) => {
                       const now = Date.now();
                       const isDoubleTap = now - lastTapRef.current < 280;
                       lastTapRef.current = now;
 
                       if (isDoubleTap) {
                         handleLike(item, true);
-                        animateDoubleTap(e.nativeEvent.locationX, e.nativeEvent.locationY);
+                        animateDoubleTap(
+                          event.nativeEvent.locationX,
+                          event.nativeEvent.locationY
+                        );
                         return;
                       }
 
-                      setPaused((p) => !p);
+                      setPaused((value) => !value);
                     }}
                   />
-                )}
+                ) : null}
 
-                {/* Pause/Play icon overlay (VISUAL ONLY, DOES NOT CAPTURE TOUCHES) */}
-                {index === currentIndex && paused && (
+                {index === currentIndex && paused ? (
                   <View style={styles.playOverlayVisual} pointerEvents="none">
                     <View style={styles.playButton}>
-                      <Ionicons name="play" size={58} color="rgba(255,255,255,0.72)" />
+                      <Ionicons
+                        name="play"
+                        size={58}
+                        color="rgba(255,255,255,0.72)"
+                      />
                     </View>
                   </View>
-                )}
+                ) : null}
               </View>
 
-              {/* Double Tap Heart Animation */}
-              {index === currentIndex && (
+              {index === currentIndex ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[
@@ -913,7 +847,7 @@ const [muted, setMuted] = useState(false);
                 >
                   <Ionicons name="heart" size={120} color="#ff4757" />
                 </Animated.View>
-              )}
+              ) : null}
             </View>
           )}
           pagingEnabled
@@ -921,7 +855,10 @@ const [muted, setMuted] = useState(false);
           snapToInterval={SCREEN_HEIGHT}
           decelerationRate="fast"
           onMomentumScrollEnd={(event) => {
-            const newIndex = Math.round(event.nativeEvent.contentOffset.y / SCREEN_HEIGHT);
+            const newIndex = Math.round(
+              event.nativeEvent.contentOffset.y / SCREEN_HEIGHT
+            );
+
             if (newIndex !== currentIndex) {
               setCurrentIndex(newIndex);
               setPaused(false);
@@ -941,23 +878,19 @@ const [muted, setMuted] = useState(false);
         />
       </View>
 
-      {/* Overlay UI */}
-      {currentReel && (
+      {currentReel ? (
         <View style={styles.overlayContainer} pointerEvents="box-none">
-                 {/* Top Bar */}
-          <View style={styles.topBar} pointerEvents="box-none">
-            {/* mute moved to right action bar (below Share) */}
-          </View>
+          <View style={styles.topBar} pointerEvents="box-none" />
 
-          {/* Right Action Bar */}
           <View style={styles.rightActions}>
-            {/* Profile */}
             <TouchableOpacity
               style={styles.actionItem}
-              onPress={() => router.push(`/view-profile?userId=${currentReel.userId}` as any)}
+              onPress={() =>
+                router.push(`/view-profile?userId=${currentReel.userId}` as any)
+              }
             >
               <Image
-                source={{ uri: currentReel.user?.avatar || "https://via.placeholder.com/100" }}
+                source={{ uri: getOwnerAvatar(currentReel.user) }}
                 style={styles.profileImage}
               />
               <View style={styles.followBadge}>
@@ -965,42 +898,51 @@ const [muted, setMuted] = useState(false);
               </View>
             </TouchableOpacity>
 
-         {/* Gift (replaces heart slot) */}
             <TouchableOpacity
               style={styles.actionItem}
               onPress={() => {
                 setActiveReel(currentReel);
                 setGiftPickerOpen(true);
               }}
+              onLongPress={() => openGiftInsights(currentReel)}
+              delayLongPress={350}
+              activeOpacity={0.8}
             >
               <Ionicons name="gift-outline" size={30} color="#fff" />
               <Text style={styles.actionText}>
-                {currentReel.fromGallery ? 0 : giftTotal[currentReel.id] || 0}
+                {giftTotal[getGiftDisplayKey(currentReel)] || 0}
               </Text>
             </TouchableOpacity>
 
-                    {/* Comment */}
-            <TouchableOpacity style={styles.actionItem} onPress={() => openComments(currentReel)}>
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => openComments(currentReel)}
+            >
               <Ionicons name="chatbubble-outline" size={28} color="#fff" />
               <Text style={styles.actionText}>
                 {(() => {
-                  const v = commentCountByPostRef.current[String(currentReel.id || "")];
-                  if (typeof v === "number") return v;
+                  const displayKey = String(currentReel.id || "");
+                  const targetKey = getGiftTargetId(currentReel);
+                  const displayCount = commentCountByPostRef.current[displayKey];
+                  const targetCount = commentCountByPostRef.current[targetKey];
+
+                  if (typeof displayCount === "number") return displayCount;
+                  if (typeof targetCount === "number") return targetCount;
+
                   return Number(currentReel.commentsCount || 0);
                 })()}
               </Text>
             </TouchableOpacity>
 
-                     {/* Gift moved into the old heart slot */}
-
-                   {/* Share */}
-            <TouchableOpacity style={styles.actionItem} onPress={() => shareToAuthor(currentReel)}>
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => shareToAuthor(currentReel)}
+            >
               <Ionicons name="paper-plane-outline" size={28} color="#fff" />
               <Text style={styles.actionText}>Share</Text>
             </TouchableOpacity>
 
-            {/* Mute / Unmute */}
-            <TouchableOpacity
+                     <TouchableOpacity
               style={styles.muteActionButton}
               onPress={() => setMuted((prev) => !prev)}
               activeOpacity={0.8}
@@ -1012,9 +954,20 @@ const [muted, setMuted] = useState(false);
                 color="#fff"
               />
             </TouchableOpacity>
+
+                   <TouchableOpacity
+              style={styles.reportActionButton}
+              onPress={() => {
+                setReportReel(currentReel);
+                setReelMenuOpen(true);
+              }}
+              activeOpacity={0.8}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+            </TouchableOpacity>
           </View>
 
-                    {/* Bottom Info */}
           <LinearGradient
             colors={["transparent", "rgba(0,0,0,0.85)"]}
             style={styles.bottomFade}
@@ -1022,14 +975,16 @@ const [muted, setMuted] = useState(false);
           >
             <View style={styles.bottomInfo} pointerEvents="box-none">
               <View style={styles.userInfo} pointerEvents="box-none">
-                {!!currentReel.text?.trim() && (
+                {!!currentReel.text?.trim() ? (
                   <Text style={styles.caption} numberOfLines={3}>
                     {currentReel.text}
                   </Text>
-                )}
+                ) : null}
 
                 <Pressable
-                  onPress={() => router.push(`/view-profile?userId=${currentReel.userId}` as any)}
+                  onPress={() =>
+                    router.push(`/view-profile?userId=${currentReel.userId}` as any)
+                  }
                   hitSlop={10}
                   style={[
                     styles.nameRowBottom,
@@ -1039,7 +994,7 @@ const [muted, setMuted] = useState(false);
                   ]}
                 >
                   <Image
-                    source={{ uri: currentReel.user?.avatar || "https://via.placeholder.com/80" }}
+                    source={{ uri: getOwnerAvatar(currentReel.user) }}
                     style={styles.nameAvatar}
                   />
                   <Text style={styles.username}>{fullName}</Text>
@@ -1048,197 +1003,139 @@ const [muted, setMuted] = useState(false);
             </View>
           </LinearGradient>
         </View>
-      )}
+      ) : null}
 
-      {/* Gift Picker Modal */}
-      <Modal
-        visible={giftPickerOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setGiftPickerOpen(false)}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: "rgba(0,0,0,0.85)" }]}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Send a Gift</Text>
-              <TouchableOpacity onPress={() => setGiftPickerOpen(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
+      {activeReel && getGiftTargetId(activeReel) ? (
+        <GiftPicker
+          visible={giftPickerOpen}
+          onClose={() => setGiftPickerOpen(false)}
+          receiverId={String(activeReel.userId || "")}
+          placement="reels"
+          targetType={getGiftTargetType(activeReel)}
+          targetId={getGiftTargetId(activeReel)}
+          title="Send a Gift"
+          subtitle="Pick a gift for this reel."
+          onSent={() => {
+            setGiftPickerOpen(false);
+            loadGiftSummary(activeReel);
+          }}
+        />
+      ) : null}
 
-            <View style={styles.giftGrid}>
-              {GIFT_OPTIONS.map((gift) => (
-                <TouchableOpacity
-                  key={gift.key}
-                  style={[styles.giftCard, { backgroundColor: gift.color + "20" }]}
-                  onPress={() => sendGift(gift.key)}
-                >
-                  <Text style={styles.giftEmoji}>{gift.emoji}</Text>
-                  <Text style={styles.giftLabel}>{gift.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Comments Modal */}
-      <Modal
-        visible={commentsOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCommentsOpen(false)}
-      >
-        <View style={styles.commentsModal}>
-          <View style={styles.commentsContainer}>
-            <View style={styles.commentsHeader}>
-              <Text style={styles.commentsTitle}>Comments</Text>
-              <TouchableOpacity onPress={() => setCommentsOpen(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={comments}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.commentsList}
-            renderItem={({ item }) => {
-  const nm =
-    `@${item.author?.username || item.author?.firstName || "user"}`.trim();
-
-  const isReply = !!item.parentId;
-
-  return (
-    <View style={[styles.commentItem, isReply ? styles.replyCommentItem : null]}>
-      <Image
-        source={{ uri: item.author?.avatar || "https://via.placeholder.com/80" }}
-        style={styles.commentAvatar}
+      <GiftInsightSheet
+        visible={giftInsightsOpen}
+        summary={giftSummary}
+        currentUserId={meId}
+        onClose={() => {
+          setGiftInsightsOpen(false);
+          setGiftSummary(null);
+        }}
       />
 
-      <View style={styles.commentContent}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Text style={styles.commentUsername}>{nm}</Text>
+               {activeReel && getGiftTargetId(activeReel) ? (
+        <PrivateCommentsSheet
+          visible={commentsOpen}
+          onClose={() => setCommentsOpen(false)}
+          targetType={getGiftTargetType(activeReel) as any}
+          targetId={getGiftTargetId(activeReel)}
+          ownerId={String(activeReel.userId || "")}
+          currentUserId={String(meId || "")}
+          ownerUser={activeReel.user || null}
+          title="Private Comments"
+          subtitle="Visible only to you and the reel owner."
+          onChanged={handleCommentsChanged}
+        />
+      ) : null}
 
-          {(item.canReply || item.canEdit || item.canDelete) ? (
-            <TouchableOpacity
+      <Modal
+        visible={reelMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setReelMenuOpen(false);
+          setReportReel(null);
+        }}
+      >
+        <Pressable
+          style={styles.reelMenuBackdrop}
+          onPress={() => {
+            setReelMenuOpen(false);
+            setReportReel(null);
+          }}
+        >
+          <Pressable style={styles.reelMenuCard} onPress={() => {}}>
+            <Pressable
+              style={styles.reelMenuItem}
               onPress={() => {
-                const actions: any[] = [];
+                if (!reportReel) return;
 
-                if (item.canReply) {
-                  actions.push({
-                    text: "Reply",
-                    onPress: () => {
-                      setEditingCommentId(null);
-                      setReplyingTo({
-                        id: String(item.id),
-                        name: nm.replace("@", ""),
-                      });
-                      setCommentText(replySeedFor(nm.replace("@", "")));
-                    },
-                  });
-                }
-
-                if (item.canEdit) {
-                  actions.push({
-                    text: "Edit",
-                    onPress: () => {
-                      setReplyingTo(null);
-                      setEditingCommentId(String(item.id));
-                      setCommentText(item.text);
-                    },
-                  });
-                }
-
-                if (item.canDelete) {
-                  actions.push({
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: async () => {
-                      try {
-                        if (!activeReel) return;
-                        const h = await authHeaders();
-
-                        if (activeReel.fromGallery) {
-                          const mediaId = String(activeReel.mediaId || activeReel.id);
-                          const r = await fetch(
-                            `${API_BASE}/media/${activeReel.userId}/comment/${item.id}`,
-                            {
-                              method: "DELETE",
-                              headers: h,
-                              body: JSON.stringify({ mediaId }),
-                            }
-                          );
-                          if (r.ok) await openComments(activeReel);
-                          return;
-                        }
-
-                        const postId = String(activeReel.id || "");
-                        const r = await fetch(
-                          `${API_BASE}/buzz/posts/${postId}/comments/${item.id}`,
-                          { method: "DELETE", headers: h }
-                        );
-                        if (r.ok) await openComments(activeReel);
-                      } catch {}
-                    },
-                  });
-                }
-
-                actions.push({ text: "Cancel", style: "cancel" });
-                Alert.alert("Comment", "Choose action", actions);
+                setReelMenuOpen(false);
+                setReportSheetOpen(true);
               }}
             >
-              <Ionicons name="ellipsis-horizontal" size={18} color={RBZ.sub} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
+              <View style={styles.reelMenuIconBubble}>
+                <Ionicons name="flag-outline" size={18} color={RBZ.c3} />
+              </View>
 
-        <Text style={styles.commentText}>{item.text}</Text>
-      </View>
-    </View>
-  );
-}}
-              ListEmptyComponent={
-                <View style={styles.noComments}>
-                  <Text style={styles.noCommentsText}>No comments yet</Text>
-                </View>
-              }
-            />
-{(editingCommentId || replyingTo) ? (
-  <View style={styles.composeModeRow}>
-    <Text style={styles.composeModeText}>
-      {editingCommentId ? "Editing comment" : replyingTo ? `Replying to ${replyingTo.name}` : ""}
-    </Text>
-    <TouchableOpacity
-      onPress={() => {
-        setEditingCommentId(null);
-        setReplyingTo(null);
-        setCommentText("");
-      }}
-    >
-      <Text style={styles.composeModeCancel}>Cancel</Text>
-    </TouchableOpacity>
-  </View>
-) : null}
-            <View style={styles.commentInputContainer}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Add a comment..."
-                placeholderTextColor={RBZ.sub}
-                value={commentText}
-                onChangeText={setCommentText}
-                multiline
-              />
-              <TouchableOpacity
-                style={[styles.sendButton, !commentText.trim() && styles.sendButtonDisabled]}
-                onPress={sendComment}
-                disabled={!commentText.trim()}
-              >
-                <Ionicons name="send" size={20} color={commentText.trim() ? "#fff" : RBZ.sub} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+              <View style={styles.reelMenuTextWrap}>
+                <Text style={styles.reelMenuTitle}>Report</Text>
+                <Text style={styles.reelMenuSubtitle}>
+                  Report this reel to RomBuzz safety
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={styles.reelMenuCancelButton}
+              onPress={() => {
+                setReelMenuOpen(false);
+                setReportReel(null);
+              }}
+            >
+              <Text style={styles.reelMenuCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
       </Modal>
+
+         {reportReel && getGiftTargetId(reportReel) ? (
+        <RBZReportSheet
+          visible={reportSheetOpen}
+          onClose={() => {
+            setReportSheetOpen(false);
+            setReelMenuOpen(false);
+            setReportReel(null);
+          }}
+          onSubmitted={() => {
+            setReportSheetOpen(false);
+            setReelMenuOpen(false);
+            setReportReel(null);
+          }}
+          target={{
+            targetType: "reel",
+            targetId: getGiftTargetId(reportReel),
+            reportedUserId: String(reportReel.userId || ""),
+            targetOwnerId: String(reportReel.userId || ""),
+            source: "mobile_letsbuzz_reel",
+            title: getOwnerName(reportReel.user),
+            subtitle: "LetsBuzz reel",
+            avatar: getOwnerAvatar(reportReel.user),
+            evidenceSnapshot: {
+              screen: "letsbuzz_reels",
+              contentType: "reel",
+              letsBuzzTargetType: getGiftTargetType(reportReel),
+              reelId: String(reportReel.id || ""),
+              mediaId: String(reportReel.mediaId || ""),
+              ownerId: String(reportReel.userId || ""),
+              authorName: getOwnerName(reportReel.user),
+              authorAvatar: getOwnerAvatar(reportReel.user),
+              caption: String(reportReel.text || reportReel.caption || ""),
+              mediaUrl: String(reportReel.mediaUrl || ""),
+              createdAt: reportReel.createdAt || null,
+            },
+          }}
+        />
+      ) : null}
     </Animated.View>
   );
 }
@@ -1248,17 +1145,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: RBZ.dark,
   },
+
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: RBZ.dark,
   },
+
   loadingText: {
     color: RBZ.sub,
     marginTop: 16,
     fontSize: 16,
   },
+
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1266,21 +1166,25 @@ const styles = StyleSheet.create({
     backgroundColor: RBZ.dark,
     padding: 24,
   },
+
   emptyTitle: {
     color: "#fff",
     fontSize: 24,
     fontWeight: "bold",
     marginTop: 16,
   },
+
   emptyText: {
     color: RBZ.sub,
     textAlign: "center",
     marginTop: 8,
     fontSize: 14,
   },
+
   reelsContainer: {
     flex: 1,
   },
+
   reelContainer: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
@@ -1293,12 +1197,12 @@ const styles = StyleSheet.create({
     height: "100%",
     position: "relative",
   },
-   video: {
+
+  video: {
     width: "100%",
     height: "100%",
   },
 
-  // ✅ Tap anywhere on the reel to pause/play, except actual overlay buttons
   videoTapLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 5,
@@ -1308,6 +1212,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "space-between",
   },
+
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1317,12 +1222,8 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: "transparent",
   },
-  muteButton: {
-    padding: 8,
-    backgroundColor: "rgba(0,0,0,0.18)",
-    borderRadius: 20,
-  },
-    rightActions: {
+
+  rightActions: {
     position: "absolute",
     right: 16,
     bottom: 120,
@@ -1331,10 +1232,12 @@ const styles = StyleSheet.create({
     zIndex: 30,
     elevation: 30,
   },
+
   actionItem: {
     alignItems: "center",
     gap: 4,
   },
+
   muteActionButton: {
     width: 44,
     height: 44,
@@ -1345,6 +1248,86 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.14)",
   },
+
+   reportActionButton: {
+    width: 44,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.28)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+
+  reelMenuBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.38)",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingRight: 74,
+  },
+  reelMenuCard: {
+    width: 230,
+    borderRadius: 20,
+    padding: 12,
+    backgroundColor: "rgba(10,10,15,0.96)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 20,
+  },
+  reelMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+  },
+  reelMenuIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(233,72,106,0.16)",
+  },
+  reelMenuTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  reelMenuTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  reelMenuSubtitle: {
+    color: "rgba(255,255,255,0.62)",
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  reelMenuCancelButton: {
+    minHeight: 40,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 6,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  reelMenuCancelText: {
+    color: "rgba(255,255,255,0.82)",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
   profileImage: {
     width: 48,
     height: 48,
@@ -1352,6 +1335,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
+
   followBadge: {
     position: "absolute",
     bottom: -4,
@@ -1362,11 +1346,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   actionText: {
     color: "#fff",
     fontSize: 12,
     fontWeight: "600",
   },
+
   bottomFade: {
     position: "absolute",
     left: 0,
@@ -1374,31 +1360,28 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 180,
   },
-   bottomInfo: {
+
+  bottomInfo: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 42,
   },
+
   userInfo: {
     gap: 8,
   },
-   nameRow: {
+
+  nameRowBottom: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
     gap: 8,
   },
 
-  // ✅ New: pushes the name to the bottom of the bottomInfo area
-   nameRowBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 8,
-  },
   nameRowWithCaption: {
     marginTop: 14,
   },
+
   nameRowWithoutCaption: {
     marginTop: 95,
   },
@@ -1411,18 +1394,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.20)",
   },
+
   username: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
   },
+
   caption: {
     color: "#fff",
     fontSize: 14,
     lineHeight: 20,
   },
 
-  // ✅ Visual only (no touch)
   playOverlayVisual: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
@@ -1431,6 +1415,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
     elevation: 20,
   },
+
   playButton: {
     width: 88,
     height: 88,
@@ -1446,169 +1431,5 @@ const styles = StyleSheet.create({
     position: "absolute",
     alignSelf: "center",
     top: "40%",
-  },
-
-  modalContainer: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: RBZ.darker,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  modalTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  giftGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
-  giftCard: {
-    width: (SCREEN_WIDTH - 64) / 3,
-    aspectRatio: 1,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-  },
-  giftEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  giftLabel: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  commentsModal: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.9)",
-  },
-  commentsContainer: {
-    flex: 1,
-    backgroundColor: RBZ.darker,
-    marginTop: StatusBar.currentHeight || 44,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden",
-  },
-  commentsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  commentsTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  commentsList: {
-    padding: 20,
-  },
-  commentItem: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-  },
-  commentAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  commentContent: {
-    flex: 1,
-  },
-  commentUsername: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  commentText: {
-    color: RBZ.text,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  noComments: {
-    alignItems: "center",
-    paddingVertical: 40,
-  },
-  noCommentsText: {
-    color: RBZ.sub,
-    fontSize: 14,
-  },
-  commentInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
-    gap: 12,
-  },
-  commentInput: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    color: "#fff",
-    fontSize: 14,
-    maxHeight: 100,
-  },
-  sendButton: {
-    backgroundColor: RBZ.c3,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-    replyCommentItem: {
-    marginLeft: 22,
-    paddingLeft: 10,
-    borderLeftWidth: 1,
-    borderLeftColor: "rgba(255,255,255,0.12)",
-  },
-
-  composeModeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.04)",
-  },
-  composeModeText: {
-    color: RBZ.sub,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  composeModeCancel: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  
-  sendButtonDisabled: {
-    backgroundColor: "rgba(255,255,255,0.1)",
   },
 });

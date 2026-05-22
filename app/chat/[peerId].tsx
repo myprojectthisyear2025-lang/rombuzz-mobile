@@ -45,8 +45,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AudioBubble from "@/src/components/chat/AudioBubble";
 import ChatCameraModal from "@/src/components/chat/ChatCameraModal";
+import ChatGiftedMediaBubble from "@/src/components/chat/ChatGiftedMediaBubble";
+import ChatGiftMessageBubble from "@/src/components/chat/ChatGiftMessageBubble";
 import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
 import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
 import { useChatMediaViewerController } from "@/src/features/chat/thread/ChatMediaViewerController";
 import SwipeReplyRow from "@/src/features/chat/thread/SwipeReplyRow";
@@ -64,6 +67,10 @@ import {
 } from "@/src/features/chat/thread/chatReplyUtils";
 import { formatExactMessageTime } from "@/src/features/chat/thread/chatTimeUtils";
 import type { Msg, ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
+import { startVideoCall } from "@/src/features/videoCall/videoCallApi";
+import VideoCallHistoryBubble, {
+  isVideoCallHistoryMessage,
+} from "@/src/features/videoCall/VideoCallHistoryBubble";
 
 const RBZ = {
   c1: "#b1123c",
@@ -135,6 +142,37 @@ const peerAvatar =
   peerProfile?.avatar ||
   routePeerAvatar ||
   "https://i.pravatar.cc/200?img=12";
+
+const [startingVideoCall, setStartingVideoCall] = useState(false);
+
+const handleStartVideoCall = async () => {
+  if (!peerId || startingVideoCall) return;
+
+  setStartingVideoCall(true);
+
+  try {
+    const result = await startVideoCall(peerId);
+
+    router.push({
+      pathname: "../video-call/[callId]",
+      params: {
+        callId: result.call.id,
+        channelName: result.call.channelName,
+        appId: result.token?.appId || "",
+        token: result.token?.token || "",
+        uid: result.token?.uid || "",
+        role: "caller",
+      },
+    });
+  } catch (err: any) {
+    Alert.alert(
+      "Video call",
+      err?.message || "Could not start the video call."
+    );
+  } finally {
+    setStartingVideoCall(false);
+  }
+};
 
 /* ============================================================
    🔔 ACTIVE CHAT SIGNAL (for unread suppression + reordering)
@@ -226,6 +264,11 @@ const getMediaKey = (m: any) => String(m?.id || m?.url || "");
 const isExpired = (m: any) => {
   const k = getMediaKey(m);
   return !!expiredMedia[k];
+};
+
+const isGiftedPaidMedia = (m: any) => {
+  const priceBC = Math.floor(Number(m?.gift?.priceBC ?? m?.gift?.amount ?? 0) || 0);
+  return priceBC > 0 && (m?.type === "media" || !!m?.url);
 };
 
 const consumeEphemeralView = async (m: any) => {
@@ -443,10 +486,46 @@ const onSeen = (payload: any) => {
 };
 
 
-  // message action sheet
+   // message action sheet
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMsg, setSheetMsg] = useState<Msg | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportMsg, setReportMsg] = useState<Msg | null>(null);
+
+  const reportMsgDecoded = useMemo(() => {
+    if (!reportMsg) return null;
+    return maybeDecode(reportMsg as any);
+  }, [reportMsg]);
+
+  const reportMsgOwnerId = useMemo(() => {
+    if (!reportMsg) return String(peerId || "");
+    return String(reportMsgDecoded?.from || reportMsg?.from || peerId || "");
+  }, [reportMsg, reportMsgDecoded, peerId]);
+
+  const reportMsgPreview = useMemo(() => {
+    if (!reportMsg) return "";
+
+    const decodedText = String(reportMsgDecoded?.text || "").trim();
+    const rawText = String(reportMsg?.text || "").trim();
+
+    if (decodedText && !decodedText.startsWith(RBZ_TAG)) {
+      return decodedText.slice(0, 240);
+    }
+
+    if (rawText && !rawText.startsWith(RBZ_TAG)) {
+      return rawText.slice(0, 240);
+    }
+
+    if (reportMsgDecoded?.type === "chat_gift") return "RomBuzz gift message";
+    if (reportMsgDecoded?.type === "media" || reportMsgDecoded?.url) return "Chat media message";
+    if (reportMsgDecoded?.type === "share_post") return "Shared LetsBuzz post";
+    if (reportMsgDecoded?.type === "share_reel") return "Shared LetsBuzz reel";
+    if (reportMsgDecoded?.type === "share_profile_media") return "Shared profile media";
+
+    return "RomBuzz rich message";
+  }, [reportMsg, reportMsgDecoded]);
 
   // edit mode
   const [editId, setEditId] = useState<string | null>(null);
@@ -980,6 +1059,41 @@ const onIncoming = (raw: any) => {
   });
 };
 
+const onGiftMediaUnlocked = (payload: any) => {
+  const msgId =
+    payload?.msgId ||
+    payload?.messageId ||
+    payload?.id ||
+    payload?.message?.id;
+
+  if (!msgId) return;
+
+  const updated = payload?.message || null;
+  const unlockedBy = String(payload?.unlockedBy || "");
+
+  setMessages((prev) =>
+    prev.map((m) => {
+      if (String(m?.id) !== String(msgId)) return m;
+
+      return {
+        ...m,
+        ...(updated?.id ? updated : {}),
+        gift: {
+          ...((m as any)?.gift || {}),
+          ...(updated?.gift || {}),
+          unlockedBy: [
+            ...new Set([
+              ...(((m as any)?.gift?.unlockedBy || []).map((v: any) => String(v))),
+              ...(updated?.gift?.unlockedBy || []).map((v: any) => String(v)),
+              ...(unlockedBy ? [unlockedBy] : []),
+            ]),
+          ],
+        },
+      } as Msg;
+    })
+  );
+};
+
 
   (async () => {
     s = await getSocket();
@@ -1016,6 +1130,7 @@ s.on("message:seen", onSeen);
 s.on("chat:seen", onSeen);
 s.on("typing", onTyping);
 s.on("chat:ephemeral:expired", onEphemeralExpired);
+s.on("chat:gift:unlocked", onGiftMediaUnlocked);
 
   })();
   
@@ -1044,6 +1159,7 @@ s.off("message:seen", onSeen);
 s.off("chat:seen", onSeen);
 s.off("typing", onTyping);
 s.off("chat:ephemeral:expired", onEphemeralExpired);
+s.off("chat:gift:unlocked", onGiftMediaUnlocked);
 
   };
 }, [myId, peerId, roomId]);
@@ -1100,6 +1216,14 @@ const openSheet = (m: Msg) => {
     setSheetOpen(false);
     setSheetMsg(null);
   };
+
+const openMessageReport = (m: Msg) => {
+  setReportMsg(m);
+  setEmojiPickerOpen(false);
+  setSheetOpen(false);
+  setSheetMsg(null);
+  setReportSheetOpen(true);
+};
 
 const startReplying = (message: Msg) => {
   const snapshot = buildReplySnapshot(message);
@@ -1611,19 +1735,27 @@ const togglePinMessage = async (m: Msg) => {
     isSharedProfileMedia &&
     String(m?.mediaType || "").toLowerCase() === "photo";
 
- const isShared = isSharedPost || isSharedReel || isSharedProfileMedia;
+  const isShared = isSharedPost || isSharedReel || isSharedProfileMedia;
 
   // basic media handling (web uses ::RBZ:: payload)
  const isMedia = !isShared && (m?.type === "media" || !!m?.url);
   const isAudio = m?.mediaType === "audio";
+   const isGiftedMedia = isMedia && isGiftedPaidMedia(m);
  const reactLine = formatReactions(m?.reactions);
-  const canSwipeReply = !m?.deleted && !m?._temp && !m?.system;
+  const isVideoCallHistory = isVideoCallHistoryMessage(m);
+  const canSwipeReply = !m?.deleted && !m?._temp && !m?.system && !isVideoCallHistory;
   const isPinnedMessage = !!m?.pinned && !m?.deleted && !m?._temp;
-  const isPlainTextMessage =
+   const isPlainTextMessage =
     m?.type === "text" &&
     !m?.deleted &&
     typeof m?.text === "string" &&
     !m.text.startsWith(RBZ_TAG);
+
+  const isChatGift =
+    m?.type === "chat_gift" &&
+    !!m?.gift &&
+    !!String(m?.gift?.giftId || "").trim();
+
   const replyPreviewText = getReplyPreviewText(m?.replyTo);
   const replySenderLabel = m?.replyTo
     ? String(m.replyTo.from) === String(myId)
@@ -1678,6 +1810,38 @@ const togglePinMessage = async (m: Msg) => {
       </Pressable>
     );
   };
+
+      if (isVideoCallHistory) {
+    return (
+      <VideoCallHistoryBubble
+        message={m}
+        myId={myId}
+        peerName={headerName}
+        peerAvatar={peerAvatar}
+        onOpenPeerProfile={() =>
+          router.push({
+            pathname: "/view-profile",
+            params: {
+              userId: peerId,
+              fromChat: "1",
+              returnTo: `/chat/${peerId}`,
+            },
+          })
+        }
+        onCallBack={handleStartVideoCall}
+        onLongPress={() =>
+          Alert.alert("Delete for you?", "This message will be deleted for you but other chat member can still see it", [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: () => unsendForMe(item),
+            },
+          ])
+        }
+      />
+    );
+  }
 
   if (m?.system || m?.type === "system_pin") {
     const isPinAction = String(m?.action || "pin") === "unpin" ? "unpinned" : "pinned";
@@ -1787,8 +1951,38 @@ const togglePinMessage = async (m: Msg) => {
     ]}
   >
       {!isPlainTextMessage ? renderReplyQuote(m?.replyTo?.id, false) : null}
-      {isAudio ? (
+      {isChatGift ? (
+      <ChatGiftMessageBubble
+        gift={m.gift}
+        isMine={isMine}
+        senderName={isMine ? "You" : headerName}
+        receiverName={isMine ? headerName : "you"}
+        onLongPress={() => openSheet(item)}
+      />
+     ) : isAudio ? (
       <AudioBubble uri={m.url} isMine={isMine} />
+    ) : isGiftedMedia ? (
+      <ChatGiftedMediaBubble
+        message={m}
+        isMine={isMine}
+        myId={myId}
+        roomId={roomId}
+        maxWidth={BUBBLE_MAX_W}
+        isExpired={isExpired(m)}
+        isViewOnceOrTwice={!!getMaxViews(m)}
+        onUnlocked={(updatedMessage) => {
+          setMessages((prev) =>
+            prev.map((x) =>
+              String(x?.id) === String(updatedMessage?.id)
+                ? ({ ...x, ...updatedMessage } as Msg)
+                : x
+            )
+          );
+        }}
+        onOpenImage={() => openImageViewer(m)}
+        onOpenVideo={() => openVideoViewer(m)}
+        onLongPress={() => openSheet(item)}
+      />
     ) : isMedia ? (
       isExpired(m) ? null : (
            <Pressable
@@ -2069,7 +2263,7 @@ const togglePinMessage = async (m: Msg) => {
             </View>
           </Pressable>
 
-                     <View style={styles.topActions}>
+                       <View style={styles.topActions}>
           <Pressable
             onPress={() => loadReplyIdeas("natural")}
             style={styles.topBtn}
@@ -2081,8 +2275,16 @@ const togglePinMessage = async (m: Msg) => {
             <Ionicons name="call-outline" size={20} color={RBZ.white} />
           </Pressable>
 
-          <Pressable style={styles.topBtn}>
-            <Ionicons name="videocam-outline" size={22} color={RBZ.white} />
+          <Pressable
+            onPress={handleStartVideoCall}
+            disabled={startingVideoCall}
+            style={[styles.topBtn, startingVideoCall ? { opacity: 0.55 } : null]}
+          >
+            <Ionicons
+              name={startingVideoCall ? "hourglass-outline" : "videocam-outline"}
+              size={22}
+              color={RBZ.white}
+            />
           </Pressable>
         </View>
       </LinearGradient>
@@ -2578,7 +2780,7 @@ const togglePinMessage = async (m: Msg) => {
                   </Text>
                 </Pressable>
 
-                <Pressable
+                              <Pressable
                   style={styles.sheetItem}
                   onPress={() =>
                     Alert.alert("Unsend", "Unsend for everyone?", [
@@ -2594,8 +2796,8 @@ const togglePinMessage = async (m: Msg) => {
                 <Pressable
                   style={styles.sheetItem}
                   onPress={() => {
-                    closeSheet();
-                    Alert.alert("Report", "Message report flow will be wired next.");
+                    if (!sheetMsg) return;
+                    openMessageReport(sheetMsg);
                   }}
                 >
                   <Ionicons name="flag-outline" size={18} color={RBZ.c1} />
@@ -2604,7 +2806,7 @@ const togglePinMessage = async (m: Msg) => {
               </>
             ) : null}
 
-            {sheetMsg && !mine(sheetMsg) ? (
+                    {sheetMsg && !mine(sheetMsg) ? (
               <>
                 <Pressable style={styles.sheetItem} onPress={() => togglePinMessage(sheetMsg)}>
                   <Ionicons
@@ -2620,8 +2822,8 @@ const togglePinMessage = async (m: Msg) => {
                 <Pressable
                   style={styles.sheetItem}
                   onPress={() => {
-                    closeSheet();
-                    Alert.alert("Report", "Message report flow will be wired next.");
+                    if (!sheetMsg) return;
+                    openMessageReport(sheetMsg);
                   }}
                 >
                   <Ionicons name="flag-outline" size={18} color={RBZ.c1} />
@@ -2644,12 +2846,54 @@ const togglePinMessage = async (m: Msg) => {
               <Text style={styles.sheetItemText}>Remove for me</Text>
             </Pressable>
 
-            <Pressable style={[styles.sheetItem, { justifyContent: "center" }]} onPress={closeSheet}>
+                  <Pressable style={[styles.sheetItem, { justifyContent: "center" }]} onPress={closeSheet}>
               <Text style={[styles.sheetItemText, { color: RBZ.c2, fontWeight: "900" }]}>Close</Text>
             </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
+
+      {reportMsg ? (
+        <RBZReportSheet
+          visible={reportSheetOpen}
+          onClose={() => {
+            setReportSheetOpen(false);
+            setReportMsg(null);
+          }}
+          onSubmitted={() => {
+            setReportSheetOpen(false);
+            setReportMsg(null);
+          }}
+          target={{
+            targetType: "chat_message",
+            targetId: String(reportMsgDecoded?.id || reportMsg?.id || ""),
+            reportedUserId: reportMsgOwnerId,
+            targetOwnerId: reportMsgOwnerId,
+            source: "mobile_chat_message",
+            title: reportMsgOwnerId === String(myId) ? "Your message" : `${headerName}'s message`,
+            subtitle: reportMsgPreview || "Chat message",
+            avatar: reportMsgOwnerId === String(myId) ? "" : peerAvatar,
+            evidenceSnapshot: {
+              screen: "chat_thread",
+              roomId,
+              messageId: String(reportMsgDecoded?.id || reportMsg?.id || ""),
+              messageType: String(reportMsgDecoded?.type || reportMsg?.type || "text"),
+              messagePreview: reportMsgPreview,
+              messageFrom: String(reportMsgDecoded?.from || reportMsg?.from || ""),
+              messageTo: String(reportMsgDecoded?.to || reportMsg?.to || ""),
+              messageTime: String(reportMsgDecoded?.time || reportMsgDecoded?.createdAt || reportMsg?.time || reportMsg?.createdAt || ""),
+              peerId,
+              peerName: headerName,
+              peerAvatar,
+              reporterId: myId,
+              isOwnMessage: reportMsgOwnerId === String(myId),
+              hasReply: !!reportMsgDecoded?.replyTo,
+              isPinned: !!reportMsgDecoded?.pinned,
+              isDeleted: !!reportMsgDecoded?.deleted,
+            },
+          }}
+        />
+      ) : null}
 
       <Modal
         visible={emojiPickerOpen}

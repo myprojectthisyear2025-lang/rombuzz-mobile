@@ -85,7 +85,20 @@ export function resolveNotificationHref(input: any) {
     input?.fromId
   );
   const postId = firstNonEmpty(data.postId, data.entityId, input?.postId, input?.entityId);
+  const callId = firstNonEmpty(data.callId, data.videoCallId, input?.callId);
   const explicitHref = firstNonEmpty(data.href, data.path, data.route, input?.href);
+
+  // Incoming video call push notification.
+  // This works for locked/background/killed app notification taps.
+  if (
+    type === "video_call_incoming" ||
+    type === "incoming_video_call" ||
+    data.screen === "video_call"
+  ) {
+    if (callId) return `/video-call/${encodeRouteParam(callId)}`;
+    if (explicitHref) return normalizeNotificationHref(explicitHref);
+    return NOTIFICATIONS_FALLBACK;
+  }
 
   if (peerId && (type === "message" || type === "chat" || data.screen === "chat")) {
     return `/chat/${encodeRouteParam(peerId)}`;

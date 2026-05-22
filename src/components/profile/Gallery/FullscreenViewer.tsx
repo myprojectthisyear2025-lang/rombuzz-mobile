@@ -61,8 +61,13 @@ type FullscreenViewerProps = {
   apiJson: (path: string, method: string, body: any) => Promise<any>;
   onLocalPatch?: (updated: any) => void;
   onLocalDelete?: (deletedId: string) => void;
-};
 
+  // Notification deep-link support
+  deepLinkOpenComments?: boolean;
+  deepLinkCommentId?: string;
+  deepLinkParentId?: string;
+  deepLinkReplyId?: string;
+};
 function splitCaption(caption: string) {
   const raw = String(caption || "");
   const parts = raw.split("|");
@@ -110,6 +115,12 @@ export default function FullscreenViewer({
   apiJson,
   onLocalPatch,
   onLocalDelete,
+
+  // Notification deep-link support
+  deepLinkOpenComments,
+  deepLinkCommentId,
+  deepLinkParentId,
+  deepLinkReplyId,
 }: FullscreenViewerProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -224,12 +235,16 @@ export default function FullscreenViewer({
             </View>
           ) : null}
 
-          <GalleryInsightsSheet
+             <GalleryInsightsSheet
             ownerId={ownerId}
             mediaId={mediaId}
             apiFetch={apiFetch}
             apiJson={apiJson}
             bottomInset={insets.bottom}
+            deepLinkOpenComments={deepLinkOpenComments}
+            deepLinkCommentId={deepLinkCommentId}
+            deepLinkParentId={deepLinkParentId}
+            deepLinkReplyId={deepLinkReplyId}
           />
 
           <Modal visible={optionsOpen} transparent animationType="slide" onRequestClose={() => setOptionsOpen(false)}>

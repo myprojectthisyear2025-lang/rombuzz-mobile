@@ -23,7 +23,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -39,6 +38,7 @@ import BuzzPokeCard, {
 } from "@/src/components/profile/BuzzPokeCard";
 import ViewProfileGallery from "@/src/components/profile/ViewProfileGallery";
 import ViewProfileMediaActions from "@/src/components/profile/ViewProfileMediaActions";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
 
 const RBZ = {
@@ -343,13 +343,11 @@ export default function ViewProfile() {
   // ✅ 3-dot menu as true overlay (so it never hides under About)
   const [showMenu, setShowMenu] = useState(false);
   const menuBtnRef = useRef<View | null>(null);
-  const [menuPos, setMenuPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+   const [menuPos, setMenuPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const [blockLoading, setBlockLoading] = useState(false);
-  const [reportLoading, setReportLoading] = useState(false);
   const [unmatchLoading, setUnmatchLoading] = useState(false);
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [reportReason, setReportReason] = useState("");
+  const [reportSheetVisible, setReportSheetVisible] = useState(false);
 
   // Calculate age from DOB
   const age = useMemo(() => {
@@ -738,39 +736,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         },
       ]
     );
-  };
-
-  const handleReport = async () => {
-    if (!userId || reportLoading) return;
-
-    const trimmedReason = reportReason.trim();
-    if (!trimmedReason) return;
-
-    try {
-      setReportLoading(true);
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      
-      const res = await fetch(`${API_BASE}/report`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ targetId: userId, reason: trimmedReason }),
-      });
-
-      if (!res.ok) throw new Error("Report failed");
-
-      Alert.alert("Report Submitted", "Thank you for helping keep RomBuzz safe.");
-      setReportModalVisible(false);
-      setReportReason("");
-      setShowMenu(false);
-      
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Failed to submit report");
-    } finally {
-      setReportLoading(false);
-    }
   };
 
   const handleUnmatch = async () => {
@@ -1624,17 +1589,16 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               </Text>
             </Pressable>
 
-            <Pressable
+                  <Pressable
               onPress={() => {
-                if (reportLoading) return;
-                setReportModalVisible(true);
+                setShowMenu(false);
+                setReportSheetVisible(true);
               }}
-              disabled={reportLoading}
               style={styles.menuItem}
             >
               <Ionicons name="warning" size={16} color={RBZ.warning} />
               <Text style={styles.menuItemText}>
-                {reportLoading ? "Processing..." : "Report"}
+                Report
               </Text>
             </Pressable>
 
@@ -1654,63 +1618,28 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         </Pressable>
       </Modal>
 
-      <Modal
-        visible={reportModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (reportLoading) return;
-          setReportModalVisible(false);
+         <RBZReportSheet
+        visible={reportSheetVisible}
+        onClose={() => setReportSheetVisible(false)}
+        target={{
+          targetType: "profile",
+          targetId: String(userId),
+          reportedUserId: String(userId),
+          source: "mobile_view_profile",
+          title: fullName,
+          subtitle: user?.city ? String(user.city) : "RomBuzz profile",
+          avatar: user?.avatar || "",
+          evidenceSnapshot: {
+            screen: "view_profile",
+            reportedUserName: fullName,
+            reportedUserAvatar: user?.avatar || "",
+            reportedUserCity: user?.city || "",
+            reportedUserAge: age,
+            matched: viewingAsMatched,
+            distanceText,
+          },
         }}
-      >
-        <Pressable
-          style={styles.reportModalBackdrop}
-          onPress={() => {
-            if (reportLoading) return;
-            setReportModalVisible(false);
-          }}
-        >
-          <Pressable style={styles.reportModalCard} onPress={() => {}}>
-            <Text style={styles.reportModalTitle}>Report User</Text>
-            <Text style={styles.reportModalHelper}>
-              Share a short reason so we can review this report.
-            </Text>
-
-            <TextInput
-              value={reportReason}
-              onChangeText={setReportReason}
-              placeholder="Describe what happened"
-              placeholderTextColor={RBZ.muted}
-              multiline
-              textAlignVertical="top"
-              editable={!reportLoading}
-              style={styles.reportInput}
-            />
-
-            <View style={styles.reportActions}>
-              <Pressable
-                onPress={() => {
-                  if (reportLoading) return;
-                  setReportModalVisible(false);
-                }}
-                style={[styles.reportActionButton, styles.reportCancelButton]}
-              >
-                <Text style={styles.reportCancelText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleReport}
-                disabled={reportLoading}
-                style={[styles.reportActionButton, styles.reportSubmitButton, reportLoading && styles.reportSubmitButtonDisabled]}
-              >
-                <Text style={styles.reportSubmitText}>
-                  {reportLoading ? "Submitting..." : "Submit"}
-                </Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      />
 
           {/* Media Viewer */}
          <RBZImageViewer
@@ -2081,80 +2010,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
     flex: 1,
-  },
-  reportModalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(17,24,39,0.35)",
-    paddingHorizontal: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  reportModalCard: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: RBZ.white,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  reportModalTitle: {
-    color: RBZ.ink,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  reportModalHelper: {
-    marginTop: 6,
-    color: RBZ.muted,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: "500",
-  },
-  reportInput: {
-    minHeight: 120,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.08)",
-    backgroundColor: RBZ.soft,
-    color: RBZ.ink,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  reportActions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
-  },
-  reportActionButton: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  reportCancelButton: {
-    backgroundColor: "rgba(17,24,39,0.04)",
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.08)",
-  },
-  reportCancelText: {
-    color: RBZ.ink,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  reportSubmitButton: {
-    backgroundColor: RBZ.c2,
-  },
-  reportSubmitButtonDisabled: {
-    opacity: 0.7,
-  },
-  reportSubmitText: {
-    color: RBZ.white,
-    fontSize: 14,
-    fontWeight: "800",
   },
   card: {
     marginHorizontal: 16,

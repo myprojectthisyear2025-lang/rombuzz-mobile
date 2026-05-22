@@ -150,7 +150,13 @@ export type RegisterForm = {
 
 export default function RegisterFullScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ verifiedEmail?: string }>();
+  const params = useLocalSearchParams<{
+    verifiedEmail?: string;
+    googleFirstName?: string;
+    googleLastName?: string;
+    googleAvatar?: string;
+    authProvider?: string;
+  }>();
 const { width, height } = useWindowDimensions(); // Get screen dimensions
   const isSmallScreen = height < 700; // Detect small screens
   const [email] = useState<string>(params.verifiedEmail || "");
@@ -158,9 +164,9 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const [form, setForm] = useState<RegisterForm>({
-  firstName: "",
-  lastName: "",
+   const [form, setForm] = useState<RegisterForm>({
+  firstName: String(params.googleFirstName || ""),
+  lastName: String(params.googleLastName || ""),
   password: "",
   confirm: "",
 
@@ -183,8 +189,8 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   phone: "",
   voiceUrl: "",
   voiceDurationSec: 0,
-  photos: [],
-  avatar: "",
+  photos: params.googleAvatar ? [String(params.googleAvatar)] : [],
+  avatar: String(params.googleAvatar || ""),
 });
 
   const setField = (key: keyof RegisterForm, value: any) =>

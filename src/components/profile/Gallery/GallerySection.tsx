@@ -22,8 +22,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ResizeMode, Video } from "expo-av";
 import GalleryTabs from "./GalleryTabs";
 
-import React, { useEffect, useMemo, useState } from "react";
-import FullscreenViewer from "./FullscreenViewer";
+import React, { useEffect, useMemo, useRef, useState } from "react";import FullscreenViewer from "./FullscreenViewer";
 import { pickMedia } from "./MediaUploader";
 import PhotoGrid from "./PhotoGrid";
 import ReelGrid from "./ReelGrid";
@@ -191,6 +190,15 @@ export default function GallerySection({
   apiFetch,
   apiJson,
   onRefresh,
+
+  // Notification deep-link support
+  deepLinkTargetId,
+  deepLinkTargetType,
+  deepLinkOwnerId,
+  deepLinkOpenComments,
+  deepLinkCommentId,
+  deepLinkParentId,
+  deepLinkReplyId,
 }: {
   ownerId: string;
   media: MediaItem[];
@@ -199,6 +207,14 @@ export default function GallerySection({
   apiFetch: (path: string, init?: RequestInit) => Promise<any>;
   apiJson: (path: string, method: string, body: any) => Promise<any>;
   onRefresh: () => Promise<void> | void;
+
+  deepLinkTargetId?: string;
+  deepLinkTargetType?: string;
+  deepLinkOwnerId?: string;
+  deepLinkOpenComments?: boolean;
+  deepLinkCommentId?: string;
+  deepLinkParentId?: string;
+  deepLinkReplyId?: string;
 }) {
 
 
@@ -249,10 +265,63 @@ const reels = useMemo(
   [localMedia]
 );
 
+const deepLinkConsumedRef = useRef("");
 
-  const list = segment === "photos" ? photos : reels;
+const list = segment === "photos" ? photos : reels;
 
- const openPicker = async (target: MediaKind) => {
+useEffect(() => {
+  const targetId = String(deepLinkTargetId || "").trim();
+  if (!targetId) return;
+  if (!localMedia.length) return;
+
+  const consumedKey = [
+    targetId,
+    deepLinkTargetType || "",
+    deepLinkOwnerId || "",
+    deepLinkOpenComments ? "comments" : "",
+    deepLinkCommentId || "",
+    deepLinkParentId || "",
+    deepLinkReplyId || "",
+  ].join(":");
+
+  if (deepLinkConsumedRef.current === consumedKey) return;
+
+  const targetItem = localMedia.find(
+    (item) =>
+      String(item?.id || "") === targetId ||
+      String(item?.url || "") === targetId
+  );
+
+  if (!targetItem) return;
+
+  const targetKind = inferKind(targetItem);
+  const targetList = targetKind === "reel" ? reels : photos;
+  const targetIndex = targetList.findIndex(
+    (item) =>
+      String(item?.id || "") === String(targetItem.id || "") ||
+      String(item?.url || "") === String(targetItem.url || "")
+  );
+
+  if (targetIndex < 0) return;
+
+  deepLinkConsumedRef.current = consumedKey;
+  setSegment(targetKind === "reel" ? "reels" : "photos");
+  setActiveIndex(targetIndex);
+  setViewerOpen(true);
+}, [
+  deepLinkTargetId,
+  deepLinkTargetType,
+  deepLinkOwnerId,
+  deepLinkOpenComments,
+  deepLinkCommentId,
+  deepLinkParentId,
+  deepLinkReplyId,
+  localMedia,
+  photos,
+  reels,
+]);
+
+const openPicker = async (target: MediaKind) => {
   if (uploading) return;
 
   const picked = await pickMedia(target);
@@ -578,6 +647,10 @@ const closePublish = () => {
   ownerId={ownerId}
   apiFetch={apiFetch}
   apiJson={apiJson}
+  deepLinkOpenComments={deepLinkOpenComments}
+  deepLinkCommentId={deepLinkCommentId}
+  deepLinkParentId={deepLinkParentId}
+  deepLinkReplyId={deepLinkReplyId}
 
   // ✅ instant UI updates
   onLocalPatch={(updated: MediaItem) => {

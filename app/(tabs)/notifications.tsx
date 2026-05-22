@@ -68,6 +68,14 @@ interface NotificationItem {
   href?: string;
   postId?: string;
   postOwnerId?: string;
+  ownerId?: string;
+  targetOwnerId?: string;
+  targetType?: string;
+  targetId?: string;
+  commentId?: string;
+  parentId?: string;
+  replyId?: string;
+  routeContext?: "author_profile" | "letsbuzz" | string;
   entity?: string;
   entityId?: string;
   read?: boolean;
@@ -111,7 +119,8 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [token, setToken] = useState<string>("");
+   const [token, setToken] = useState<string>("");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<NotificationType>("all");
@@ -127,10 +136,18 @@ export default function NotificationsScreen() {
   // ---------------------------
   // Load token once
   // ---------------------------
-  useEffect(() => {
+    useEffect(() => {
     (async () => {
       const t = (await SecureStore.getItemAsync("RBZ_TOKEN")) || "";
       setToken(t);
+
+      try {
+        const rawUser = await SecureStore.getItemAsync("RBZ_USER");
+        const parsedUser = rawUser ? JSON.parse(rawUser) : null;
+        setCurrentUserId(String(parsedUser?.id || parsedUser?._id || ""));
+      } catch {
+        setCurrentUserId("");
+      }
     })();
   }, []);
 
@@ -311,9 +328,65 @@ export default function NotificationsScreen() {
     }
   };
 
-   // ---------------------------
+     // ---------------------------
   // Navigation from notification
   // ---------------------------
+  const buildPostDeepLinkQuery = (n: NotificationItem) => {
+    const postId = n?.postId || n?.targetId || n?.entityId
+      ? String(n.postId || n.targetId || n.entityId)
+      : "";
+
+    const ownerId = n?.targetOwnerId || n?.postOwnerId || n?.ownerId
+      ? String(n.targetOwnerId || n.postOwnerId || n.ownerId)
+      : "";
+
+    const targetType = String(n?.targetType || n?.entity || "buzz_post");
+    const commentId = n?.commentId ? String(n.commentId) : "";
+    const replyId = n?.replyId ? String(n.replyId) : "";
+    const parentId = n?.parentId ? String(n.parentId) : "";
+
+    const params = new URLSearchParams();
+
+    if (postId) params.set("post", postId);
+    if (ownerId) params.set("ownerId", ownerId);
+    if (targetType) params.set("targetType", targetType);
+
+    params.set("openComments", "1");
+
+    if (commentId) params.set("commentId", commentId);
+    if (replyId) params.set("replyId", replyId);
+    if (parentId) params.set("parentId", parentId);
+
+    return params.toString();
+  };
+
+  const getNotificationPostId = (n: NotificationItem) => {
+    return n?.postId || n?.targetId || n?.entityId
+      ? String(n.postId || n.targetId || n.entityId)
+      : "";
+  };
+
+  const getNotificationOwnerId = (n: NotificationItem) => {
+    return n?.targetOwnerId || n?.postOwnerId || n?.ownerId
+      ? String(n.targetOwnerId || n.postOwnerId || n.ownerId)
+      : "";
+  };
+
+  const buildPostHref = (n: NotificationItem) => {
+    const postId = getNotificationPostId(n);
+    if (!postId) return "/(tabs)/letsbuzz";
+
+    const query = buildPostDeepLinkQuery(n);
+    const ownerId = getNotificationOwnerId(n);
+    const isAuthor = !!currentUserId && !!ownerId && String(ownerId) === String(currentUserId);
+
+    if (isAuthor || n?.routeContext === "author_profile") {
+      return `/(tabs)/profile?${query}`;
+    }
+
+    return `/(tabs)/letsbuzz?${query}`;
+  };
+
   const normalizeHref = (raw?: string) => {
     if (!raw) return "/(tabs)/notifications";
 
@@ -338,7 +411,7 @@ export default function NotificationsScreen() {
       const params = new URLSearchParams(qs || "");
       const post = params.get("post");
 
-      if (post) return `/(tabs)/letsbuzz?post=${encodeURIComponent(post)}`;
+      if (post) return `/(tabs)/letsbuzz?post=${encodeURIComponent(post)}&openComments=1`;
       return `/view-profile?id=${encodeURIComponent(userPart)}`;
     }
 
@@ -377,10 +450,10 @@ export default function NotificationsScreen() {
   };
 
   const resolveHref = async (n: NotificationItem) => {
-    const type = String(n?.type || "system");
+       const type = String(n?.type || "system");
     const via = String(n?.via || "");
     const fromId = n?.fromId ? String(n.fromId) : "";
-    const postId = n?.postId || n?.entityId ? String(n.postId || n.entityId) : "";
+    const postId = getNotificationPostId(n);
 
     // ✅ Your desired mapping (mobile routes)
     if (type === "wingman") {
@@ -408,10 +481,10 @@ export default function NotificationsScreen() {
       return buildDiscoverProfileHref(fromId);
     }
 
-    // like -> will become gift:
-    // direct to the specific post in LetsBuzz feed
+       // like -> will become gift:
+    // direct to the exact post, but author goes to own profile.
     if (type === "like") {
-      if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
+      if (postId) return buildPostHref(n);
       if (fromId) {
         const matched = await checkMatchedWithUser(fromId);
         if (matched) return buildMatchedProfileHref(fromId);
@@ -420,15 +493,16 @@ export default function NotificationsScreen() {
       return "/(tabs)/letsbuzz";
     }
 
-    // comment -> that specific post in LetsBuzz feed
-    if (type === "comment") {
-      if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
+    // comment/reply -> exact post + open comments.
+    // Author opens inside own Profile. Non-author opens inside LetsBuzz.
+    if (type === "comment" || type === "reply") {
+      if (postId) return buildPostHref(n);
       return "/(tabs)/letsbuzz";
     }
 
     // new_post -> show the specific post in LetsBuzz feed
     if (type === "new_post") {
-      if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
+      if (postId) return buildPostHref(n);
       if (fromId) {
         const matched = await checkMatchedWithUser(fromId);
         if (matched) return buildMatchedProfileHref(fromId);
@@ -439,13 +513,13 @@ export default function NotificationsScreen() {
 
     // share -> direct to the particular post that has been shared
     if (type === "share") {
-      if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
+      if (postId) return buildPostHref(n);
       return "/(tabs)/letsbuzz";
     }
 
-    // reaction -> leave for now, but don't break navigation
+    // reaction -> exact post + open comments/reactions area when possible.
     if (type === "reaction") {
-      if (postId) return `/(tabs)/letsbuzz?post=${encodeURIComponent(postId)}`;
+      if (postId) return buildPostHref(n);
       return "/(tabs)/notifications";
     }
 

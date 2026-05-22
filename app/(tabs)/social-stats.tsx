@@ -33,6 +33,7 @@ import {
   View
 } from "react-native";
 
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -173,6 +174,8 @@ function ListModal({
   onRefresh: () => void;
 }) {
   const router = useRouter();
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportUser, setReportUser] = useState<any | null>(null);
 
   const getTitle = () => {
     switch (activeTab) {
@@ -313,102 +316,23 @@ function ListModal({
     );
   };
 
-const handleReport = (targetId: string, userName: string) => {
-  Alert.alert(
-    "Report / Block",
-    `What would you like to do about ${userName}?`,
-    [
-      {
-        text: "Report User",
-        onPress: () => {
-          // ✅ Android-safe: show common reasons (no Alert.prompt dependency)
-          Alert.alert("Report Reason", "Pick a reason:", [
-            {
-              text: "Spam / Scam",
-              onPress: async () => {
-                try {
-                  await apiFetch("/report", {
-                    method: "POST",
-                    body: JSON.stringify({ targetId, reason: "Spam / Scam" }),
-                  });
-                  Alert.alert("Report submitted", "Thanks — we’ll review it.", [
-                    { text: "OK", onPress: onRefresh },
-                  ]);
-                } catch (e) {
-                  Alert.alert("Error", "Failed to report user. Please try again.");
-                }
-              },
-            },
-            {
-              text: "Harassment",
-              onPress: async () => {
-                try {
-                  await apiFetch("/report", {
-                    method: "POST",
-                    body: JSON.stringify({ targetId, reason: "Harassment" }),
-                  });
-                  Alert.alert("Report submitted", "Thanks — we’ll review it.", [
-                    { text: "OK", onPress: onRefresh },
-                  ]);
-                } catch (e) {
-                  Alert.alert("Error", "Failed to report user. Please try again.");
-                }
-              },
-            },
-            {
-              text: "Inappropriate Content",
-              onPress: async () => {
-                try {
-                  await apiFetch("/report", {
-                    method: "POST",
-                    body: JSON.stringify({ targetId, reason: "Inappropriate Content" }),
-                  });
-                  Alert.alert("Report submitted", "Thanks — we’ll review it.", [
-                    { text: "OK", onPress: onRefresh },
-                  ]);
-                } catch (e) {
-                  Alert.alert("Error", "Failed to report user. Please try again.");
-                }
-              },
-            },
-            { text: "Cancel", style: "cancel" },
-          ]);
-        },
-      },
-      {
-        text: "Block User",
-        style: "destructive",
-        onPress: () => {
-          Alert.alert(
-            "Block User",
-            `Block ${userName}? You won't see each other anymore.`,
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Block",
-                style: "destructive",
-                onPress: async () => {
-                  try {
-                    // ✅ Backend expects { targetId }
-                    await apiFetch("/block", {
-                      method: "POST",
-                      body: JSON.stringify({ targetId }),
-                    });
-                    Alert.alert("User Blocked", `${userName} has been blocked.`, [
-                      { text: "OK", onPress: onRefresh },
-                    ]);
-                  } catch (e) {
-                    Alert.alert("Error", "Failed to block user. Please try again.");
-                  }
-                },
-              },
-            ]
-          );
-        },
-      },
-      { text: "Cancel", style: "cancel" },
-    ]
-  );
+const handleReport = (user: any) => {
+  const targetId = String(user?.id || user?._id || user?.userId || "");
+  const userName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+    String(user?.name || "User");
+
+  if (!targetId) {
+    Alert.alert("Report", "Missing user id.");
+    return;
+  }
+
+  setReportUser({
+    ...user,
+    id: targetId,
+    displayName: userName,
+  });
+  setReportSheetOpen(true);
 };
 
 
@@ -535,9 +459,9 @@ const handleReport = (targetId: string, userName: string) => {
                         <Ionicons name="close" size={16} color={RBZ.white} />
                         <Text style={styles.actionButtonText}>Remove</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
+                                        <TouchableOpacity
                         style={[styles.actionButton, styles.reportButton]}
-                        onPress={() => handleReport(uid, name)}
+                        onPress={() => handleReport(user)}
                       >
                         <Ionicons name="flag-outline" size={16} color={RBZ.white} />
                         <Text style={styles.actionButtonText}>Report</Text>
@@ -561,13 +485,13 @@ const handleReport = (targetId: string, userName: string) => {
                         <Ionicons name="close" size={18} color={RBZ.white} />
                         <Text style={styles.actionButtonText}>Reject</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.reportButton]}
-                        onPress={() => handleReport(uid, name)}
-                      >
-                        <Ionicons name="flag-outline" size={16} color={RBZ.white} />
-                        <Text style={styles.actionButtonText}>Report</Text>
-                      </TouchableOpacity>
+                   <TouchableOpacity
+  style={[styles.actionButton, styles.reportButton]}
+  onPress={() => handleReport(user)}
+>
+  <Ionicons name="flag-outline" size={16} color={RBZ.white} />
+  <Text style={styles.actionButtonText}>Report</Text>
+</TouchableOpacity>
                     </>
                   )}
                   
@@ -587,13 +511,13 @@ const handleReport = (targetId: string, userName: string) => {
                         <Ionicons name="person-remove-outline" size={16} color={RBZ.white} />
                         <Text style={styles.actionButtonText}>Unmatch</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.reportButton]}
-                        onPress={() => handleReport(uid, name)}
-                      >
-                        <Ionicons name="flag-outline" size={16} color={RBZ.white} />
-                        <Text style={styles.actionButtonText}>Report</Text>
-                      </TouchableOpacity>
+                    <TouchableOpacity
+  style={[styles.actionButton, styles.reportButton]}
+  onPress={() => handleReport(user)}
+>
+  <Ionicons name="flag-outline" size={16} color={RBZ.white} />
+  <Text style={styles.actionButtonText}>Report</Text>
+</TouchableOpacity>
                     </>
                   )}
                   
@@ -610,7 +534,53 @@ const handleReport = (targetId: string, userName: string) => {
             }}
           />
         )}
-      </View>
+         </View>
+
+      {reportUser ? (
+        <RBZReportSheet
+          visible={reportSheetOpen}
+          onClose={() => {
+            setReportSheetOpen(false);
+            setReportUser(null);
+          }}
+          onSubmitted={() => {
+            setReportSheetOpen(false);
+            setReportUser(null);
+            onRefresh();
+          }}
+          target={{
+            targetType: "profile",
+            targetId: String(reportUser.id || ""),
+            reportedUserId: String(reportUser.id || ""),
+            targetOwnerId: String(reportUser.id || ""),
+            source:
+              activeTab === "matches"
+                ? "mobile_social_stats_matches"
+                : activeTab === "likedYou"
+                ? "mobile_social_stats_liked_you"
+                : "mobile_social_stats_liked",
+            title: reportUser.displayName || "RomBuzz user",
+            subtitle:
+              activeTab === "matches"
+                ? "Matched profile"
+                : activeTab === "likedYou"
+                ? "User who liked you"
+                : "Profile you liked",
+            avatar: reportUser.avatar || "",
+            evidenceSnapshot: {
+              screen: "social_stats",
+              activeTab,
+              reportedUserId: String(reportUser.id || ""),
+              reportedUserName: reportUser.displayName || "",
+              reportedUserAvatar: reportUser.avatar || "",
+              age: reportUser.age || null,
+              location: reportUser.location || "",
+              gender: reportUser.gender || "",
+              allowUnmatch: activeTab === "matches",
+            },
+          }}
+        />
+      ) : null}
     </Modal>
   );
 }

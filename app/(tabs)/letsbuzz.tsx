@@ -76,14 +76,39 @@ function HeaderExpandButton({ visible, onPress }: HeaderExpandButtonProps) {
 
 export default function LetsBuzzScreen() {
   const insets = useSafeAreaInsets();
-  const { post } = useLocalSearchParams<{ post?: string }>();
+
+  const {
+    post,
+    targetType,
+    ownerId,
+    openComments,
+    commentId,
+    parentId,
+    replyId,
+  } = useLocalSearchParams<{
+    post?: string;
+    targetType?: string;
+    ownerId?: string;
+    openComments?: string;
+    commentId?: string;
+    parentId?: string;
+    replyId?: string;
+  }>();
+
+  const targetPostId = post ? String(post) : undefined;
+  const deepLinkTargetType = targetType ? String(targetType) : "";
+  const deepLinkOwnerId = ownerId ? String(ownerId) : "";
+  const deepLinkOpenComments = String(openComments || "") === "1";
+  const deepLinkCommentId = commentId ? String(commentId) : "";
+  const deepLinkParentId = parentId ? String(parentId) : "";
+  const deepLinkReplyId = replyId ? String(replyId) : "";
 
   const [tab, setTab] = useState<TabKey>("posts");
   const [reelsFullscreen, setReelsFullscreen] = useState(false);
 
   useEffect(() => {
-    if (post) setTab("posts");
-  }, [post]);
+    if (targetPostId) setTab("posts");
+  }, [targetPostId]);
 
   useEffect(() => {
     if (tab !== "reels" && reelsFullscreen) {
@@ -150,8 +175,14 @@ export default function LetsBuzzScreen() {
     return (
       <View style={styles.fullscreenContainer}>
         <StatusBar hidden />
-        <LetsBuzzReelsFullscreen
-          targetPostId={post ? String(post) : undefined}
+               <LetsBuzzReelsFullscreen
+          targetPostId={targetPostId}
+          targetType={deepLinkTargetType}
+          ownerId={deepLinkOwnerId}
+          openComments={deepLinkOpenComments}
+          commentId={deepLinkCommentId}
+          parentId={deepLinkParentId}
+          replyId={deepLinkReplyId}
           onClose={() => setReelsFullscreen(false)}
         />
       </View>
@@ -184,11 +215,27 @@ export default function LetsBuzzScreen() {
 
       {TabBar}
 
-      <View style={styles.content}>
+        <View style={styles.content}>
         {tab === "posts" ? (
-          <LetsBuzzPosts targetPostId={post ? String(post) : undefined} />
+          <LetsBuzzPosts
+            targetPostId={targetPostId}
+            targetType={deepLinkTargetType}
+            ownerId={deepLinkOwnerId}
+            openComments={deepLinkOpenComments}
+            commentId={deepLinkCommentId}
+            parentId={deepLinkParentId}
+            replyId={deepLinkReplyId}
+          />
         ) : (
-          <LetsBuzzReels targetPostId={post ? String(post) : undefined} />
+          <LetsBuzzReels
+            targetPostId={targetPostId}
+            targetType={deepLinkTargetType}
+            ownerId={deepLinkOwnerId}
+            openComments={deepLinkOpenComments}
+            commentId={deepLinkCommentId}
+            parentId={deepLinkParentId}
+            replyId={deepLinkReplyId}
+          />
         )}
       </View>
     </View>

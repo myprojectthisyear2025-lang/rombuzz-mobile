@@ -1,5 +1,7 @@
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { API_BASE } from "@/src/config/api";
+import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallMiniStore";
+import { VideoCallProvider } from "@/src/features/videoCall/VideoCallProvider";
 import { resolveNotificationHref } from "@/src/lib/socket";
 import {
   DarkTheme,
@@ -371,17 +373,31 @@ export default function RootLayout() {
     );
   }
 
-  return (
+        return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="start" />
-          <Stack.Screen name="auth/login" />
-          <Stack.Screen name="auth/register" />
-          <Stack.Screen name="auth/forgot-password" />
-          <Stack.Screen name="(tabs)" />
-        </Stack>
+        <VideoCallProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="start" />
+            <Stack.Screen name="auth/login" />
+            <Stack.Screen name="auth/register" />
+            <Stack.Screen name="auth/forgot-password" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen
+              name="video-call/[callId]"
+              options={{
+                presentation: "transparentModal",
+                animation: "fade",
+                contentStyle: {
+                  backgroundColor: "transparent",
+                },
+              }}
+            />
+          </Stack>
+
+          <ActiveVideoCallMiniBubble />
+        </VideoCallProvider>
 
         <StatusBar style="auto" />
       </ThemeProvider>

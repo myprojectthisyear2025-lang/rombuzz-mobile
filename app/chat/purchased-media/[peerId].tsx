@@ -75,6 +75,10 @@ type MediaRow = {
   mediaType: "image" | "video";
   createdAtMs: number;
   giftLocked: boolean;
+  giftPriceBC: number;
+  fromId: string;
+  toId: string;
+  unlockedBy: string[];
 };
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -151,6 +155,35 @@ function pickGiftLocked(m: AnyMsg): boolean {
   return !!(p?.gift?.locked || p?.locked);
 }
 
+function pickGiftPriceBC(m: AnyMsg): number {
+  const p = parseRBZ(m?.text);
+  const n = Math.floor(
+    Number(
+      m?.gift?.priceBC ??
+        m?.gift?.amount ??
+        p?.gift?.priceBC ??
+        p?.gift?.amount ??
+        p?.priceBC ??
+        0
+    ) || 0
+  );
+
+  return n > 0 ? n : 0;
+}
+
+function pickUnlockedBy(m: AnyMsg): string[] {
+  const direct = Array.isArray(m?.gift?.unlockedBy)
+    ? m.gift.unlockedBy.map((x: any) => String(x))
+    : [];
+
+  const p = parseRBZ(m?.text);
+  const nested = Array.isArray(p?.gift?.unlockedBy)
+    ? p.gift.unlockedBy.map((x: any) => String(x))
+    : [];
+
+  return Array.from(new Set([...direct, ...nested]));
+}
+
 export default function PurchasedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -173,6 +206,7 @@ export default function PurchasedMediaHub() {
   const [mediaTab, setMediaTab] = useState<"photos" | "videos">("photos");
 
   const [purchased, setPurchased] = useState<MediaRow[]>([]);
+  const [unlockingId, setUnlockingId] = useState("");
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuItem, setMenuItem] = useState<MediaRow | null>(null);
@@ -216,14 +250,18 @@ export default function PurchasedMediaHub() {
           if (m?.deleted) return false;
           if (isEphemeral(m)) return false;
 
-          const type = String(m?.type || "");
+              const type = String(m?.type || "");
           const url = pickMediaUrl(m);
           const giftLocked = pickGiftLocked(m);
+          const giftPriceBC = pickGiftPriceBC(m);
           const isMedia = type === "media" || !!url;
 
           if (!isMedia) return false;
           if (!url) return false;
-          if (!giftLocked) return false;
+
+          // ✅ Purchased Media means paid/gifted media.
+          // It must stay here after unlock too, so do not depend only on gift.locked.
+          if (!giftLocked && giftPriceBC <= 0) return false;
 
           return true;
         })
@@ -233,6 +271,7 @@ export default function PurchasedMediaHub() {
           const createdAtMs = toMs(m?.createdAt || m?.time);
           const mediaType = pickMediaType(m);
           const giftLocked = pickGiftLocked(m);
+          const giftPriceBC = pickGiftPriceBC(m);
 
           return {
             id,
@@ -240,6 +279,10 @@ export default function PurchasedMediaHub() {
             mediaType,
             createdAtMs,
             giftLocked,
+            giftPriceBC,
+            fromId: String(m?.from || m?.senderId || ""),
+            toId: String(m?.to || m?.receiverId || ""),
+            unlockedBy: pickUnlockedBy(m),
           } as MediaRow;
         })
         .filter((x) => !!x.id && !!x.url)
@@ -294,6 +337,63 @@ export default function PurchasedMediaHub() {
         focusMsgId: id,
       },
     });
+  };
+
+  const isLockedForMe = (item: MediaRow) => {
+    if (!item.giftLocked) return false;
+    if (String(item.fromId) === String(myId)) return false;
+    return !item.unlockedBy.map(String).includes(String(myId));
+  };
+
+  const unlockPurchasedMedia = async (item: MediaRow) => {
+    if (!item?.id || !roomId) return;
+
+    if (item.giftPriceBC <= 0) {
+      Alert.alert("Unlock unavailable", "This media does not have a valid BuzzCoin unlock price.");
+      return;
+    }
+
+    if (unlockingId === item.id) return;
+
+    try {
+      setUnlockingId(item.id);
+
+      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+
+      const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/${item.id}/unlock`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok || !j?.ok) {
+        throw new Error(j?.message || j?.error || "Could not unlock this media.");
+      }
+
+      setPurchased((prev) =>
+        prev.map((x) =>
+          String(x.id) === String(item.id)
+            ? {
+                ...x,
+                giftLocked: false,
+                unlockedBy: Array.from(
+                  new Set([...x.unlockedBy.map(String), String(myId)])
+                ),
+              }
+            : x
+        )
+      );
+
+      Alert.alert("Unlocked", `You unlocked this media for ${Number(j?.priceBC || item.giftPriceBC)} BC.`);
+    } catch (e: any) {
+      Alert.alert("Unlock failed", e?.message || "Try again.");
+    } finally {
+      setUnlockingId("");
+    }
   };
 
   const saveToPhone = async (item: MediaRow) => {
@@ -398,9 +498,17 @@ export default function PurchasedMediaHub() {
   };
 
   const MediaTile = ({ item }: { item: MediaRow }) => {
+    const lockedForMe = isLockedForMe(item);
+    const unlockingThis = unlockingId === item.id;
+
     return (
       <Pressable
         onPress={() => {
+          if (lockedForMe) {
+            unlockPurchasedMedia(item);
+            return;
+          }
+
           if (item.mediaType === "video") {
             openVideoViewer(item);
           } else {
@@ -410,28 +518,50 @@ export default function PurchasedMediaHub() {
         onLongPress={() => openMenu(item)}
         style={[styles.tile, { width: tileW, height: tileW }]}
       >
-        {item.mediaType === "video" ? (
+                {item.mediaType === "video" ? (
           <Video
             source={{ uri: item.url }}
-            style={styles.thumb}
+            style={[styles.thumb, lockedForMe ? styles.lockedThumb : null]}
             resizeMode={ResizeMode.COVER}
             shouldPlay={false}
             isMuted
             useNativeControls={false}
           />
         ) : (
-          <Image source={{ uri: item.url }} style={styles.thumb} />
+          <Image
+            source={{ uri: item.url }}
+            style={[styles.thumb, lockedForMe ? styles.lockedThumb : null]}
+          />
         )}
 
-        {item.mediaType === "video" ? (
+        {item.mediaType === "video" && !lockedForMe ? (
           <View style={styles.videoBadge}>
             <Ionicons name="videocam" size={14} color={RBZ.white} />
           </View>
         ) : null}
 
         <View style={styles.giftBadge}>
-          <Ionicons name="gift" size={14} color={RBZ.white} />
+          <Ionicons name={lockedForMe ? "lock-closed" : "gift"} size={14} color={RBZ.white} />
         </View>
+
+        {lockedForMe ? (
+          <View style={styles.lockOverlay}>
+            <Ionicons name="lock-closed" size={20} color={RBZ.white} />
+            <Text style={styles.lockPriceText}>{item.giftPriceBC} BC</Text>
+            <View style={styles.unlockMiniBtn}>
+              {unlockingThis ? (
+                <ActivityIndicator size="small" color={RBZ.white} />
+              ) : (
+                <Text style={styles.unlockMiniText}>Unlock</Text>
+              )}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.unlockedBadge}>
+            <Ionicons name="checkmark-circle" size={12} color={RBZ.white} />
+            <Text style={styles.unlockedText}>Unlocked</Text>
+          </View>
+        )}
 
         <Pressable onPress={() => openMenu(item)} style={styles.dotsBtn} hitSlop={10}>
           <Ionicons name="ellipsis-vertical" size={14} color={RBZ.white} />
@@ -520,12 +650,18 @@ export default function PurchasedMediaHub() {
               <Text style={styles.menuText}>Show in chat</Text>
             </Pressable>
 
-            <Pressable
+                     <Pressable
               style={styles.menuRow}
               onPress={() => {
                 const it = menuItem;
                 closeMenu();
                 if (!it) return;
+
+                if (isLockedForMe(it)) {
+                  Alert.alert("Locked media", "Unlock this media before saving it.");
+                  return;
+                }
+
                 saveToPhone(it);
               }}
             >
@@ -575,7 +711,7 @@ export default function PurchasedMediaHub() {
         }}
       />
 
-      {videoViewerItem ? (
+         {videoViewerItem ? (
         <MediaViewer
           visible={videoViewerOpen}
           onClose={() => {
@@ -584,7 +720,7 @@ export default function PurchasedMediaHub() {
           }}
           uri={videoViewerItem.url}
           mediaType="video"
-          allowDownload={!videoViewerItem.giftLocked}
+          allowDownload={!isLockedForMe(videoViewerItem)}
         />
       ) : null}
     </SafeAreaView>
@@ -645,7 +781,56 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(181,23,158,0.16)",
   },
-  thumb: { width: "100%", height: "100%" },
+   thumb: { width: "100%", height: "100%" },
+  lockedThumb: {
+    opacity: 0.16,
+  },
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(8,8,12,0.74)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  lockPriceText: {
+    color: RBZ.white,
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 5,
+  },
+  unlockMiniBtn: {
+    minHeight: 24,
+    marginTop: 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: RBZ.c2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  unlockMiniText: {
+    color: RBZ.white,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  unlockedBadge: {
+    position: "absolute",
+    left: 6,
+    bottom: 6,
+    minHeight: 24,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.50)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+  },
+  unlockedText: {
+    color: RBZ.white,
+    fontSize: 10,
+    fontWeight: "900",
+  },
 
   dotsBtn: {
     position: "absolute",

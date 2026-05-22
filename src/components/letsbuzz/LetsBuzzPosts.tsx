@@ -16,6 +16,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -135,41 +136,41 @@ function formatTimestamp(timestamp: any): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+type LetsBuzzPostsProps = {
+  targetPostId?: string;
+  targetType?: string;
+  ownerId?: string;
+  openComments?: boolean;
+  commentId?: string;
+  parentId?: string;
+  replyId?: string;
+};
+
 /* -------------------------------------------------------------------------- */
 /* Component */
 /* -------------------------------------------------------------------------- */
-export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string }) {
+export default function LetsBuzzPosts({
+  targetPostId,
+  targetType,
+  ownerId,
+  openComments: deepLinkOpenComments,
+  commentId,
+  parentId,
+  replyId,
+}: LetsBuzzPostsProps) {
   const router = useRouter();
 
   const listRef = useRef<FlatList<BuzzPost>>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [posts, setPosts] = useState<BuzzPost[]>([]);
+   const [posts, setPosts] = useState<BuzzPost[]>([]);
   const [meId, setMeId] = useState("");
-  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+   const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [imageViewerIndex, setImageViewerIndex] = useState(0);
   const [imageViewerItems, setImageViewerItems] = useState<RBZImageViewerItem[]>([]);
-
-  useEffect(() => {
-    if (!targetPostId) return;
-    if (!posts?.length) return;
-
-    const idx = posts.findIndex((p) => String(p.id) === String(targetPostId));
-    if (idx < 0) return;
-
-    const t = setTimeout(() => {
-      try {
-        listRef.current?.scrollToIndex({
-          index: idx,
-          animated: true,
-          viewPosition: 0.12,
-        });
-      } catch {}
-    }, 250);
-
-    return () => clearTimeout(t);
-  }, [targetPostId, posts]);
+  const [postMenuOpen, setPostMenuOpen] = useState(false);
+  const [postMenuItem, setPostMenuItem] = useState<BuzzPost | null>(null);
 
   // Gift count cache (display-only)
   const giftTotalByPostRef = useRef<Record<string, number>>({});
@@ -183,14 +184,41 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
   }, []);
 
   /* ----------------------------- Actions Hook ----------------------------- */
-  const {
+   const {
     openGiftPicker,
     openGiftInsights,
     openComments,
+    openReport,
     shareToOwner,
     getKnownCommentCount,
     ActionsModals,
   } = useLetsBuzzActions(meId);
+
+  useEffect(() => {
+    if (!targetPostId) return;
+    if (!posts?.length) return;
+
+    const idx = posts.findIndex((p) => String(p.id) === String(targetPostId));
+    if (idx < 0) return;
+
+    const targetPost = posts[idx];
+
+    const t = setTimeout(() => {
+      try {
+        listRef.current?.scrollToIndex({
+          index: idx,
+          animated: true,
+          viewPosition: 0.12,
+        });
+      } catch {}
+
+      if (deepLinkOpenComments && targetPost) {
+        openComments(targetPost);
+      }
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [targetPostId, posts, deepLinkOpenComments, openComments]);
 
   /* ----------------------------- Loaders ----------------------------- */
   const fetchMeId = useCallback(async () => {
@@ -368,7 +396,14 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
             </View>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.moreButton} activeOpacity={0.7}>
+           <TouchableOpacity
+            style={styles.moreButton}
+            activeOpacity={0.7}
+            onPress={() => {
+              setPostMenuItem(item);
+              setPostMenuOpen(true);
+            }}
+          >
             <Ionicons name="ellipsis-horizontal" size={20} color={COLORS.text.tertiary} />
           </TouchableOpacity>
         </View>
@@ -488,6 +523,61 @@ export default function LetsBuzzPosts({ targetPostId }: { targetPostId?: string 
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
+      <Modal
+        visible={postMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setPostMenuOpen(false);
+          setPostMenuItem(null);
+        }}
+      >
+        <Pressable
+          style={styles.postMenuBackdrop}
+          onPress={() => {
+            setPostMenuOpen(false);
+            setPostMenuItem(null);
+          }}
+        >
+          <Pressable style={styles.postMenuCard} onPress={() => {}}>
+            <View style={styles.postMenuHandle} />
+
+            <Pressable
+              style={styles.postMenuItem}
+              onPress={() => {
+                if (!postMenuItem) return;
+
+                const selectedPost = postMenuItem;
+                setPostMenuOpen(false);
+                setPostMenuItem(null);
+                openReport(selectedPost);
+              }}
+            >
+              <View style={styles.postMenuIconBubble}>
+                <Ionicons name="flag-outline" size={18} color={COLORS.primary} />
+              </View>
+
+              <View style={styles.postMenuTextWrap}>
+                <Text style={styles.postMenuTitle}>Report</Text>
+                <Text style={styles.postMenuSubtitle}>
+                  Report this post to RomBuzz safety
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={styles.postMenuCancelButton}
+              onPress={() => {
+                setPostMenuOpen(false);
+                setPostMenuItem(null);
+              }}
+            >
+              <Text style={styles.postMenuCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <RBZImageViewer
         visible={imageViewerVisible}
         items={imageViewerItems}
@@ -586,12 +676,84 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.text.tertiary,
   },
-  moreButton: {
+   moreButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+  },
+  postMenuBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17,24,39,0.32)",
+    justifyContent: "flex-end",
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.xl,
+  },
+  postMenuCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 22,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 14,
+  },
+  postMenuHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: COLORS.border,
+    marginBottom: SPACING.md,
+  },
+  postMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    paddingVertical: SPACING.md,
+  },
+  postMenuIconBubble: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,56,92,0.10)",
+  },
+  postMenuTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  postMenuTitle: {
+    ...TYPOGRAPHY.body1,
+    color: COLORS.text.primary,
+    fontWeight: "700",
+  },
+  postMenuSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.tertiary,
+    marginTop: 2,
+  },
+  postMenuCancelButton: {
+    minHeight: 46,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  postMenuCancelText: {
+    ...TYPOGRAPHY.button,
+    color: COLORS.text.secondary,
+    fontWeight: "700",
   },
   caption: {
     ...TYPOGRAPHY.body2,
