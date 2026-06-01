@@ -73,6 +73,33 @@ function hasSuggestions(session?: MeetMiddleSession | null) {
   );
 }
 
+function getSharedUserIds(session?: MeetMiddleSession | null) {
+  const sharedFromList = Array.isArray((session as any)?.locationSharedBy)
+    ? (session as any).locationSharedBy.map((id: any) => String(id || "").trim()).filter(Boolean)
+    : [];
+
+  const sharedFromParticipants = Array.isArray((session as any)?.approximateParticipants)
+    ? (session as any).approximateParticipants
+        .filter((participant: any) => participant?.hasSharedLocation === true)
+        .map((participant: any) =>
+          String(participant?.userId || participant?.id || "").trim()
+        )
+        .filter(Boolean)
+    : [];
+
+  return Array.from(new Set([...sharedFromList, ...sharedFromParticipants]));
+}
+
+function hasUserSharedLocation(
+  session: MeetMiddleSession | null,
+  userId: string
+) {
+  const cleanUserId = String(userId || "").trim();
+  if (!cleanUserId) return false;
+
+  return getSharedUserIds(session).includes(cleanUserId);
+}
+
 function deriveResumeSnapshot(
   payload: MeetMiddleApiResponse<any> | null
 ): ResumeSnapshot {
@@ -120,8 +147,10 @@ function deriveResumeSnapshot(
   }
 
   if (status === "locating") {
+    const viewerSharedLocation = hasUserSharedLocation(session, viewerId);
+
     return {
-      stage: "waiting-peer",
+      stage: viewerSharedLocation ? "waiting-peer" : "location-consent",
       session,
       selectedPlace: null,
       pendingConfirmPlace: null,

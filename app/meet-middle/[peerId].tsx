@@ -136,6 +136,43 @@ function getResponseRejectedById(payload: any) {
   );
 }
 
+function getSharedById(payload: any) {
+  return getEntityId(
+    payload?.sharedBy ||
+      payload?.data?.sharedBy ||
+      payload?.actorId ||
+      payload?.data?.actorId ||
+      ""
+  );
+}
+
+function getSharedUserIds(session?: MeetMiddleSession | null) {
+  const sharedFromList = Array.isArray((session as any)?.locationSharedBy)
+    ? (session as any).locationSharedBy.map((id: any) => String(id || "").trim()).filter(Boolean)
+    : [];
+
+  const sharedFromParticipants = Array.isArray((session as any)?.approximateParticipants)
+    ? (session as any).approximateParticipants
+        .filter((participant: any) => participant?.hasSharedLocation === true)
+        .map((participant: any) =>
+          String(participant?.userId || participant?.id || "").trim()
+        )
+        .filter(Boolean)
+    : [];
+
+  return Array.from(new Set([...sharedFromList, ...sharedFromParticipants]));
+}
+
+function hasUserSharedLocation(
+  session: MeetMiddleSession | null | undefined,
+  userId: string
+) {
+  const cleanUserId = String(userId || "").trim();
+  if (!cleanUserId) return false;
+
+  return getSharedUserIds(session).includes(cleanUserId);
+}
+
 function responseHasSuggestions(payload: any) {
   const session = getResponseSession(payload);
 
@@ -239,7 +276,7 @@ export default function MeetMiddleScreen() {
     resetRequest: resetMeetRequest,
   } = useMeetMiddleRequest(peerId);
 
-     const {
+        const {
     loading: locationShareLoading,
     error: locationShareError,
     session: locationShareSession,
@@ -251,6 +288,7 @@ export default function MeetMiddleScreen() {
     markWaitingForPeer,
     markPeerSharedLocation,
     markSuggestionsReady,
+    reset: resetLocationShare,
   } = useMeetMiddleLocationShare(activeSessionId);
 
   const resumeSession = useMeetMiddleSessionResume(activeSessionId);
@@ -271,7 +309,7 @@ export default function MeetMiddleScreen() {
     setScreenStage("location-consent");
   }, [routeSessionId]);
 
-  useEffect(() => {
+   useEffect(() => {
     if (!resumeSession.session) return;
 
     const nextSessionId = getSessionId(resumeSession.session);
@@ -284,17 +322,48 @@ export default function MeetMiddleScreen() {
       setScreenStage(resumeSession.stage as MeetMiddleStage);
     }
 
+    const viewerSharedLocation = hasUserSharedLocation(
+      resumeSession.session,
+      resumeSession.viewerId
+    );
+
+    const peerSharedLocation = hasUserSharedLocation(
+      resumeSession.session,
+      peerId
+    );
+
+    if (resumeSession.stage === "waiting-peer" && viewerSharedLocation) {
+      markWaitingForPeer(resumeSession.session);
+    } else if (
+      resumeSession.stage === "location-consent" &&
+      peerSharedLocation &&
+      !viewerSharedLocation
+    ) {
+      markPeerSharedLocation(resumeSession.session);
+    } else if (
+      resumeSession.stage === "location-consent" &&
+      !peerSharedLocation &&
+      !viewerSharedLocation
+    ) {
+      resetLocationShare();
+    }
+
     setSelectedMeetPlace(resumeSession.selectedPlace);
     setPendingConfirmPlace(resumeSession.pendingConfirmPlace);
     setFinalMeetPlace(resumeSession.finalMeetPlace);
     setSelectPlaceError("");
     setPlaceActionError("");
   }, [
+    peerId,
     resumeSession.session,
     resumeSession.stage,
+    resumeSession.viewerId,
     resumeSession.selectedPlace,
     resumeSession.pendingConfirmPlace,
     resumeSession.finalMeetPlace,
+    markWaitingForPeer,
+    markPeerSharedLocation,
+    resetLocationShare,
   ]);
 
   useEffect(() => {
@@ -378,13 +447,29 @@ export default function MeetMiddleScreen() {
 
       setScreenStage("location-consent");
     },
-    onLocationWaiting: (payload) => {
+      onLocationWaiting: (payload) => {
       const session = extractMeetMiddleSocketSession(payload);
+      const sharedById = getSharedById(payload);
+
+      if (sharedById && sharedById === peerId) {
+        markPeerSharedLocation(session);
+        setScreenStage("location-consent");
+        return;
+      }
+
       markWaitingForPeer(session);
       setScreenStage("waiting-peer");
     },
     onLocationPeerShared: (payload) => {
       const session = extractMeetMiddleSocketSession(payload);
+      const sharedById = getSharedById(payload);
+
+      if (sharedById && sharedById !== peerId) {
+        markWaitingForPeer(session);
+        setScreenStage("waiting-peer");
+        return;
+      }
+
       markPeerSharedLocation(session);
       setScreenStage("location-consent");
     },

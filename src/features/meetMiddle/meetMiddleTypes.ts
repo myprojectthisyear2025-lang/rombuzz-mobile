@@ -40,12 +40,17 @@ export type MeetMiddleApproximateParticipant = {
   name?: string;
   avatar?: string;
   gender?: string;
+  hasSharedLocation?: boolean;
+  sharedAt?: string | null;
   coords?: MeetMiddleCoords | null;
+  approxCoords?: MeetMiddleCoords | null;
   approximateCoords?: MeetMiddleCoords | null;
 };
 
 export type MeetMiddleSessionStatus =
   | "requested"
+  | "accepted"
+  | "locating"
   | "waiting_location"
   | "suggestions_ready"
   | "place_selected"
@@ -61,12 +66,19 @@ export type MeetMiddleSession = {
   id?: string;
   _id?: string;
   sessionId?: string;
+  pairKey?: string;
   status?: MeetMiddleSessionStatus;
+  requestedBy?: string;
+  peerId?: string;
+  selectedBy?: string | null;
+  confirmedBy?: string | null;
   from?: string | MeetMiddleUserLite;
   to?: string | MeetMiddleUserLite;
   requester?: string | MeetMiddleUserLite;
   receiver?: string | MeetMiddleUserLite;
+  users?: string[];
   participants?: Array<string | MeetMiddleUserLite>;
+  locationSharedBy?: string[];
   approximateParticipants?: MeetMiddleApproximateParticipant[];
   midpoint?: MeetMiddleCoords | null;
   midpointPlace?: MeetMiddlePlace | null;

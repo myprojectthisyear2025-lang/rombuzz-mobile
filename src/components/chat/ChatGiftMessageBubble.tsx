@@ -27,6 +27,7 @@ import {
   Animated,
   Easing,
   Image,
+  InteractionManager,
   Pressable,
   StyleSheet,
   Text,
@@ -38,6 +39,7 @@ import {
   getGiftsByPlacement,
   type RomBuzzGift,
 } from "@/src/config/rombuzzGifts";
+import ChatGiftRevealAnimation from "@/src/components/chat/ChatGiftRevealAnimation";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -100,6 +102,8 @@ export default function ChatGiftMessageBubble({
   const catalogGift = useMemo(() => findGift(gift?.giftId), [gift?.giftId]);
   const [opened, setOpened] = useState(isMine || !!gift?.opened);
   const [showValue, setShowValue] = useState(false);
+  const [revealPlaying, setRevealPlaying] = useState(false);
+  const [giftImageRenderNonce, setGiftImageRenderNonce] = useState(0);
 
   // Animation values
   const pulse = useRef(new Animated.Value(0)).current;
@@ -330,11 +334,13 @@ export default function ChatGiftMessageBubble({
         useNativeDriver: true,
         delay: 150,
       }),
-    ]).start(() => {
+       ]).start(() => {
       setShowValue(true);
     });
 
     setOpened(true);
+    setShowValue(false);
+    setRevealPlaying(true);
 
     try {
       await SecureStore.setItemAsync(storageKey, "1");
@@ -343,6 +349,51 @@ export default function ChatGiftMessageBubble({
 
   const priceBC = Number(gift?.priceBC || catalogGift?.priceBC || 0);
   const imageUrl = String(catalogGift?.imageUrl || "").trim();
+
+  useEffect(() => {
+    if (!imageUrl) return;
+
+    setGiftImageRenderNonce((prev) => prev + 1);
+
+    Image.prefetch(imageUrl).catch(() => {});
+  }, [imageUrl]);
+
+   function finishGiftReveal() {
+    reveal.setValue(1);
+    pulse.setValue(0);
+    floatY.setValue(0);
+
+    const showFinalGift = () => {
+      setGiftImageRenderNonce((prev) => prev + 1);
+      setRevealPlaying(false);
+      setShowValue(true);
+    };
+
+    if (!imageUrl) {
+      showFinalGift();
+      return;
+    }
+
+    Image.prefetch(imageUrl)
+      .catch(() => {})
+      .finally(() => {
+        InteractionManager.runAfterInteractions(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(showFinalGift);
+          });
+        });
+      });
+  }
+
+  function replayGiftReveal() {
+    if (!opened || revealPlaying) return;
+
+    setRevealPlaying(false);
+
+    requestAnimationFrame(() => {
+      setRevealPlaying(true);
+    });
+  }
 
   // Particles for unboxing effect
   const renderParticles = () => {
@@ -372,44 +423,54 @@ export default function ChatGiftMessageBubble({
     return particles;
   };
 
-  return (
+   return (
     <Pressable
-      onPress={!isMine && !opened ? openGift : undefined}
+      onPress={!opened && !isMine ? openGift : replayGiftReveal}
       onLongPress={onLongPress}
       delayLongPress={260}
       style={[
         styles.shell,
         isMine ? styles.shellMine : styles.shellPeer,
         !isMine && !opened && styles.unopenedShell,
+        revealPlaying && styles.revealOnlyShell,
       ]}
     >
       {/* Premium gradient background */}
       <View style={styles.gradientBg} />
-      
+
       {/* Glow effects */}
       <View style={styles.glowOne} />
       <View style={styles.glowTwo} />
-      
-      {/* Shining ring animation */}
-      {!opened && !isMine && (
-        <Animated.View style={[styles.shineRing, shineTransform]}>
-          <View style={styles.shineRingInner} />
-        </Animated.View>
-      )}
 
-      {/* Particles on unbox */}
-      {!isMine && renderParticles()}
+      {revealPlaying ? (
+        <ChatGiftRevealAnimation
+          imageUrl={imageUrl}
+          giftId={gift?.giftId}
+          transactionId={gift?.transactionId}
+          onDone={finishGiftReveal}
+        />
+      ) : (
+        <>
+          {/* Shining ring animation */}
+          {!opened && !isMine && (
+            <Animated.View style={[styles.shineRing, shineTransform]}>
+              <View style={styles.shineRingInner} />
+            </Animated.View>
+          )}
 
-      {/* Sparkles on unbox */}
-      {!isMine && (
-        <Animated.View style={[styles.sparkles, { opacity: sparkleScale, transform: [{ scale: sparkleScale }] }]}>
-          <Ionicons name="sparkles" size={24} color={RBZ.gold} />
-          <Ionicons name="star" size={18} color={RBZ.c2} style={styles.sparkleOffset} />
-        </Animated.View>
-      )}
+          {/* Particles on unbox */}
+          {!isMine && renderParticles()}
 
-      {/* Header with premium badge */}
-      <View style={styles.headerRow}>
+          {/* Sparkles on unbox */}
+          {!isMine && (
+            <Animated.View style={[styles.sparkles, { opacity: sparkleScale, transform: [{ scale: sparkleScale }] }]}>
+              <Ionicons name="sparkles" size={24} color={RBZ.gold} />
+              <Ionicons name="star" size={18} color={RBZ.c2} style={styles.sparkleOffset} />
+            </Animated.View>
+          )}
+
+          {/* Header with premium badge */}
+          <View style={styles.headerRow}>
         <View style={[styles.headerIcon, opened && styles.headerIconOpened]}>
           <Ionicons
             name={opened ? "diamond" : "gift"}
@@ -453,7 +514,7 @@ export default function ChatGiftMessageBubble({
 
       {/* Gift Stage */}
       <View style={styles.stage}>
-        {!opened ? (
+              {!opened ? (
           <Pressable onPress={!isMine ? openGift : undefined} style={styles.closedGiftWrapper}>
             <Animated.View style={[styles.closedGift, imageAnim]}>
               {/* Ribbon decoration */}
@@ -472,49 +533,46 @@ export default function ChatGiftMessageBubble({
                 </Animated.View>
               )}
               
-              {isMine && (
+                           {isMine && (
                 <View style={styles.sentBadge}>
                   <Text style={styles.sentBadgeText}>Sent with love</Text>
                 </View>
               )}
             </Animated.View>
           </Pressable>
-        ) : (
-          <Animated.View style={[styles.revealedGift, revealAnim, imageAnim]}>
+              ) : (
+          <View style={styles.revealedGift}>
             {imageUrl ? (
               <View style={styles.giftImageContainer}>
                 <Image
+                  key={`${gift?.transactionId || gift?.giftId || "gift"}-${giftImageRenderNonce}`}
                   source={{ uri: imageUrl }}
                   style={styles.giftImage}
                   resizeMode="contain"
+                  fadeDuration={0}
                 />
-                <View style={styles.imageGlow} />
               </View>
-            ) : (
+               ) : (
               <View style={styles.fallbackGift}>
                 <Ionicons name="diamond" size={64} color={RBZ.gold} />
                 <Ionicons name="sparkles" size={28} color={RBZ.c2} style={styles.fallbackSparkle} />
               </View>
             )}
-            {showValue && priceBC > 0 && (
-              <View style={styles.valueBadge}>
-                <Ionicons name="diamond" size={12} color={RBZ.white} />
-                <Text style={styles.valueBadgeText}>{priceBC} BC</Text>
-              </View>
-            )}
-          </Animated.View>
+          </View>
         )}
       </View>
 
-      {/* Footer with premium message */}
-      <View style={styles.footerRow}>
-        <Text style={styles.footerText}>
-          {catalogGift?.animated ? "⭐ Animated gift" : "💎 Premium gift"}
-        </Text>
-        <View style={styles.footerHeart}>
-          <Ionicons name="heart" size={12} color={RBZ.c2} />
-        </View>
-      </View>
+           {/* Footer with premium message */}
+          <View style={styles.footerRow}>
+            <Text style={styles.footerText}>
+              {catalogGift?.animated ? "⭐ Click to view" : "💎 Premium gift"}
+            </Text>
+            <View style={styles.footerHeart}>
+              <Ionicons name="heart" size={12} color={RBZ.c2} />
+            </View>
+          </View>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -534,12 +592,20 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 8,
   },
-  unopenedShell: {
+   unopenedShell: {
     borderWidth: 1.5,
     borderColor: RBZ.gold,
     shadowColor: RBZ.gold,
     shadowOpacity: 0.2,
     shadowRadius: 12,
+  },
+  revealOnlyShell: {
+    minHeight: 264,
+    padding: 12,
+    borderColor: "rgba(212,175,55,0.48)",
+    shadowColor: RBZ.gold,
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
   },
   shellMine: {
     backgroundColor: "#FFF8F0",
@@ -742,20 +808,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    backgroundColor: "transparent",
   },
   giftImage: {
     width: 120,
     height: 120,
     backgroundColor: "transparent",
-  },
-  imageGlow: {
-    position: "absolute",
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "rgba(212,175,55,0.15)",
-    top: -10,
-    left: -10,
+    position: "relative",
+    zIndex: 5,
+    elevation: 5,
+    opacity: 1,
   },
   fallbackGift: {
     alignItems: "center",
@@ -766,26 +828,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -10,
     right: -15,
-  },
-  valueBadge: {
-    position: "absolute",
-    bottom: -8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: RBZ.gold,
-    shadowColor: RBZ.gold,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-  },
-  valueBadgeText: {
-    color: RBZ.white,
-    fontSize: 10,
-    fontWeight: "900",
   },
   footerRow: {
     flexDirection: "row",

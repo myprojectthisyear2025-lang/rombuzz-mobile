@@ -298,7 +298,7 @@ export default function HomeScreen() {
                   Find perfect matches based on your preferences.
                 </Text>
 
-                <LinearGradient
+                           <LinearGradient
                   colors={['#7b1fa2', '#9c27b0']}
                   style={styles.compactCardCTA}
                   start={{ x: 0, y: 0 }}
@@ -311,139 +311,106 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
 
-        {/* PREMIUM STATS DASHBOARD */}
-        <View style={styles.statsDashboard}>
-          <LinearGradient
-            colors={['rgba(255,255,255,0.95)', 'rgba(248,249,250,0.98)']}
-            style={styles.statsGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.statCard}>
-              <LinearGradient
-                colors={[RBZ.c4, RBZ.c5]}
-                style={styles.statIconContainer}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="infinite" size={28} color={RBZ.c1} />
-              </LinearGradient>
-              <Text style={styles.statBigNumber}>∞</Text>
-              <Text style={styles.statLabelPremium}>Live Connections</Text>
+        {/* ROMBUZZ PULSE - REAL APP SHORTCUTS */}
+        <View style={styles.pulseSection}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={styles.sectionMiniLabel}>Your RomBuzz pulse</Text>
+              <Text style={styles.sectionTitleClean}>Pick your next vibe</Text>
             </View>
-            
-            <View style={styles.statCard}>
-              <LinearGradient
-                colors={[RBZ.c4, RBZ.c5]}
-                style={styles.statIconContainer}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="time" size={28} color={RBZ.c1} />
-              </LinearGradient>
-              <Text style={styles.statBigNumber}>24/7</Text>
-              <Text style={styles.statLabelPremium}>Active Matching</Text>
-            </View>
-            
-            <View style={styles.statCard}>
-              <LinearGradient
-                colors={[RBZ.c4, RBZ.c5]}
-                style={styles.statIconContainer}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="rocket" size={28} color={RBZ.c1} />
-              </LinearGradient>
-              <Text style={styles.statBigNumber}>0.3s</Text>
-              <Text style={styles.statLabelPremium}>Response Time</Text>
-            </View>
-          </LinearGradient>
-        </View>
 
-        {/* WHY ROMBUZ - PREMIUM SECTION */}
-        <View style={styles.whySectionPremium}>
-          <Text style={styles.sectionTitlePremium}>Why Choose RomBuzz?</Text>
-          
-          <View style={styles.whyCardsPremium}>
-            {[
-              {
-                icon: 'flash',
-                title: 'Real-time Only',
-                desc: 'Connect only with people who are online and ready to chat now. No waiting.',
-                color: RBZ.c3
-              },
-              {
-                icon: 'videocam',
-                title: 'Video First',
-                desc: 'See real people in real time. Authentic connections start with video.',
-                color: '#2196F3'
-              },
-              {
-                icon: 'shield-checkmark',
-                title: 'Safe & Verified',
-                desc: 'Every profile is verified. Your safety and privacy are our priority.',
-                color: '#4CAF50'
-              }
-            ].map((item, index) => (
-              <View key={index} style={styles.whyCardPremium}>
-                <LinearGradient
-                  colors={[item.color + '20', item.color + '10']}
-                  style={styles.whyIconPremium}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name={item.icon as any} size={28} color={item.color} />
-                </LinearGradient>
-                <Text style={styles.whyTitlePremium}>{item.title}</Text>
-                <Text style={styles.whyDescPremium}>{item.desc}</Text>
-              </View>
-            ))}
+            <View style={styles.sectionHeartPill}>
+              <Ionicons name="heart" size={16} color={RBZ.c1} />
+            </View>
+          </View>
+
+          <View style={styles.pulseGrid}>
+            <Pressable
+              onPress={() => router.push("/(tabs)/microbuzz")}
+              style={({ pressed }) => [
+                styles.pulseTile,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <LinearGradient
+                colors={["rgba(216,52,95,0.14)", "rgba(255,123,156,0.08)"]}
+                style={styles.pulseIconWrap}
+              >
+                <Ionicons name="radio" size={24} color={RBZ.c1} />
+              </LinearGradient>
+              <Text style={styles.pulseTitle}>Nearby energy</Text>
+              <Text style={styles.pulseText}>See who is active around you.</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push("/(tabs)/discover")}
+              style={({ pressed }) => [
+                styles.pulseTile,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <LinearGradient
+                colors={["rgba(156,39,176,0.14)", "rgba(103,58,183,0.08)"]}
+                style={styles.pulseIconWrap}
+              >
+                <Ionicons name="compass" size={24} color="#7B1FA2" />
+              </LinearGradient>
+              <Text style={styles.pulseTitle}>Curated matches</Text>
+              <Text style={styles.pulseText}>Swipe through people who fit you.</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push("/(tabs)/chat")}
+              style={({ pressed }) => [
+                styles.pulseTile,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <LinearGradient
+                colors={["rgba(33,150,243,0.14)", "rgba(33,150,243,0.06)"]}
+                style={styles.pulseIconWrap}
+              >
+                <Ionicons name="chatbubble-ellipses" size={24} color="#1976D2" />
+              </LinearGradient>
+              <Text style={styles.pulseTitle}>Keep it warm</Text>
+              <Text style={styles.pulseText}>Return to chats before the spark fades.</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push("/(tabs)/profile")}
+              style={({ pressed }) => [
+                styles.pulseTile,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <LinearGradient
+                colors={["rgba(76,175,80,0.14)", "rgba(76,175,80,0.06)"]}
+                style={styles.pulseIconWrap}
+              >
+                <Ionicons name="person-circle" size={25} color="#2E7D32" />
+              </LinearGradient>
+              <Text style={styles.pulseTitle}>Polish profile</Text>
+              <Text style={styles.pulseText}>Better photos create better starts.</Text>
+            </Pressable>
           </View>
         </View>
 
-            {/* UPGRADE CTA - PREMIUM DESIGN */}
-        <Pressable
-          onPress={() => router.push("/upgrade")}
-          style={({ pressed }) => [
-            styles.upgradeCTAPremium,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <LinearGradient
-            colors={['#FFD700', '#FFA500', '#FF8C00']}
-            style={styles.upgradeGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.upgradeGlow} />
-            <View style={styles.upgradeContentPremium}>
-              <View style={styles.sparkleContainer}>
-                <Ionicons name="sparkles" size={28} color="#8B4513" />
-              </View>
-              <View style={styles.upgradeTextsPremium}>
-                <Text style={styles.upgradeTitlePremium}>Unlock Premium Features</Text>
-                <Text style={styles.upgradeSubtitlePremium}>
-                  Priority matching, unlimited likes, and advanced filters
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={28} color="#8B4513" />
+        {/* SOFT TRUST CARD */}
+        <View style={styles.promiseSection}>
+          <View style={styles.promiseCard}>
+            <View style={styles.promiseIcon}>
+              <Ionicons name="shield-checkmark" size={23} color="#2E7D32" />
             </View>
-          </LinearGradient>
-        </Pressable>
 
-        {/* TEMP DEV ONLY: Gift system test entry */}
-        <Pressable
-          onPress={() => router.push("/gift-test" as any)}
-          style={({ pressed }) => [
-            styles.giftTestButton,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={styles.giftTestButtonText}>🎁 Open Gift Test</Text>
-          <Text style={styles.giftTestButtonSubtext}>
-            Temporary developer test screen
-          </Text>
-        </Pressable>
+            <View style={styles.promiseTextWrap}>
+              <Text style={styles.promiseTitle}>Romance without the chaos.</Text>
+              <Text style={styles.promiseText}>
+                Verified profiles, reporting tools, blocking, and real-time safety
+                signals stay close without crowding your experience.
+              </Text>
+            </View>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -777,212 +744,135 @@ compactCardIconGlow: {
     elevation: 4,
   },
   
-  compactCTAText: {
+     compactCTAText: {
     color: RBZ.white,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.3,
   },
-  
-  // Stats Dashboard
-  statsDashboard: {
+
+  // Pulse Section
+  pulseSection: {
     paddingHorizontal: 20,
-    marginBottom: 30,
+    marginBottom: 22,
   },
-  
-  statsGradient: {
-    borderRadius: 24,
-    padding: 20,
+
+  sectionHeaderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
+    marginBottom: 14,
   },
-  
-  statCard: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  
-  statIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  
-  statBigNumber: {
-    color: RBZ.c1,
-    fontSize: 32,
-    fontWeight: '900',
-    marginBottom: 6,
-  },
-  
-  statLabelPremium: {
-    color: RBZ.darkGray,
+
+  sectionMiniLabel: {
+    color: RBZ.c2,
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  
-  // Why Section Premium
-  whySectionPremium: {
-    paddingHorizontal: 20,
-    marginBottom: 30,
-  },
-  
-  sectionTitlePremium: {
-    color: RBZ.c1,
-    fontSize: 28,
     fontWeight: '900',
-    marginBottom: 24,
-    letterSpacing: 0.5,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 4,
   },
-  
-  whyCardsPremium: {
-    gap: 18,
+
+  sectionTitleClean: {
+    color: '#351024',
+    fontSize: 25,
+    fontWeight: '900',
+    letterSpacing: 0.2,
   },
-  
-  whyCardPremium: {
-    backgroundColor: RBZ.white,
-    borderRadius: 22,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(216, 52, 95, 0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  
-  whyIconPremium: {
-    width: 56,
-    height: 56,
+
+  sectionHeartPill: {
+    width: 42,
+    height: 42,
     borderRadius: 16,
+    backgroundColor: 'rgba(216, 52, 95, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
-  
-  whyTitlePremium: {
-    color: RBZ.black,
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 10,
-  },
-  
-  whyDescPremium: {
-    color: RBZ.darkGray,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
-  },
-  
-  // Upgrade CTA Premium
-  upgradeCTAPremium: {
-    marginHorizontal: 20,
-    borderRadius: 25,
-    overflow: 'hidden',
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
-  },
-  
-  upgradeGradient: {
-    padding: 25,
-    borderRadius: 25,
-  },
-  
-  upgradeGlow: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  
-  upgradeContentPremium: {
+
+  pulseGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  
-  sparkleContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+
+  pulseTile: {
+    width: (width - 52) / 2,
+    minHeight: 150,
+    borderRadius: 24,
+    padding: 16,
+    backgroundColor: RBZ.white,
+    borderWidth: 1,
+    borderColor: 'rgba(216, 52, 95, 0.09)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 7,
+  },
+
+  pulseIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    marginBottom: 14,
   },
-  
-  upgradeTextsPremium: {
-    flex: 1,
-    marginHorizontal: 18,
-  },
-  
-  upgradeTitlePremium: {
-    color: '#8B4513',
-    fontSize: 20,
+
+  pulseTitle: {
+    color: '#351024',
+    fontSize: 16,
     fontWeight: '900',
     marginBottom: 6,
-    letterSpacing: 0.3,
   },
-  
-  upgradeSubtitlePremium: {
-    color: 'rgba(139, 69, 19, 0.85)',
-    fontSize: 14,
+
+  pulseText: {
+    color: RBZ.darkGray,
+    fontSize: 12.5,
     fontWeight: '600',
     lineHeight: 18,
   },
 
-  giftTestButton: {
-    marginHorizontal: 20,
-    marginTop: 18,
-    marginBottom: 10,
-    borderRadius: 22,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    backgroundColor: '#351024',
+  // Promise Card
+  promiseSection: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+
+  promiseCard: {
+    flexDirection: 'row',
+    gap: 14,
+    padding: 17,
+    borderRadius: 24,
+    backgroundColor: '#FFF7FB',
     borderWidth: 1,
-    borderColor: 'rgba(255, 105, 180, 0.22)',
+    borderColor: 'rgba(216, 52, 95, 0.12)',
+  },
+
+  promiseIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: 'rgba(76, 175, 80, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#351024',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    elevation: 8,
   },
 
-  giftTestButtonText: {
-    color: RBZ.white,
+  promiseTextWrap: {
+    flex: 1,
+  },
+
+  promiseTitle: {
+    color: '#351024',
     fontSize: 16,
     fontWeight: '900',
-    letterSpacing: 0.3,
+    marginBottom: 5,
   },
 
-  giftTestButtonSubtext: {
-    marginTop: 4,
-    color: 'rgba(255, 255, 255, 0.72)',
-    fontSize: 12,
-    fontWeight: '700',
+  promiseText: {
+    color: RBZ.darkGray,
+    fontSize: 12.5,
+    fontWeight: '600',
+    lineHeight: 18,
   },
 });

@@ -124,6 +124,8 @@ const GIFT_IMAGE_OVERRIDES: Record<string, string> = {
     "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280975/pink_heart_noh9cr.png",
   heart_red:
     "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/heart_red_ngpbdb.png",
+  heart_s:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780322111/heart_s_esqjjw.png",
   tea_cup:
     "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280976/tea_cup_uzcylj.png",
   cherry_love:
@@ -195,7 +197,8 @@ const ROMBUZZ_GIFTS_BASE: RomBuzzGift[] = [
     seasonalOnly: false,
     allowedPlacements: ALL_PLACEMENTS,
   },
-  {
+  
+    {
     id: "heart_red",
     name: "Red Heart",
     imageUrl:
@@ -217,7 +220,29 @@ const ROMBUZZ_GIFTS_BASE: RomBuzzGift[] = [
     seasonalOnly: false,
     allowedPlacements: ALL_PLACEMENTS,
   },
-  {
+    {
+    id: "heart_s",
+    name: "Heart Spark",
+    imageUrl:
+      "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780322111/heart_s_esqjjw.png",
+    category: "romantic",
+    rarity: "common",
+    priceBC: 9,
+    animated: true,
+    animationType: "heartPop",
+    visualDescription: "Soft heart-style romantic gift icon.",
+    emotionalMeaning: "A sweet heart reaction between red heart and tea cup.",
+    bestPlacement: "universal",
+    appStoreSafetyNote: "Safe romantic symbolic gift with no adult or restricted content.",
+    designPrompt: "Soft romantic heart gift icon, transparent background, no text.",
+    suggestedAssetType: "png",
+    sortOrder: 3,
+    enabled: true,
+    premiumOnly: false,
+    seasonalOnly: false,
+    allowedPlacements: ALL_PLACEMENTS,
+  },
+     {
     id: "tea_cup",
     name: "Tea Cup",
     imageUrl:
@@ -233,7 +258,7 @@ const ROMBUZZ_GIFTS_BASE: RomBuzzGift[] = [
     appStoreSafetyNote: "Safe cozy gift with no adult or restricted content.",
     designPrompt: "Cute romantic tea cup gift icon, transparent background, no text.",
     suggestedAssetType: "png",
-    sortOrder: 3,
+    sortOrder: 4,
     enabled: true,
     premiumOnly: false,
     seasonalOnly: false,
