@@ -33,6 +33,7 @@ import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
 import { startVideoCall } from "@/src/features/videoCall/videoCallApi";
+import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
 
 const { width } = Dimensions.get('window');
 
@@ -104,7 +105,7 @@ export default function ThreadInfo() {
 
   const displayName = nickname.trim() ? nickname.trim() : baseName;
 
-   const [tone, setTone] = useState<"default" | "soft" | "loud">("default");
+     const [tone, setTone] = useState<"default" | "soft" | "loud">("default");
 
      const [media, setMedia] = useState<MediaItem[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
@@ -112,6 +113,7 @@ export default function ThreadInfo() {
   const [giftPickerOpen, setGiftPickerOpen] = useState(false);
   const [giftInsightsOpen, setGiftInsightsOpen] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [checkingBlockStatus, setCheckingBlockStatus] = useState(false);
   const [startingVideoCall, setStartingVideoCall] = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
 
@@ -123,7 +125,7 @@ export default function ThreadInfo() {
     })();
   }, []);
 
-  useEffect(() => {
+   useEffect(() => {
     if (!myId || !peerId) return;
 
     const nk = nickKey(myId, peerId);
@@ -139,6 +141,63 @@ export default function ThreadInfo() {
       if (t === "soft" || t === "loud" || t === "default") setTone(t);
     })();
   }, [myId, peerId]);
+
+    useEffect(() => {
+    if (!peerId) return;
+
+    let alive = true;
+
+    const loadBlockStatus = async () => {
+      setCheckingBlockStatus(true);
+
+      try {
+        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+
+        const r = await fetch(`${API_BASE}/users/blocks`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const j = await r.json().catch(() => ({}));
+
+        const rawList =
+          Array.isArray(j)
+            ? j
+            : Array.isArray(j?.blocked)
+              ? j.blocked
+              : Array.isArray(j?.blocks)
+                ? j.blocks
+                : Array.isArray(j?.users)
+                  ? j.users
+                  : [];
+
+        const blockedNow = rawList.some((item: any) => {
+          const id = String(
+            item?.id ||
+              item?._id ||
+              item?.userId ||
+              item?.blockedUserId ||
+              item?.blocked ||
+              item ||
+              ""
+          );
+
+          return id === String(peerId);
+        });
+
+        if (alive) setIsBlocked(blockedNow);
+      } catch {
+        if (alive) setIsBlocked(false);
+      } finally {
+        if (alive) setCheckingBlockStatus(false);
+      }
+    };
+
+    loadBlockStatus();
+
+    return () => {
+      alive = false;
+    };
+  }, [peerId]);
 
   const confirmNickname = async () => {
     if (!myId || !peerId) return;
@@ -391,16 +450,18 @@ export default function ThreadInfo() {
     }
   };
 
-   const ActionBtn = ({
+      const ActionBtn = ({
     icon,
     label,
     onPress,
     onLongPress,
+    customIcon,
   }: {
-    icon: any;
+    icon?: any;
     label: string;
     onPress: () => void;
     onLongPress?: () => void;
+    customIcon?: React.ReactNode;
   }) => (
     <Pressable
       onPress={() => {
@@ -423,7 +484,7 @@ export default function ThreadInfo() {
         end={{ x: 1, y: 1 }}
         style={styles.actionIconWrap}
       >
-        <Ionicons name={icon} size={20} color={RBZ.white} />
+        {customIcon ? customIcon : <Ionicons name={icon} size={20} color={RBZ.white} />}
       </LinearGradient>
       <Text style={styles.actionLabel}>{label}</Text>
     </Pressable>
@@ -536,14 +597,14 @@ export default function ThreadInfo() {
             </View>
           </Pressable>
 
-          <View style={styles.actionsRow}>
-                     <ActionBtn
-              icon="map"
+               <View style={styles.actionsRow}>
+            <ActionBtn
               label="Meet"
+              customIcon={<MeetMiddleMiniLogo size={23} />}
               onPress={() =>
                 router.push({
-                  pathname: "/meet-in-middle/[peerId]" as any,
-                  params: { peerId, name: baseName, avatar },
+                  pathname: "/meet-middle/[peerId]" as any,
+                  params: { peerId, name: displayName, avatar },
                 })
               }
             />
@@ -733,19 +794,24 @@ export default function ThreadInfo() {
             }
           />
 
-          <View style={styles.hr} />
+                  <View style={styles.hr} />
 
           <Row
-            icon="ban"
-            title="Block"
-            sub="Stop this user from contacting you"
-            onPress={blockUser}
-          />
-          <Row
-            icon="checkmark-circle"
-            title="Unblock"
-            sub="Allow messages again"
-            onPress={unblockUser}
+            icon={isBlocked ? "checkmark-circle" : "ban"}
+            title={
+              checkingBlockStatus
+                ? "Checking block status..."
+                : isBlocked
+                  ? "Unblock"
+                  : "Block"
+            }
+            sub={
+              isBlocked
+                ? "Allow messages again"
+                : "Stop this user from contacting you"
+            }
+            onPress={isBlocked ? unblockUser : blockUser}
+            danger={!isBlocked}
           />
 
           <Row

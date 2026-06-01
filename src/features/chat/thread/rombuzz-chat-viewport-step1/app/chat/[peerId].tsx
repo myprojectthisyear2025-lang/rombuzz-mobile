@@ -50,7 +50,6 @@ import ChatGiftMessageBubble from "@/src/components/chat/ChatGiftMessageBubble";
 import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
 import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
-import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
 import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
 import { useChatMediaViewerController } from "@/src/features/chat/thread/ChatMediaViewerController";
 import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
@@ -69,9 +68,6 @@ import {
 } from "@/src/features/chat/thread/chatReplyUtils";
 import { formatExactMessageTime } from "@/src/features/chat/thread/chatTimeUtils";
 import type { Msg, ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
-import MeetMiddleChatBubble, {
-  getMeetMiddleBubblePayload,
-} from "@/src/features/chat/thread/MeetMiddleChatBubble";
 import { startVideoCall } from "@/src/features/videoCall/videoCallApi";
 import VideoCallHistoryBubble, {
   isVideoCallHistoryMessage,
@@ -149,20 +145,6 @@ const peerAvatar =
   "https://i.pravatar.cc/200?img=12";
 
 const [startingVideoCall, setStartingVideoCall] = useState(false);
-
-const handleOpenMeetMiddle = () => {
-  if (!peerId) return;
-
-  router.push({
-    pathname: "/meet-middle/[peerId]" as any,
-    params: {
-      peerId,
-      name: headerName,
-      avatar: peerAvatar,
-      source: "chat-header",
-    },
-  });
-};
 
 const handleStartVideoCall = async () => {
   if (!peerId || startingVideoCall) return;
@@ -546,21 +528,16 @@ const onSeen = (payload: any) => {
     return "RomBuzz rich message";
   }, [reportMsg, reportMsgDecoded]);
 
-    // edit mode
+  // edit mode
   const [editId, setEditId] = useState<string | null>(null);
 
  const socketRef = useRef<any>(null);
 const focusMsgId = String(params.focusMsgId || "");
 
-const chatListMessages = useMemo(() => {
-  return [...messages].reverse();
-}, [messages]);
-
 const {
   flatRef,
   highlightId,
   showScrollBtns,
-  initialViewportReady,
   scrollToLatest,
   settleToLatest,
   scrollToTop,
@@ -569,48 +546,19 @@ const {
   handleScroll,
   handleScrollToIndexFailed,
 } = useChatThreadViewport({
-  messages: chatListMessages,
+  messages,
   loading,
   focusMsgId,
-  latestAtTop: true,
 });
 
-// ✅ Bottom spacing for inverted chat list:
-// composer is part of layout, not overlayed, so list only needs a tiny visual gap
-const SAFE_BOTTOM_INSET = Math.max(0, Number(insets.bottom || 0));
+// ✅ Dynamic bottom padding:
+// keep just enough room for the last message to clear the composer
+const COMPOSER_BASE_HEIGHT = 58;
+const EDIT_CHIP_HEIGHT = editId ? 38 : 0;
 
-// ✅ Android edge-to-edge / 3-button navigation can report bottom inset as 0.
-// Measure the real system navigation area and use a stronger fallback so the
-// composer never sits under the phone navigation buttons.
-const WINDOW_H = Dimensions.get("window").height;
-const SCREEN_H = Dimensions.get("screen").height;
-const STATUS_BAR_H = Math.max(0, Number(Constants.statusBarHeight || 0));
-
-const ANDROID_SYSTEM_BOTTOM_AREA =
-  Platform.OS === "android"
-    ? Math.max(0, SCREEN_H - WINDOW_H - STATUS_BAR_H)
-    : 0;
-
-const ANDROID_NAV_FALLBACK_PAD =
-  Platform.OS === "android"
-    ? Math.max(50, Math.min(64, ANDROID_SYSTEM_BOTTOM_AREA || 50))
-    : 0;
-
-const COMPOSER_SAFE_BOTTOM_PAD = keyboardOpen
-  ? Platform.OS === "ios"
-    ? 2
-    : 2
-  : Platform.OS === "ios"
-    ? Math.max(10, Math.min(24, SAFE_BOTTOM_INSET + 4))
-    : Math.max(46, Math.min(64, SAFE_BOTTOM_INSET || ANDROID_NAV_FALLBACK_PAD));
-
-// ✅ KeyboardAvoidingView starts below our custom header, so iOS does not need
-// the header height subtracted here. Keeping this at 0 makes the composer sit
-// directly above the keyboard like Instagram/Messenger.
-const IOS_KEYBOARD_VERTICAL_OFFSET = 0;
-
-const LATEST_MESSAGE_GAP = keyboardOpen ? 4 : 8;
-const LIST_BOTTOM_PAD = LATEST_MESSAGE_GAP;
+const LIST_BOTTOM_PAD = keyboardOpen
+  ? Math.max(4, inputHeight + EDIT_CHIP_HEIGHT + 14)
+  : COMPOSER_BASE_HEIGHT + EDIT_CHIP_HEIGHT + 4;
 
 const mine = (m: any) => String(m?.from) === String(myId);
 
@@ -668,64 +616,29 @@ const lastMyMsgId = useMemo(() => {
     };
   }, [peerId]);
 
-        // ✅ Track keyboard open/closed and restore the closed layout cleanly
+  // ✅ Track keyboard open/closed so we can remove extra bottom gaps
   useEffect(() => {
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-
-    // ✅ Important:
-    // iOS keyboardWillHide fires before the keyboard is gone.
-    // Use keyboardDidHide so the UI returns to the exact closed state after
-    // the keyboard animation finishes.
-    const hideEvt = "keyboardDidHide";
-
-    const settleAfterKeyboardLayout = (delayMs = 0) => {
-      const run = () => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            settleToLatest(false);
-          });
-        });
-      };
-
-      if (delayMs > 0) {
-        const timer = setTimeout(run, delayMs);
-        return () => clearTimeout(timer);
-      }
-
-      run();
-      return () => {};
-    };
-
-    let cleanupHideSettle: (() => void) | null = null;
-
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const showSub = Keyboard.addListener(showEvt, () => {
-      if (cleanupHideSettle) {
-        cleanupHideSettle();
-        cleanupHideSettle = null;
-      }
-
       setKeyboardOpen(true);
-      settleAfterKeyboardLayout(0);
+
+      // ✅ keep latest visible above composer when keyboard opens
+      settleToLatest(false);
     });
 
-      const hideSub = Keyboard.addListener(hideEvt, () => {
+    const hideSub = Keyboard.addListener(hideEvt, () => {
       setKeyboardOpen(false);
 
-      // ✅ Android and iOS both need one final settle after the keyboard is gone.
-      // iOS animations can finish a little later, so give it a slightly longer
-      // second settle to return exactly to the closed-chat layout.
-      settleAfterKeyboardLayout(0);
-      cleanupHideSettle = settleAfterKeyboardLayout(
-        Platform.OS === "ios" ? 180 : 120
-      );
+      // ✅ re-settle after keyboard closes too
+      settleToLatest(false);
     });
 
     return () => {
-      if (cleanupHideSettle) cleanupHideSettle();
       showSub.remove();
       hideSub.remove();
     };
-  }, [settleToLatest]);
+  }, []);
 // Load nickname (persistent)
 useEffect(() => {
   if (!myId || !peerId) return;
@@ -961,71 +874,9 @@ const onIncoming = (raw: any) => {
   };
 
  const onReacted = (payload: any) => {
-    const rawMsg = payload?.message || null;
-    const decodedMsg = rawMsg ? maybeDecode(rawMsg) : null;
-
-    const messageId =
-      decodedMsg?.id ||
-      payload?.id ||
-      payload?.msgId ||
-      payload?.messageId;
-
-    if (!messageId) return;
-
-    const reactorId =
-      payload?.reactorId ||
-      payload?.userId ||
-      payload?.from ||
-      payload?.senderId;
-
-    const emoji =
-      payload?.emoji === null || payload?.emoji === undefined
-        ? null
-        : String(payload.emoji);
-
-    const payloadReactions =
-      payload?.reactions && typeof payload.reactions === "object"
-        ? payload.reactions
-        : null;
-
-      setMessages((prev) =>
-      prev.map((m) => {
-        if (String(m.id) !== String(messageId)) return m;
-
-        // ✅ If backend sends the full updated message, trust its reaction map exactly.
-        // Do NOT merge old reactions back in, otherwise removed reactions stay visible.
-        if (decodedMsg?.id) {
-          const exactReactions =
-            decodedMsg?.reactions && typeof decodedMsg.reactions === "object"
-              ? decodedMsg.reactions
-              : {};
-
-          return {
-            ...m,
-            ...decodedMsg,
-            reactions: exactReactions,
-          };
-        }
-
-        const nextReactions: Record<string, string> = {
-          ...(m.reactions || {}),
-          ...(payloadReactions || {}),
-        };
-
-        if (reactorId) {
-          if (emoji) {
-            nextReactions[String(reactorId)] = emoji;
-          } else {
-            delete nextReactions[String(reactorId)];
-          }
-        }
-
-        return {
-          ...m,
-          reactions: nextReactions,
-        };
-      })
-    );
+    const msg = maybeDecode(payload?.message || payload);
+    if (!msg?.id) return;
+    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
   };
  const onPinned = (payload: any) => {
   const rawMsg = payload?.message || payload;
@@ -1544,17 +1395,7 @@ const togglePinMessage = async (m: Msg) => {
       }),
     });
 
-     const j = await r.json().catch(() => ({}));
-
-    if (!r.ok) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      Alert.alert(
-        "Failed to send message",
-        j?.message || j?.error || "You cannot send messages in this chat."
-      );
-      return;
-    }
-
+    const j = await r.json();
     const serverMsg: Msg | null = j?.message || null;
 
      if (serverMsg?.id) {
@@ -1678,16 +1519,7 @@ const togglePinMessage = async (m: Msg) => {
         }),
       });
 
-         const j = await r.json().catch(() => ({}));
-
-      if (!r.ok) {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        Alert.alert(
-          "Failed to send message",
-          j?.message || j?.error || "You cannot send messages to this user."
-        );
-        return;
-      }
+      const j = await r.json();
 
          const serverMsg: Msg | null = j?.message || null;
       if (serverMsg?.id) {
@@ -1767,19 +1599,7 @@ const togglePinMessage = async (m: Msg) => {
    const isGiftedMedia = isMedia && isGiftedPaidMedia(m);
  const reactLine = formatReactions(m?.reactions);
   const isVideoCallHistory = isVideoCallHistoryMessage(m);
-  const meetMiddlePayload = getMeetMiddleBubblePayload(m);
-  const isMeetMiddleConfirmed =
-    meetMiddlePayload?.kind === "milestone" &&
-    meetMiddlePayload.status === "confirmed";
-  const shouldHideMeetMiddleMilestone =
-    meetMiddlePayload?.kind === "milestone" &&
-    meetMiddlePayload.status !== "confirmed";
-  const canSwipeReply =
-    !m?.deleted &&
-    !m?._temp &&
-    !m?.system &&
-    !isVideoCallHistory &&
-    !meetMiddlePayload;
+  const canSwipeReply = !m?.deleted && !m?._temp && !m?.system && !isVideoCallHistory;
   const isPinnedMessage = !!m?.pinned && !m?.deleted && !m?._temp;
    const isPlainTextMessage =
     m?.type === "text" &&
@@ -1875,29 +1695,6 @@ const togglePinMessage = async (m: Msg) => {
             },
           ])
         }
-         />
-    );
-  }
-
-  // ✅ Meet in the Middle:
-  // - confirmed meetup = rich final card with Open Directions
-  // - proposed / rejected milestone text = hidden from main chat
-  // This removes ugly gray bubbles like:
-  // "Olive Garden was picked..." and "Meetup confirmed at Olive Garden."
-  if (shouldHideMeetMiddleMilestone) {
-    return null;
-  }
-
-  if (isMeetMiddleConfirmed) {
-    return (
-      <MeetMiddleChatBubble
-        message={m}
-        isMine={isMine}
-        myId={myId}
-        peerId={peerId}
-        peerName={headerName}
-        peerAvatar={peerAvatar}
-        onLongPress={() => openSheet(item)}
       />
     );
   }
@@ -2322,7 +2119,7 @@ const togglePinMessage = async (m: Msg) => {
             </View>
           </Pressable>
 
-        <View style={styles.topActions}>
+                       <View style={styles.topActions}>
           <Pressable
             onPress={() => loadReplyIdeas("natural")}
             style={styles.topBtn}
@@ -2330,11 +2127,8 @@ const togglePinMessage = async (m: Msg) => {
             <Ionicons name="color-wand" size={18} color={RBZ.white} />
           </Pressable>
 
-          <Pressable
-            onPress={handleOpenMeetMiddle}
-            style={styles.topBtn}
-          >
-            <MeetMiddleMiniLogo size={21} />
+          <Pressable style={styles.topBtn}>
+            <Ionicons name="call-outline" size={20} color={RBZ.white} />
           </Pressable>
 
           <Pressable
@@ -2347,26 +2141,23 @@ const togglePinMessage = async (m: Msg) => {
               size={22}
               color={RBZ.white}
             />
-          </Pressable> 
-             </View>
-             </LinearGradient>
-       <KeyboardAvoidingView
+          </Pressable>
+        </View>
+      </LinearGradient>
+           <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={keyboardOpen ? "padding" : undefined}
-        keyboardVerticalOffset={
-          keyboardOpen && Platform.OS === "ios" ? IOS_KEYBOARD_VERTICAL_OFFSET : 0
-        }
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 + insets.top : 0}
       >
         {loading ? (
           <View style={styles.loading}>
             <Text style={{ color: RBZ.gray }}>Loading messages…</Text>
           </View>
         ) : (
-              <View style={{ flex: 1 }}>
+          <View style={{ flex: 1 }}>
             <FlatList
               ref={flatRef}
-              data={chatListMessages}
-              inverted
+              data={messages}
               keyExtractor={(m) => (m._temp ? `temp-${m.id}` : `srv-${m.id}`)}
               renderItem={renderItem}
               scrollEventThrottle={16}
@@ -2376,13 +2167,10 @@ const togglePinMessage = async (m: Msg) => {
               windowSize={9}
               updateCellsBatchingPeriod={50}
               keyboardShouldPersistTaps="handled"
-              maintainVisibleContentPosition={{
-                minIndexForVisible: 0,
-              }}
               contentContainerStyle={{
                 paddingHorizontal: 12,
-                paddingTop: LIST_BOTTOM_PAD,
-                paddingBottom: 12,
+                paddingTop: 12,
+                paddingBottom: LIST_BOTTOM_PAD,
               }}
               onContentSizeChange={handleContentSizeChange}
               onScroll={handleScroll}
@@ -2408,12 +2196,12 @@ const togglePinMessage = async (m: Msg) => {
           </View>
         ) : null}
 
-              <View
+        <View
           style={[
             styles.composer,
             {
               marginBottom: 0,
-              paddingBottom: COMPOSER_SAFE_BOTTOM_PAD,
+              paddingBottom: Math.max(2, insets.bottom > 0 ? insets.bottom - 4 : 2),
             },
           ]}
         >
@@ -2456,28 +2244,26 @@ const togglePinMessage = async (m: Msg) => {
             </View>
           ) : null}
 
-              <View style={styles.composerRow}>
+          <View style={styles.composerRow}>
             {!composerExpanded ? (
               <>
                 <Pressable onPress={() => setPlusOpen(true)} style={styles.attachBtn}>
-                  <Ionicons name="add" size={22} color={RBZ.c1} />
+                  <Ionicons name="add" size={24} color={RBZ.c1} />
                 </Pressable>
 
                 <Pressable onPress={() => setCameraOpen(true)} style={styles.cameraBtn}>
-                  <Ionicons name="camera" size={18} color={RBZ.c1} />
+                  <Ionicons name="camera" size={20} color={RBZ.c1} />
                 </Pressable>
 
-                <View style={styles.voiceActionSlot}>
-                  <VoiceRecorderButton
-                    onSend={(url) => {
-                      sendMediaPayload({
-                        type: "media",
-                        mediaType: "audio",
-                        url,
-                      });
-                    }}
-                  />
-                </View>
+                <VoiceRecorderButton
+                  onSend={(url) => {
+                    sendMediaPayload({
+                      type: "media",
+                      mediaType: "audio",
+                      url,
+                    });
+                  }}
+                />
               </>
             ) : (
               <Pressable
@@ -2518,7 +2304,7 @@ const togglePinMessage = async (m: Msg) => {
                 </View>
               ) : null}
 
-                        <TextInput
+              <TextInput
                 value={text}
                 onChangeText={(t) => {
                   setText(t);
@@ -2538,14 +2324,11 @@ const togglePinMessage = async (m: Msg) => {
                     emitTyping(false);
                   }, 1200);
                 }}
-                        onFocus={() => {
-                  setKeyboardOpen(true);
+                  onFocus={() => {
                   setComposerExpanded(true);
                   settleToLatest(false);
                 }}
                 onBlur={() => {
-                  // ✅ Do not fight the real keyboard hide event.
-                  // Android fires blur before the keyboard layout fully restores.
                   if (isTypingRef.current) {
                     isTypingRef.current = false;
                     emitTyping(false);
@@ -3037,15 +2820,14 @@ bubble: {
 reacts: { marginTop: 6, fontSize: 13 },
 seenLabel: { marginTop: 6, fontSize: 12, color: RBZ.gray, alignSelf: "flex-end" },
 
-  composer: {
+   composer: {
   backgroundColor: RBZ.white,
   borderTopWidth: 1,
   borderTopColor: RBZ.line,
   paddingHorizontal: 10,
-  paddingTop: 8,
-  paddingBottom: 0,
+  paddingTop: 4,
+  paddingBottom: 2,
   flexShrink: 0,
-  overflow: "visible",
 },
 
 typingBarWrap: {
@@ -3143,17 +2925,16 @@ replyComposerClose: {
   justifyContent: "center",
 },
 
-  composerRow: {
+ composerRow: {
   flexDirection: "row",
-  alignItems: "center",
-  gap: 8,
-  minHeight: 44,
+  alignItems: "flex-end",
+  gap: 10,
 },
 
 inputWrap: {
   flex: 1,
   flexDirection: "row",
-  alignItems: "center",
+  alignItems: "flex-end",
   gap: 8,
 },
 
@@ -3177,14 +2958,6 @@ cameraBtn: {
   alignItems: "center",
   justifyContent: "center",
   backgroundColor: "rgba(181,23,158,0.10)",
-},
-
-voiceActionSlot: {
-  width: 40,
-  height: 40,
-  borderRadius: 999,
-  alignItems: "center",
-  justifyContent: "center",
 },
 
    input: {
@@ -3788,8 +3561,8 @@ replyIdeaText: {
   color: RBZ.ink,
 },
 expandActionsBtn: {
-  width: 40,
-  height: 40,
+  width: 34,
+  height: 34,
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
@@ -3800,14 +3573,14 @@ expandActionsBtn: {
 
 inlineActionsRow: {
   flexDirection: "row",
-  alignItems: "center",
+  alignItems: "flex-end",
   gap: 8,
-  paddingRight: 4,
+  paddingRight: 6,
 },
 
 inlineActionBtn: {
-  width: 40,
-  height: 40,
+  width: 34,
+  height: 34,
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
@@ -3815,9 +3588,7 @@ inlineActionBtn: {
 },
 
 inlineVoiceWrap: {
-  width: 40,
-  height: 40,
-  borderRadius: 999,
+  width: 40, // gives the VoiceRecorderButton a stable space
   alignItems: "center",
   justifyContent: "center",
 },

@@ -16,7 +16,8 @@
         "NSPhotoLibraryUsageDescription": "RomBuzz needs access to your gallery to upload photos.",
         "NSLocationWhenInUseUsageDescription": "RomBuzz needs your location for MicroBuzz radar and matching nearby users.",
         "NSUserTrackingUsageDescription": "RomBuzz uses anonymous analytics to improve user experience.",
-        "NSMicrophoneUsageDescription": "RomBuzz needs access to your microphone for voice messages."
+        "NSMicrophoneUsageDescription": "RomBuzz needs access to your microphone for voice messages.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -91,7 +92,8 @@
       "expo-font",
       "expo-web-browser",
       "@react-native-community/datetimepicker",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "@maplibre/maplibre-react-native"
     ],
     "experiments": {
       "typedRoutes": true,

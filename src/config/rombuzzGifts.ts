@@ -119,7 +119,60 @@ const ALL_PLACEMENTS: RomBuzzGiftPlacement[] = [
   "universal",
 ];
 
-export const ROMBUZZ_GIFTS: RomBuzzGift[] = [
+const GIFT_IMAGE_OVERRIDES: Record<string, string> = {
+  pink_heart:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280975/pink_heart_noh9cr.png",
+  heart_red:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/heart_red_ngpbdb.png",
+  tea_cup:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280976/tea_cup_uzcylj.png",
+  cherry_love:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280971/cherry_love_aqjhze.png",
+  love_ribbon:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280975/love_ribbon_jz2fvd.png",
+  autumn_love:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280971/autumn_love_gpynf8.png",
+  sparkling_rose:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280976/sparkling_rose_quomhp.png",
+  cuddle_love:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/cuddle_love_zyu5sj.png",
+  cute_birds:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/cute_birds_fbarpv.png",
+  love_birds:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280974/love_birds_oup83f.png",
+  love_candle:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280973/love_candle_k9vmex.png",
+  candle_light:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/candle_light_cfwxj6.png",
+  love_lantern:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280975/love_lantern_itkmjx.png",
+  lantern_blue:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280973/lantern_blue_tfkhw3.png",
+  lock_key:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780281399/lock_key_tq3w5t.png",
+  flower_vase:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/flower_vase_srvmoi.png",
+  bonsai_love:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280971/bonsai_love_ony6ei.png",
+  rombuzz_love:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280975/rombuzz_love_mi7ors.png",
+  velvet_kiss:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280977/velvet_kiss_mdi1g6.png",
+  love_compass:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280974/love_compass_nwbcvs.png",
+  star_compass:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280976/star_compass_aad6xg.png",
+  crystal_swan:
+    "https://res.cloudinary.com/dn3mhtbb3/image/upload/v1780280972/crystal_swan_kuv8ip.png",
+};
+
+const TEMPORARILY_DISABLED_GIFT_IDS = new Set<string>([
+  "three_buns",
+  "red_rose",
+  "love_capsule",
+]);
+
+const ROMBUZZ_GIFTS_BASE: RomBuzzGift[] = [
   {
     id: "pink_heart",
     name: "Pink Heart",
@@ -665,12 +718,18 @@ export const ROMBUZZ_GIFTS: RomBuzzGift[] = [
     designPrompt: "Crystal swan luxury romantic gift icon, transparent background, no text.",
     suggestedAssetType: "png",
     sortOrder: 25,
-    enabled: true,
+       enabled: true,
     premiumOnly: false,
     seasonalOnly: false,
     allowedPlacements: ALL_PLACEMENTS,
   },
 ];
+
+export const ROMBUZZ_GIFTS: RomBuzzGift[] = ROMBUZZ_GIFTS_BASE.map((gift) => ({
+  ...gift,
+  imageUrl: GIFT_IMAGE_OVERRIDES[gift.id] || gift.imageUrl,
+  enabled: TEMPORARILY_DISABLED_GIFT_IDS.has(gift.id) ? false : gift.enabled,
+}));
 
 export function getGiftById(id: string) {
   return ROMBUZZ_GIFTS.find((gift) => gift.id === id) || null;

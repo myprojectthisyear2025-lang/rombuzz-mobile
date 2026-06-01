@@ -1,5 +1,6 @@
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { API_BASE } from "@/src/config/api";
+import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
 import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallMiniStore";
 import { VideoCallProvider } from "@/src/features/videoCall/VideoCallProvider";
 import { resolveNotificationHref } from "@/src/lib/socket";
@@ -396,6 +397,7 @@ export default function RootLayout() {
             />
           </Stack>
 
+          <IncomingMeetMiddleOverlay />
           <ActiveVideoCallMiniBubble />
         </VideoCallProvider>
 

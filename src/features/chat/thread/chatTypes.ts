@@ -24,6 +24,60 @@
  * ============================================================
  */
 
+export type MeetMiddleRequestStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "declined"
+  | "cancelled"
+  | "canceled"
+  | "expired";
+
+export type MeetMiddleMilestoneStatus =
+  | "place_proposed"
+  | "place_rejected"
+  | "confirmed"
+  | "completed";
+
+export type MeetMiddlePlacePayload = {
+  id?: string;
+  name?: string;
+  category?: string;
+  address?: string | null;
+  coords?: {
+    lat?: number | null;
+    lng?: number | null;
+  } | null;
+  provider?: string;
+  isMidpoint?: boolean;
+};
+
+export type MeetMiddleRequestPayload = {
+  type?: "meet_middle_request" | string;
+  sessionId?: string;
+  status?: MeetMiddleRequestStatus | string;
+  fromUserId?: string;
+  toUserId?: string;
+  fromName?: string;
+  toName?: string;
+  fromAvatar?: string;
+  toAvatar?: string;
+  createdAt?: any;
+  expiresAt?: any;
+};
+
+export type MeetMiddleMilestonePayload = {
+  type?: "meet_middle_milestone" | string;
+  sessionId?: string;
+  status?: MeetMiddleMilestoneStatus | string;
+  selectedBy?: string;
+  acceptedBy?: string;
+  rejectedBy?: string;
+  place?: MeetMiddlePlacePayload | null;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
 export type Msg = {
   id: string;
   from: string;
@@ -39,7 +93,7 @@ export type Msg = {
 
   deleted?: boolean;
   reactions?: Record<string, string>;
-  ephemeral?: { mode?: string };
+  ephemeral?: { mode?: string; viewsLeft?: number; maxViews?: number };
   replyTo?: ReplySnapshot | null;
   _temp?: boolean;
   roomId?: string;
@@ -47,6 +101,8 @@ export type Msg = {
   mediaType?: string | null;
   mediaUrl?: string | null;
   system?: boolean;
+  meetMiddleRequest?: MeetMiddleRequestPayload | null;
+  meetMiddle?: MeetMiddleMilestonePayload | null;
   pinned?: boolean;
   pinnedAt?: any;
   pinnedBy?: string | null;

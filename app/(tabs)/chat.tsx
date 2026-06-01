@@ -842,6 +842,94 @@ const bumpUnread = (raw: any) => {
   }, 700);
 };
 
+const bumpReactionPreview = (raw: any) => {
+  const payload = raw?.message ? raw.message : raw;
+
+  const peerId = String(
+    payload?.peerId ||
+      payload?.from ||
+      payload?.reactorId ||
+      payload?.userId ||
+      ""
+  );
+
+  if (!peerId) return;
+
+  // ✅ If user is already inside this chat, do not fight the open chat UI.
+  if (activePeerRef.current === peerId) return;
+
+  const preview =
+    typeof payload?.preview === "string" && payload.preview.trim()
+      ? payload.preview.trim()
+      : payload?.emoji
+        ? `Reacted ${payload.emoji} to your message`
+        : "Reacted to your message";
+
+   const now = payload?.time || new Date().toISOString();
+
+  setMatches((prev) => {
+    const next = prev.map((m) => {
+      if (safeId(m) !== peerId) return m;
+
+      return {
+        ...m,
+        lastMessage: {
+          id: String(payload?.id || `reaction-${peerId}-${Date.now()}`),
+          from: peerId,
+          to: myId,
+          type: "reaction",
+          preview,
+          text: preview,
+          time: now,
+          createdAt: now,
+        },
+        lastMessageTime: now,
+        _sortTime: now,
+      };
+    });
+
+    const sorted = [...next].sort((a: any, b: any) => {
+      const at =
+        a.lastMessageTime ||
+        a.lastMessage?.time ||
+        a.lastMessage?.createdAt ||
+        a._sortTime ||
+        a.updatedAt ||
+        a.createdAt ||
+        0;
+
+      const bt =
+        b.lastMessageTime ||
+        b.lastMessage?.time ||
+        b.lastMessage?.createdAt ||
+        b._sortTime ||
+        b.updatedAt ||
+        b.createdAt ||
+        0;
+
+      return (new Date(bt).getTime() || 0) - (new Date(at).getTime() || 0);
+    });
+
+      const persisted = reorderMatchesPersist(myId, sorted, peerId);
+    setFiltered(persisted);
+
+    return persisted;
+  });
+
+  // ✅ Treat incoming reactions like a lightweight chat-list notification.
+  // This makes Kylie see Tom's reaction from the chat list without opening chat.
+  setUnreadMap((prev) => {
+    const next = { ...prev, [peerId]: (Number(prev?.[peerId] || 0) || 0) + 1 };
+    setJSONStore(UNREAD_MAP_KEY, next);
+    return next;
+  });
+
+  setUnreadTotal((prev) => {
+    const nextTotal = (Number(prev || 0) || 0) + 1;
+    persistUnreadTotal(nextTotal);
+    return nextTotal;
+  });
+};
 
   (async () => {
     s = await getSocket();
@@ -853,9 +941,13 @@ const bumpUnread = (raw: any) => {
     s.on("presence:online", onOnline);
     s.on("presence:offline", onOffline);
 
-       // ✅ Keep both (backend emits both), but bumpUnread now dedupes by msg.id
+        // ✅ Keep both (backend emits both), but bumpUnread now dedupes by msg.id
     s.on("chat:message", bumpUnread);
     s.on("direct:message", bumpUnread);
+
+    // ✅ Reaction preview updates chat list instantly when someone reacts.
+    // This updates the row preview/order without creating fake DB messages.
+    s.on("chat:reaction-preview", bumpReactionPreview);
 
     // ✅ Server truth pushes (prevents drift)
        s.on("chat:unread:update", async (summary: any) => {
@@ -874,14 +966,14 @@ const bumpUnread = (raw: any) => {
   return () => {
     if (!s) return;
     s.off("connect", onConnect);
-    s.off("presence:online", onOnline);
+     s.off("presence:online", onOnline);
     s.off("presence:offline", onOffline);
     s.off("chat:message", bumpUnread);
     s.off("direct:message", bumpUnread);
+    s.off("chat:reaction-preview", bumpReactionPreview);
     s.off("chat:unread:update");
   };
 }, [user, myId]);
-
 
 
   // Join all rooms so room broadcasts reach chat list (message:edit/delete/react)

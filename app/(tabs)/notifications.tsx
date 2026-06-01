@@ -49,6 +49,7 @@ const UNREAD_BG = "#fff0f5"; // Subtle unread background
 
 type NotificationType =
   | "wingman"
+  | "report"
   | "match"
   | "buzz"
   | "like"
@@ -93,6 +94,7 @@ const FILTERS: NotificationType[] = [
   "new_post",
   "share",
   "wingman",
+  "report",
 ];
 
 function labelForFilter(type: NotificationType) {
@@ -112,7 +114,29 @@ function labelForFilter(type: NotificationType) {
     ? "New Posts"
     : type === "share"
     ? "Shares"
+    : type === "report"
+    ? "Report"
     : "Wingman";
+}
+
+function getVisualNotificationType(n: NotificationItem): NotificationType {
+  const rawType = String(n?.type || "system").toLowerCase();
+  const message = String(n?.message || "").toLowerCase();
+  const entity = String(n?.entity || "").toLowerCase();
+  const targetType = String(n?.targetType || "").toLowerCase();
+
+  const looksLikeReport =
+    rawType === "report" ||
+    entity.includes("report") ||
+    targetType.includes("report") ||
+    message.includes("report") ||
+    message.includes("reviewed your report") ||
+    message.includes("took action to help keep rombuzz safe") ||
+    message.includes("did not find enough evidence");
+
+  if (looksLikeReport) return "report";
+
+  return n?.type || "system";
 }
 
 export default function NotificationsScreen() {
@@ -121,11 +145,12 @@ export default function NotificationsScreen() {
 
    const [token, setToken] = useState<string>("");
   const [currentUserId, setCurrentUserId] = useState<string>("");
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<NotificationType>("all");
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedNotification, setExpandedNotification] = useState<NotificationItem | null>(null);
 
   // For menu positioning
   const menuRefs = useRef<{ [key: string]: { x: number, y: number, width: number, height: number } }>({});
@@ -225,12 +250,12 @@ export default function NotificationsScreen() {
   // ---------------------------
   // Counts + filtering
   // ---------------------------
-  const unreadCounts = useMemo(() => {
+   const unreadCounts = useMemo(() => {
     const c: Record<string, number> = { all: 0 };
     for (const n of notifications) {
       if (!n.read) {
         c.all++;
-        const t = n.type || "system";
+        const t = getVisualNotificationType(n) || "system";
         c[t] = (c[t] || 0) + 1;
       }
     }
@@ -239,7 +264,7 @@ export default function NotificationsScreen() {
 
   const filteredNotifications = useMemo(() => {
     if (filter === "all") return notifications;
-    return notifications.filter((n) => n.type === filter);
+    return notifications.filter((n) => getVisualNotificationType(n) === filter);
   }, [notifications, filter]);
 
   // ---------------------------
@@ -549,7 +574,7 @@ export default function NotificationsScreen() {
   // ---------------------------
   // UI helpers
   // ---------------------------
-  const iconForType = (t: NotificationType) => {
+   const iconForType = (t: NotificationType) => {
     switch (t) {
       case "buzz":
         return <FontAwesome5 name="bolt" size={16} color={C1} />;
@@ -561,6 +586,8 @@ export default function NotificationsScreen() {
         return <FontAwesome5 name="smile" size={15} color={C5} />;
       case "match":
         return <FontAwesome5 name="handshake" size={15} color={C1} />;
+      case "report":
+        return <MaterialIcons name="verified-user" size={17} color="#475569" />;
       case "wingman":
         return <FontAwesome5 name="robot" size={15} color={C3} />;
       case "share":
@@ -572,7 +599,7 @@ export default function NotificationsScreen() {
     }
   };
 
-  const leftBarColor = (t: NotificationType) => {
+    const leftBarColor = (t: NotificationType) => {
     switch (t) {
       case "buzz":
         return C1;
@@ -588,6 +615,8 @@ export default function NotificationsScreen() {
         return C3;
       case "share":
         return C2;
+      case "report":
+        return "#64748b";
       case "wingman":
         return C3;
       default:
@@ -706,8 +735,9 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
-        {filteredNotifications.map((n) => {
+           {filteredNotifications.map((n) => {
           const isUnread = !n.read;
+          const visualType = getVisualNotificationType(n);
           const createdAtDate = n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt);
           const menuPosition = getMenuPosition(n.id);
 
@@ -717,24 +747,32 @@ export default function NotificationsScreen() {
               style={[
                 styles.notificationCard,
                 isUnread && styles.notificationUnread,
-                { borderLeftColor: leftBarColor(n.type) }
+                { borderLeftColor: leftBarColor(visualType) }
               ]}
               activeOpacity={0.9}
+              delayLongPress={220}
+              onLongPress={() => {
+                setSelectedMenuId(null);
+                setExpandedNotification(n);
+              }}
+              onPressOut={() => {
+                setExpandedNotification(null);
+              }}
               onPress={() => handleOpen(n)}
             >
               {/* Icon and Content */}
               <View style={styles.cardMainContent}>
                 <View style={[
                   styles.iconWrapper, 
-                  { backgroundColor: `${leftBarColor(n.type)}10` }
+                  { backgroundColor: `${leftBarColor(visualType)}10` }
                 ]}>
-                  {iconForType(n.type)}
+                  {iconForType(visualType)}
                 </View>
                 
                 <View style={styles.notificationContent}>
                   <View style={styles.notificationHeader}>
                     <Text style={styles.notificationType}>
-                      {labelForFilter(n.type)}
+                      {labelForFilter(visualType)}
                     </Text>
                     <Text style={styles.notificationTime}>
                       {formatDistanceToNow(createdAtDate, { addSuffix: true })}
@@ -846,10 +884,55 @@ export default function NotificationsScreen() {
               >
                 <Text style={styles.emptyButtonText}>Show all notifications</Text>
               </TouchableOpacity>
-            )}
+                     )}
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={!!expandedNotification}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setExpandedNotification(null)}
+      >
+        <View style={styles.expandBackdrop} pointerEvents="none">
+          <View style={styles.expandCard}>
+            <View style={styles.expandTopRow}>
+              <View style={[
+                styles.expandIconBubble,
+                {
+                  backgroundColor: expandedNotification
+                    ? `${leftBarColor(getVisualNotificationType(expandedNotification))}12`
+                    : "rgba(177, 18, 60, 0.08)"
+                }
+              ]}>
+                {expandedNotification
+                  ? iconForType(getVisualNotificationType(expandedNotification))
+                  : <FontAwesome5 name="bell" size={15} color={C1} />}
+              </View>
+
+              <View style={styles.expandTitleWrap}>
+                <Text style={styles.expandType}>
+                  {expandedNotification
+                    ? labelForFilter(getVisualNotificationType(expandedNotification))
+                    : "Notification"}
+                </Text>
+                <Text style={styles.expandHint}>Release to close</Text>
+              </View>
+            </View>
+
+            <ScrollView
+              style={styles.expandMessageScroll}
+              contentContainerStyle={styles.expandMessageContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.expandMessage}>
+                {expandedNotification?.message || ""}
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1116,7 +1199,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 20,
   },
-  emptyButton: {
+   emptyButton: {
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
@@ -1126,5 +1209,69 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: C1,
+  },
+  expandBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.28)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  expandCard: {
+    width: "100%",
+    maxWidth: 390,
+    maxHeight: 310,
+    borderRadius: 24,
+    backgroundColor: "#ffffff",
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(177, 18, 60, 0.12)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    elevation: 18,
+  },
+  expandTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  expandIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  expandTitleWrap: {
+    flex: 1,
+  },
+  expandType: {
+    fontSize: 13,
+    color: C1,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  expandHint: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#9ca3af",
+    fontWeight: "700",
+  },
+  expandMessageScroll: {
+    maxHeight: 205,
+  },
+  expandMessageContent: {
+    paddingBottom: 4,
+  },
+  expandMessage: {
+    fontSize: 16,
+    lineHeight: 23,
+    color: "#111827",
+    fontWeight: "700",
+    letterSpacing: -0.2,
   },
 });
