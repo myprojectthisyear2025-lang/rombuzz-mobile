@@ -49,7 +49,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BuzzStreakCard from "@/src/components/profile/BuzzStreakCard";
 import GallerySection from "@/src/components/profile/Gallery/GallerySection";
+import {
+  buildProfileGalleryMedia,
+  normalizeImageUrl,
+  uniqueImageUrls,
+} from "@/src/components/profile/profileGalleryMedia";
 import { API_BASE } from "@/src/config/api";
+import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
 
 
 const RBZ = {
@@ -74,10 +80,6 @@ const RBZ = {
   text: "#111827",
   success: "#16a34a",
 } as const;
-
-// Cloudinary (same as web Profile.jsx)
-const CLOUD_NAME = "drhx99m5f";
-const UPLOAD_PRESET = "rombuzz_unsigned";
 
 type Audience = "public" | "matches" | "hidden";
 function buildGuidanceList(user: any) {
@@ -187,32 +189,6 @@ function computeCompletion(u: any) {
 }
 
 
-function normalizeImageUrl(value: any) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function extractImageUrl(entry: any) {
-  if (typeof entry === "string") return normalizeImageUrl(entry);
-  if (typeof entry?.url === "string") return entry.url.trim();
-  return "";
-}
-
-function uniqueImageUrls(...lists: any[][]) {
-  const seen = new Set<string>();
-  const urls: string[] = [];
-
-  for (const list of lists) {
-    for (const item of Array.isArray(list) ? list : []) {
-      const url = extractImageUrl(item);
-      if (!url || seen.has(url)) continue;
-      seen.add(url);
-      urls.push(url);
-    }
-  }
-
-  return urls;
-}
-
 async function getTokenOrThrow() {
   const t = await SecureStore.getItemAsync("RBZ_TOKEN");
   if (!t) throw new Error("RBZ_TOKEN missing");
@@ -300,62 +276,6 @@ async function apiJson(path: string, method: string, body: any) {
   }
 
   return data;
-}
-
-function getCloudinaryResourceType(mimeType: string, filename: string) {
-  const mt = String(mimeType || "").toLowerCase();
-  const name = String(filename || "").toLowerCase();
-
-  if (
-    mt.startsWith("video/") ||
-    mt.startsWith("audio/") ||
-    name.endsWith(".mp4") ||
-    name.endsWith(".mov") ||
-    name.endsWith(".m4v") ||
-    name.endsWith(".m4a") ||
-    name.endsWith(".mp3") ||
-    name.endsWith(".wav") ||
-    name.endsWith(".aac")
-  ) {
-    return "video";
-  }
-
-  return "image";
-}
-
-async function uploadToCloudinaryUnsigned(
-  fileUri: string,
-  mimeType: string,
-  filename: string
-) {
-  const resourceType = getCloudinaryResourceType(mimeType, filename);
-
-  const fd = new FormData();
-  fd.append(
-    "file",
-    {
-      uri: fileUri,
-      type: mimeType,
-      name: filename,
-    } as any
-  );
-  fd.append("upload_preset", UPLOAD_PRESET);
-
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`,
-    {
-      method: "POST",
-      body: fd,
-    }
-  );
-
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(data?.error?.message || "Cloudinary upload failed");
-  }
-
-  return data; // contains secure_url
 }
 
 function Pill({
@@ -732,11 +652,13 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const {
+   const {
     post,
     targetType,
     ownerId,
     openComments,
+    openInsights,
+    insightsTab,
     commentId,
     parentId,
     replyId,
@@ -745,6 +667,8 @@ export default function ProfileScreen() {
     targetType?: string;
     ownerId?: string;
     openComments?: string;
+    openInsights?: string;
+    insightsTab?: string;
     commentId?: string;
     parentId?: string;
     replyId?: string;
@@ -754,6 +678,9 @@ export default function ProfileScreen() {
   const deepLinkTargetType = targetType ? String(targetType) : "";
   const deepLinkOwnerId = ownerId ? String(ownerId) : "";
   const deepLinkOpenComments = String(openComments || "") === "1";
+  const deepLinkOpenInsights = String(openInsights || "") === "1";
+  const deepLinkInsightsTab =
+    String(insightsTab || "") === "comments" ? "comments" : "gifts";
   const deepLinkCommentId = commentId ? String(commentId) : "";
   const deepLinkParentId = parentId ? String(parentId) : "";
   const deepLinkReplyId = replyId ? String(replyId) : "";
@@ -1184,7 +1111,7 @@ if (
     }
   }, [loadProfile]);
 
-  // ---------- Avatar change (Cloudinary + PUT /users/me + optional gallery save + optional auto-post)
+   // ---------- Avatar change (R2 + PUT /users/me + optional gallery save + optional auto-post)
   const changeAvatar = async () => {
     try {
       setUploading(true);
@@ -1197,18 +1124,24 @@ if (
       const asset = pick.assets?.[0];
       if (!asset?.uri) return;
 
-      const uploaded = await uploadToCloudinaryUnsigned(asset.uri, asset.mimeType || "image/jpeg", "avatar.jpg");
-      const url = uploaded?.secure_url;
-      if (!url) throw new Error("Upload did not return secure_url");
+      const uploaded = await uploadRomBuzzMedia(asset.uri, "image", {
+        purpose: "avatar",
+      });
 
-      // 1) Update avatar field
-      const updated = await apiJson("/users/me", "PUT", { avatar: url });
+      const storedValue = uploaded.r2Key || uploaded.url;
+      const displayUrl = uploaded.signedUrl || uploaded.url;
 
-      // 2) Save into gallery as FaceBuzz (caption: "facebuzz")
-      // (same behavior as web; if your backend supports this endpoint)
+      if (!storedValue) throw new Error("Upload did not return media key");
+
+      // 1) Update avatar field with permanent R2 key, not temporary signed URL
+      const updated = await apiJson("/users/me", "PUT", { avatar: storedValue });
+
+      // 2) Save into gallery as FaceBuzz
       try {
         await apiJson("/upload-media", "POST", {
-          fileUrl: url,
+          fileKey: uploaded.r2Key || "",
+          r2Key: uploaded.r2Key || "",
+          fileUrl: uploaded.r2Key ? "" : uploaded.url,
           type: "image",
           caption: "facebuzz",
         });
@@ -1216,11 +1149,11 @@ if (
         // don't block avatar success if gallery endpoint errors
       }
 
-      // 3) Optional auto-create MyBuzz post (same as web vibe)
+      // 3) Optional auto-create MyBuzz post
       try {
         await apiJson("/posts", "POST", {
           type: "photo",
-          mediaUrl: url,
+          mediaUrl: storedValue,
           text: `${updated?.user?.firstName || "Someone"} updated their profile photo 💫`,
           privacy: "public",
         });
@@ -1229,8 +1162,14 @@ if (
       }
 
       if (updated?.user) {
-        setUser((prev: any) => ({ ...(prev || {}), ...updated.user }));
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify({ ...(user || {}), ...updated.user }));
+        const merged = {
+          ...(user || {}),
+          ...updated.user,
+          avatar: updated?.user?.avatar || displayUrl,
+        };
+
+        setUser((prev: any) => ({ ...(prev || {}), ...merged }));
+        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
       }
 
       Alert.alert("Profile", "Avatar updated!");
@@ -1295,7 +1234,7 @@ setStoryOpen(true);
 
 
   // ---------- Gallery upload (FaceBuzz / PhotoBuzz / ReelsBuzz)
-  const addToGallery = async (bucket: "facebuzz" | "photobuzz" | "reelsbuzz") => {
+ const addToGallery = async (bucket: "facebuzz" | "photobuzz" | "reelsbuzz") => {
     try {
       setUploading(true);
 
@@ -1316,16 +1255,23 @@ setStoryOpen(true);
         return;
       }
 
-      const mime = asset.mimeType || (isVideo ? "video/mp4" : "image/jpeg");
-      const filename = isVideo ? "media.mp4" : "media.jpg";
+      const uploaded = await uploadRomBuzzMedia(
+        asset.uri,
+        isVideo ? "video" : "image",
+        {
+          purpose: isVideo ? "reel" : "gallery-photo",
+        }
+      );
 
-      const uploaded = await uploadToCloudinaryUnsigned(asset.uri, mime, filename);
-      const url = uploaded?.secure_url;
-      if (!url) throw new Error("Upload did not return secure_url");
+      const storedValue = uploaded.r2Key || uploaded.url;
+      if (!storedValue) throw new Error("Upload did not return media key");
 
-      // Save to backend gallery
+      // Save to backend gallery.
+      // Images save R2 key. Reels/videos remain legacy Cloudinary URL for now.
       await apiJson("/upload-media", "POST", {
-        fileUrl: url,
+        fileKey: uploaded.r2Key || "",
+        r2Key: uploaded.r2Key || "",
+        fileUrl: uploaded.r2Key ? "" : uploaded.url,
         type: isVideo ? "video" : "image",
         caption: bucket,
       });
@@ -1396,24 +1342,24 @@ setStoryOpen(true);
 
       setUploading(true);
 
-      const uploaded = await uploadToCloudinaryUnsigned(
-        uri,
-        "audio/m4a",
-        "voice.m4a"
-      );
+      const uploaded = await uploadRomBuzzMedia(uri, "audio", {
+        purpose: "voice-intro",
+      });
 
-      const url = uploaded?.secure_url;
-      if (!url) throw new Error("Upload did not return secure_url");
+      const storedVoice = uploaded.r2Key || uploaded.url;
+      const displayVoice = uploaded.signedUrl || uploaded.url;
 
-      const nextFavorites = upsertVoiceInFavorites(form.favorites || [], url);
+      if (!storedVoice) throw new Error("Upload did not return voice key");
+
+      const nextFavorites = upsertVoiceInFavorites(form.favorites || [], storedVoice);
 
       const updated = await apiJson("/users/me", "PUT", {
         favorites: nextFavorites,
-        voiceUrl: url,
+        voiceUrl: storedVoice,
         voiceDurationSec: durationSec,
       });
 
-      setVoiceUrl(url);
+      setVoiceUrl(displayVoice);
       setVoiceDurationSec(durationSec);
       setForm((p: ProfileForm) => ({
         ...p,
@@ -1462,40 +1408,46 @@ setStoryOpen(true);
     }
   };
 
-    const deleteVoice = async () => {
+      const deleteVoice = async () => {
     try {
+      setUploading(true);
+
       if (playing) {
         await soundRef.current?.stopAsync().catch(() => {});
+        await soundRef.current?.unloadAsync().catch(() => {});
+        soundRef.current = null;
         setPlaying(false);
       }
 
       const nextFavorites = upsertVoiceInFavorites(form.favorites || [], "");
 
-      const updated = await apiJson("/users/me", "PUT", {
-        favorites: nextFavorites,
-        voiceUrl: "",
-        voiceDurationSec: 0,
+      const deleted = await apiFetch("/profile/voice-intro", {
+        method: "DELETE",
       });
 
       setVoiceUrl("");
       setVoiceDurationSec(0);
       setForm((p: ProfileForm) => ({
         ...p,
-        favorites: nextFavorites,
+        favorites: Array.isArray(deleted?.favorites) ? deleted.favorites : nextFavorites,
       }));
 
-      if (updated?.user) {
-        setUser((prev: any) => ({ ...(prev || {}), ...updated.user }));
-        await SecureStore.setItemAsync(
-          "RBZ_USER",
-          JSON.stringify({ ...(user || {}), ...updated.user })
-        );
-      }
+      const merged = {
+        ...(user || {}),
+        voiceUrl: "",
+        voiceDurationSec: 0,
+        favorites: Array.isArray(deleted?.favorites) ? deleted.favorites : nextFavorites,
+      };
+
+      setUser(merged);
+      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
 
       Alert.alert("Voice Intro", "Deleted.");
       await loadProfile();
     } catch (e: any) {
       Alert.alert("Voice Intro", e?.message || "Failed to delete voice intro");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -1815,70 +1767,8 @@ setStoryOpen(true);
 {tab === "gallery" && (
   <GallerySection
     ownerId={String(user?.id || user?._id || "")}
-    media={[
-      ...uniqueImageUrls(user?.photos)
-        .map((url: string, index: number) => ({
-          id: `signup-photo-${index}-${url}`,
-          url,
-          type: "image" as const,
-          caption: "kind:photo scope:public intent:viewprofile",
-          privacy: "public" as const,
-          createdAt: 0,
-        })),
-
-          ...(Array.isArray(user?.media) ? user.media : [])
-        .map(
-          (
-            m: any
-          ):
-            | {
-                id: string;
-                url: string;
-                type: "image" | "video";
-                caption: string;
-                privacy: any;
-                createdAt: any;
-              }
-            | null => {
-            const url = extractImageUrl(m);
-            if (!url) return null;
-
-            return {
-              id: String(m.id || url),
-              url,
-              type: m.type === "video" ? "video" : "image",
-              caption: m.caption || "",
-              privacy: m.privacy,
-              createdAt: m.createdAt,
-            };
-          }
-        )
-        .filter(
-          (
-            item:
-              | {
-                  id: string;
-                  url: string;
-                  type: "image" | "video";
-                  caption: string;
-                  privacy: any;
-                  createdAt: any;
-                }
-              | null
-          ): item is {
-            id: string;
-            url: string;
-            type: "image" | "video";
-            caption: string;
-            privacy: any;
-            createdAt: any;
-          } => item !== null
-        ),
-    ].filter(
-      (item, index, arr) =>
-        arr.findIndex((x) => String(x.url) === String(item.url)) === index
-    )}
-      uploading={uploading}
+    media={buildProfileGalleryMedia(user)}
+    uploading={uploading}
     setUploading={setUploading}
     apiFetch={apiFetch}
     apiJson={apiJson}
@@ -1887,6 +1777,8 @@ setStoryOpen(true);
     deepLinkTargetType={deepLinkTargetType}
     deepLinkOwnerId={deepLinkOwnerId}
     deepLinkOpenComments={deepLinkOpenComments}
+    deepLinkOpenInsights={deepLinkOpenInsights}
+    deepLinkInsightsTab={deepLinkInsightsTab}
     deepLinkCommentId={deepLinkCommentId}
     deepLinkParentId={deepLinkParentId}
     deepLinkReplyId={deepLinkReplyId}

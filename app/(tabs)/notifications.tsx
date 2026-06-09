@@ -49,10 +49,13 @@ const UNREAD_BG = "#fff0f5"; // Subtle unread background
 
 type NotificationType =
   | "wingman"
+  | "rombuzz"
   | "report"
   | "match"
   | "buzz"
   | "like"
+  | "gift"
+  | "media_gift"
   | "comment"
   | "reaction"
   | "new_post"
@@ -86,9 +89,11 @@ interface NotificationItem {
 
 const FILTERS: NotificationType[] = [
   "all",
+  "rombuzz",
   "buzz",
   "match",
   "like",
+  "gift",
   "comment",
   "reaction",
   "new_post",
@@ -103,9 +108,11 @@ function labelForFilter(type: NotificationType) {
     : type === "buzz"
     ? "Buzz"
     : type === "match"
-    ? "Matches"
+       ? "Matches"
     : type === "like"
     ? "Likes"
+    : type === "gift" || type === "media_gift"
+    ? "Gifts"
     : type === "comment"
     ? "Comments"
     : type === "reaction"
@@ -116,7 +123,10 @@ function labelForFilter(type: NotificationType) {
     ? "Shares"
     : type === "report"
     ? "Report"
+    : type === "rombuzz"
+    ? "RomBuzz"
     : "Wingman";
+    
 }
 
 function getVisualNotificationType(n: NotificationItem): NotificationType {
@@ -124,6 +134,13 @@ function getVisualNotificationType(n: NotificationItem): NotificationType {
   const message = String(n?.message || "").toLowerCase();
   const entity = String(n?.entity || "").toLowerCase();
   const targetType = String(n?.targetType || "").toLowerCase();
+
+  const looksLikeRomBuzz =
+    rawType === "rombuzz" ||
+    entity === "rombuzz_admin" ||
+    entity.includes("rombuzz_admin");
+
+  if (looksLikeRomBuzz) return "rombuzz";
 
   const looksLikeReport =
     rawType === "report" ||
@@ -187,20 +204,24 @@ export default function NotificationsScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const data = await res.json().catch(() => []);
-      if (Array.isArray(data)) {
-        data.forEach((n) => n?.id && seenIds.current.add(n.id));
-        setNotifications(
-          data.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          )
-        );
-      } else {
-        setNotifications([]);
-      }
+      const data = await res.json().catch(() => null);
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.notifications)
+        ? data.notifications
+        : [];
+
+      seenIds.current.clear();
+      list.forEach((n: NotificationItem) => n?.id && seenIds.current.add(n.id));
+
+      setNotifications(
+        list.sort(
+          (a: NotificationItem, b: NotificationItem) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+      );
     } catch (err) {
       console.warn("Fetch notifications failed:", err);
-      setNotifications([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -334,21 +355,29 @@ export default function NotificationsScreen() {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-    } catch (err) {
+      } catch (err) {
       // if delete failed, refetch to stay consistent
       try {
         const res = await fetch(`${API_BASE}/notifications`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const data = await res.json().catch(() => []);
-        if (Array.isArray(data)) {
-          data.forEach((n) => n?.id && seenIds.current.add(n.id));
-          setNotifications(
-            data.sort(
-              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            )
-          );
-        }
+
+        const data = await res.json().catch(() => null);
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.notifications)
+          ? data.notifications
+          : [];
+
+        seenIds.current.clear();
+        list.forEach((n: NotificationItem) => n?.id && seenIds.current.add(n.id));
+
+        setNotifications(
+          list.sort(
+            (a: NotificationItem, b: NotificationItem) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+        );
       } catch {}
     }
   };
@@ -356,7 +385,7 @@ export default function NotificationsScreen() {
      // ---------------------------
   // Navigation from notification
   // ---------------------------
-  const buildPostDeepLinkQuery = (n: NotificationItem) => {
+   const buildPostDeepLinkQuery = (n: NotificationItem) => {
     const postId = n?.postId || n?.targetId || n?.entityId
       ? String(n.postId || n.targetId || n.entityId)
       : "";
@@ -365,7 +394,12 @@ export default function NotificationsScreen() {
       ? String(n.targetOwnerId || n.postOwnerId || n.ownerId)
       : "";
 
-    const targetType = String(n?.targetType || n?.entity || "buzz_post");
+    const rawTargetType = String(n?.targetType || n?.entity || "buzz_post").toLowerCase();
+    const targetType =
+      rawTargetType === "profile_media" || rawTargetType === "media"
+        ? "gallery_media"
+        : rawTargetType;
+
     const commentId = n?.commentId ? String(n.commentId) : "";
     const replyId = n?.replyId ? String(n.replyId) : "";
     const parentId = n?.parentId ? String(n.parentId) : "";
@@ -376,7 +410,19 @@ export default function NotificationsScreen() {
     if (ownerId) params.set("ownerId", ownerId);
     if (targetType) params.set("targetType", targetType);
 
-    params.set("openComments", "1");
+    const type = String(n?.type || "").toLowerCase();
+    const routeContext = String(n?.routeContext || "").toLowerCase();
+
+    if (type === "comment" || type === "reply") {
+      params.set("openComments", "1");
+      params.set("openInsights", "1");
+      params.set("insightsTab", "comments");
+    }
+
+    if (type === "gift" || type === "media_gift" || routeContext === "gift") {
+      params.set("openInsights", "1");
+      params.set("insightsTab", "gifts");
+    }
 
     if (commentId) params.set("commentId", commentId);
     if (replyId) params.set("replyId", replyId);
@@ -395,6 +441,42 @@ export default function NotificationsScreen() {
     return n?.targetOwnerId || n?.postOwnerId || n?.ownerId
       ? String(n.targetOwnerId || n.postOwnerId || n.ownerId)
       : "";
+  };
+
+  const isGiftNotification = (n: NotificationItem) => {
+    const type = String(n?.type || "").toLowerCase();
+    const routeContext = String(n?.routeContext || "").toLowerCase();
+
+    return type === "gift" || type === "media_gift" || routeContext === "gift";
+  };
+
+  const isGalleryMediaNotification = (n: NotificationItem) => {
+    const targetType = String(n?.targetType || "").toLowerCase();
+    const entity = String(n?.entity || "").toLowerCase();
+
+    return (
+      targetType === "gallery_media" ||
+      targetType === "profile_media" ||
+      targetType === "media" ||
+      entity === "gallery_media" ||
+      entity === "media"
+    );
+  };
+
+  const buildGalleryGiftProfileHref = (n: NotificationItem) => {
+    const postId = getNotificationPostId(n);
+    const ownerId = getNotificationOwnerId(n);
+
+    const params = new URLSearchParams();
+
+    if (postId) params.set("post", postId);
+    if (ownerId) params.set("ownerId", ownerId);
+
+    params.set("targetType", "gallery_media");
+    params.set("openInsights", "1");
+    params.set("insightsTab", "gifts");
+
+    return `/(tabs)/profile?${params.toString()}`;
   };
 
   const buildPostHref = (n: NotificationItem) => {
@@ -480,9 +562,13 @@ export default function NotificationsScreen() {
     const fromId = n?.fromId ? String(n.fromId) : "";
     const postId = getNotificationPostId(n);
 
-    // ✅ Your desired mapping (mobile routes)
+      // ✅ Your desired mapping (mobile routes)
     if (type === "wingman") {
       return "/(tabs)/discover";
+    }
+
+    if (type === "rombuzz") {
+      return n?.href ? normalizeHref(n.href) : "/(tabs)/notifications";
     }
 
     // ✅ Match notification means they are already matched.
@@ -506,8 +592,7 @@ export default function NotificationsScreen() {
       return buildDiscoverProfileHref(fromId);
     }
 
-       // like -> will become gift:
-    // direct to the exact post, but author goes to own profile.
+       // like -> direct to the exact post/media when possible.
     if (type === "like") {
       if (postId) return buildPostHref(n);
       if (fromId) {
@@ -516,6 +601,22 @@ export default function NotificationsScreen() {
         return buildDiscoverProfileHref(fromId);
       }
       return "/(tabs)/letsbuzz";
+    }
+
+    // gift/media_gift on gallery/profile media:
+    // receiver is the media owner, so do NOT depend on currentUserId.
+    // Always open Profile → exact gallery media → Gallery Insights → Gifts.
+    if (isGiftNotification(n)) {
+      if (postId && isGalleryMediaNotification(n)) {
+        return buildGalleryGiftProfileHref(n);
+      }
+
+      // Normal Buzz post/reel gifts can still use the LetsBuzz deep link.
+      if (postId) {
+        return buildPostHref(n);
+      }
+
+      return "/(tabs)/profile";
     }
 
     // comment/reply -> exact post + open comments.
@@ -576,10 +677,15 @@ export default function NotificationsScreen() {
   // ---------------------------
    const iconForType = (t: NotificationType) => {
     switch (t) {
+      case "rombuzz":
+        return <FontAwesome5 name="bullhorn" size={15} color={C1} />;
       case "buzz":
         return <FontAwesome5 name="bolt" size={16} color={C1} />;
-      case "like":
+         case "like":
         return <FontAwesome5 name="heart" size={15} color={C2} />;
+      case "gift":
+      case "media_gift":
+        return <FontAwesome5 name="gift" size={15} color={C2} />;
       case "comment":
         return <FontAwesome5 name="comment-alt" size={15} color={C4} />;
       case "reaction":
@@ -599,13 +705,18 @@ export default function NotificationsScreen() {
     }
   };
 
-    const leftBarColor = (t: NotificationType) => {
+      const leftBarColor = (t: NotificationType) => {
     switch (t) {
+      case "rombuzz":
+        return C1;
       case "buzz":
         return C1;
-      case "match":
+        case "match":
         return C1;
       case "like":
+        return C2;
+      case "gift":
+      case "media_gift":
         return C2;
       case "comment":
         return C4;

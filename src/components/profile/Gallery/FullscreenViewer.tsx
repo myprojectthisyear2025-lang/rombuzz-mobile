@@ -62,8 +62,10 @@ type FullscreenViewerProps = {
   onLocalPatch?: (updated: any) => void;
   onLocalDelete?: (deletedId: string) => void;
 
-  // Notification deep-link support
+   // Notification deep-link support
   deepLinkOpenComments?: boolean;
+  deepLinkOpenInsights?: boolean;
+  deepLinkInsightsTab?: "gifts" | "comments";
   deepLinkCommentId?: string;
   deepLinkParentId?: string;
   deepLinkReplyId?: string;
@@ -100,8 +102,25 @@ function inferScopeFromCaption(caption: string): Scope {
 
 function isVideoItem(rowItem: any) {
   const type = String(rowItem?.type || "").toLowerCase();
-  const url = String(rowItem?.url || "").toLowerCase();
-  return type === "video" || type === "reel" || /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(url);
+  const url = String(
+    rowItem?.url ||
+      rowItem?.mediaUrl ||
+      rowItem?.videoUrl ||
+      rowItem?.playback?.hls ||
+      ""
+  ).toLowerCase();
+
+  const isStream =
+    String(rowItem?.provider || rowItem?.storage || "").toLowerCase() === "cloudflare_stream" ||
+    !!rowItem?.streamUid ||
+    !!rowItem?.cloudflareStream?.uid;
+
+  return (
+    isStream ||
+    type === "video" ||
+    type === "reel" ||
+    /\.(mp4|mov|m4v|webm|m3u8)(\?|#|$)/i.test(url)
+  );
 }
 
 export default function FullscreenViewer({
@@ -118,6 +137,8 @@ export default function FullscreenViewer({
 
   // Notification deep-link support
   deepLinkOpenComments,
+  deepLinkOpenInsights,
+  deepLinkInsightsTab,
   deepLinkCommentId,
   deepLinkParentId,
   deepLinkReplyId,
@@ -203,6 +224,7 @@ export default function FullscreenViewer({
     screenWidth: width,
     screenHeight: height,
     insets,
+    apiFetch,
   };
 
   return (
@@ -235,13 +257,15 @@ export default function FullscreenViewer({
             </View>
           ) : null}
 
-             <GalleryInsightsSheet
+           <GalleryInsightsSheet
             ownerId={ownerId}
             mediaId={mediaId}
             apiFetch={apiFetch}
             apiJson={apiJson}
             bottomInset={insets.bottom}
             deepLinkOpenComments={deepLinkOpenComments}
+            deepLinkOpenInsights={deepLinkOpenInsights}
+            deepLinkInsightsTab={deepLinkInsightsTab}
             deepLinkCommentId={deepLinkCommentId}
             deepLinkParentId={deepLinkParentId}
             deepLinkReplyId={deepLinkReplyId}

@@ -119,10 +119,31 @@ function parseRBZ(text: any): any | null {
 }
 
 function pickMediaUrl(m: AnyMsg): string {
+  const p = parseRBZ(m?.text);
+
+  const isStreamVideo =
+    String(m?.provider || m?.storage || p?.provider || p?.storage || "").toLowerCase() ===
+      "cloudflare_stream" ||
+    !!m?.streamUid ||
+    !!m?.cloudflareStream?.uid ||
+    !!p?.streamUid ||
+    !!p?.cloudflareStream?.uid;
+
+  if (isStreamVideo) {
+    const streamUrl = String(
+      m?.playback?.hls ||
+        p?.playback?.hls ||
+        m?.url ||
+        p?.url ||
+        ""
+    ).trim();
+
+    if (streamUrl) return streamUrl;
+  }
+
   const direct = String(m?.url || m?.mediaUrl || "");
   if (direct) return direct;
 
-  const p = parseRBZ(m?.text);
   return (
     String(
       p?.url ||
@@ -150,6 +171,28 @@ function pickGiftLocked(m: AnyMsg): boolean {
   if (!!m?.gift?.locked) return true;
   const p = parseRBZ(m?.text);
   return !!(p?.gift?.locked || p?.locked);
+}
+
+function pickGiftPriceBC(m: AnyMsg): number {
+  const p = parseRBZ(m?.text);
+
+  const n = Math.floor(
+    Number(
+      m?.gift?.priceBC ??
+        m?.gift?.amount ??
+        p?.gift?.priceBC ??
+        p?.gift?.amount ??
+        p?.priceBC ??
+        p?.amount ??
+        0
+    ) || 0
+  );
+
+  return n > 0 ? n : 0;
+}
+
+function isGiftOrPurchasedMedia(m: AnyMsg): boolean {
+  return pickGiftLocked(m) || pickGiftPriceBC(m) > 0;
 }
 
 export default function SharedMediaHub() {
@@ -211,11 +254,15 @@ export default function SharedMediaHub() {
       const list = (await r.json()) as AnyMsg[];
       const arr = Array.isArray(list) ? list : [];
 
-      const media = arr
+       const media = arr
         .filter((m) => {
           if (!m) return false;
           if (m?.deleted) return false;
           if (isEphemeral(m)) return false;
+
+          // ✅ Shared Media should show only normal chat media.
+          // Gifted/paid media belongs ONLY in Purchased Media.
+          if (isGiftOrPurchasedMedia(m)) return false;
 
           const type = String(m?.type || "");
           const url = pickMediaUrl(m);

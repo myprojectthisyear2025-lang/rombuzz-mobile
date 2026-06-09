@@ -64,10 +64,21 @@ const RBZ = {
 type MediaItem = {
   id: string;
   url: string;
+  mediaUrl?: string;
+  videoUrl?: string;
   type?: "image" | "reel";
 
   caption?: string;
   privacy?: string;
+
+  provider?: string;
+  storage?: string;
+  streamUid?: string;
+  playback?: any;
+  thumbnailUrl?: string;
+  cloudflareStream?: any;
+  status?: string;
+  duration?: number;
 };
 
 interface UserProfile {
@@ -165,8 +176,9 @@ function inferType(m: any): "image" | "reel" {
   const type = String(m?.type || "").toLowerCase();
   const caption = String(m?.caption || "").toLowerCase();
 
-  // 🔥 IMPORTANT: preserve backend reel type
+  // 🔥 IMPORTANT: preserve backend reel type + Cloudflare Stream profile reels
   if (
+    isCloudflareStreamMedia(m) ||
     caption.includes("kind:reel") ||
     caption.includes("kind:video")
   ) {
@@ -203,6 +215,64 @@ function inferScopeFromCaption(caption: string): "public" | "matches" | "private
   return "public";
 }
 
+function getMediaUrlFromEntry(entry: any) {
+  if (typeof entry === "string") return String(entry || "").trim();
+
+  return String(
+    entry?.url ||
+      entry?.mediaUrl ||
+      entry?.fileUrl ||
+      entry?.secureUrl ||
+      entry?.secure_url ||
+      entry?.src ||
+      entry?.imageUrl ||
+      entry?.photoUrl ||
+      entry?.videoUrl ||
+      entry?.playback?.hls ||
+      entry?.playback?.dash ||
+      ""
+  ).trim();
+}
+
+function getStreamUidFromEntry(entry: any) {
+  if (!entry || typeof entry === "string") return "";
+
+  return String(
+    entry?.streamUid ||
+      entry?.uid ||
+      entry?.cloudflareStream?.uid ||
+      ""
+  ).trim();
+}
+
+function isCloudflareStreamMedia(entry: any) {
+  return (
+    String(entry?.provider || entry?.storage || "").toLowerCase() === "cloudflare_stream" ||
+    !!getStreamUidFromEntry(entry)
+  );
+}
+
+function stripSignedUrlQuery(url: string) {
+  return String(url || "").split("?")[0].split("#")[0].trim();
+}
+
+function getMediaStableKey(entry: any, url?: string) {
+  if (typeof entry === "string") {
+    return stripSignedUrlQuery(entry);
+  }
+
+  return String(
+    entry?.streamUid ||
+      entry?.cloudflareStream?.uid ||
+      entry?.r2Key ||
+      entry?.key ||
+      entry?.mediaId ||
+      entry?.id ||
+      entry?._id ||
+      stripSignedUrlQuery(url || getMediaUrlFromEntry(entry))
+  ).trim();
+}
+
 function canViewerSeeMedia(m: any) {
   if (!m) return false;
   
@@ -229,6 +299,70 @@ function canViewerSeeMedia(m: any) {
   if (privacy === "private") return false;
 
   return scope === "public" || privacy === "public" || !privacy;
+}
+
+function buildDirectStreamPlaybackUrl(streamUid: string) {
+  const uid = String(streamUid || "").replace(/[^a-zA-Z0-9_-]/g, "").trim();
+  if (!uid) return "";
+
+  return `https://videodelivery.net/${uid}/manifest/video.m3u8`;
+}
+
+function buildDirectStreamThumbnailUrl(streamUid: string) {
+  const uid = String(streamUid || "").replace(/[^a-zA-Z0-9_-]/g, "").trim();
+  if (!uid) return "";
+
+  return `https://videodelivery.net/${uid}/thumbnails/thumbnail.jpg`;
+}
+
+async function resolveStreamPlayback(streamUid: string) {
+  const uid = String(streamUid || "").trim();
+  if (!uid) {
+    return {
+      url: "",
+      thumbnailUrl: "",
+      status: "",
+      duration: 0,
+    };
+  }
+
+  try {
+    const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+    if (!token) {
+      return {
+        url: buildDirectStreamPlaybackUrl(uid),
+        thumbnailUrl: buildDirectStreamThumbnailUrl(uid),
+        status: "",
+        duration: 0,
+      };
+    }
+
+    const res = await fetch(`${API_BASE}/stream/${uid}/playback`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    const resolvedUrl = String(
+      json?.playback?.hls ||
+        json?.playback?.dash ||
+        ""
+    ).trim();
+
+    return {
+      url: resolvedUrl || buildDirectStreamPlaybackUrl(uid),
+      thumbnailUrl: String(json?.thumbnailUrl || "").trim() || buildDirectStreamThumbnailUrl(uid),
+      status: String(json?.status || "").trim(),
+      duration: Number(json?.duration || 0),
+    };
+  } catch {
+    return {
+      url: buildDirectStreamPlaybackUrl(uid),
+      thumbnailUrl: buildDirectStreamThumbnailUrl(uid),
+      status: "",
+      duration: 0,
+    };
+  }
 }
 // ---------------------------------------------------------------------------
 // PROFILE INFO HELPERS (supports string / array formats from backend)
@@ -404,94 +538,94 @@ const d = user.distanceMiles ?? user.distanceKm ?? user.distance ?? null;
     return possibleFields.find(url => url && url.trim()) || "";
   }, [user]);
 
-    // Media processing
+       // Media processing
  const allMedia: MediaItem[] = useMemo(() => {
   if (!user) return [];
-  
-  // Debug log
-  console.log('Processing media for user:', {
-    media: user?.media?.slice(0, 2),
-    reels: user?.reels?.slice(0, 2),
-    photos: user?.photos?.slice(0, 2)
-  });
-  
-  // Extract from all possible fields
+
   const rawMedia = (Array.isArray(user?.media) ? user.media : []) as any[];
-  const rawReels = (Array.isArray(user?.reels) ? user.reels : []) as any[];
-  const rawPhotos = (Array.isArray(user?.photos) ? user.photos : []) as any[];
-  const gallery = (Array.isArray(user?.gallery) ? user.gallery : []) as any[];
-  const uploads = (Array.isArray(user?.uploads) ? user.uploads : []) as any[];
-  
-  // Combine all sources.
-  // ✅ Backend sends real ViewProfile reels in user.reels.
-  // ✅ Older/alternate backend responses may also include reels inside user.media.
-  const allRaw = [...rawMedia, ...rawReels, ...rawPhotos, ...gallery, ...uploads];
-  
-  console.log('Total raw items:', allRaw.length);
 
-  const seen = new Set<string>();
-  
-  const merged = allRaw
-    .map((item: any, idx: number): MediaItem | undefined => {
-      // Handle string URLs (simple format)
-      if (typeof item === 'string') {
-        const url = item.trim();
-        if (!url) return undefined;
-        
-        return {
-          id: `media-${idx}-${url}`,
-          url,
-          type: inferType({ url }),
-          caption: '',
-          privacy: 'public'
-        };
-      }
-      
-      // Handle object format
-      if (item && typeof item === 'object') {
-        const url = String(
-          item?.url || 
-          item?.secure_url || 
-          item?.src || 
-          item?.mediaUrl ||
-          item?.fileUrl ||
-          item?.imageUrl ||
-          item?.videoUrl ||
-          ''
-        ).trim();
-        
-        if (!url) return undefined;
+  // Only use legacy fallback arrays if backend did not send media[].
+  // View Profile must not merge media + photos + reels together because backend
+  // may derive photos/reels from the same media list.
+  const fallbackRaw =
+    rawMedia.length > 0
+      ? []
+      : [
+          ...(Array.isArray(user?.reels) ? user.reels : []),
+          ...(Array.isArray(user?.photos) ? user.photos : []),
+          ...(Array.isArray(user?.gallery) ? user.gallery : []),
+          ...(Array.isArray(user?.uploads) ? user.uploads : []),
+        ];
 
-        const id = String(item?.id || item?._id || item?.mediaId || `item-${idx}-${url}`);
-        const caption = String(item?.caption || item?.text || item?.description || '');
-        const privacy = String(item?.privacy || item?.visibility || item?.scope || 'public').toLowerCase();
-        
-        return {
-          ...item,
-          id,
-          url,
-          mediaUrl: String(item?.mediaUrl || url),
-          type: inferType({ ...item, url }),
-          caption,
-          privacy
-        };
-      }
-      
-      return undefined;
-    })
-    .filter((m): m is MediaItem => {
-      if (!m?.url) return false;
-      if (!canViewerSeeMedia(m)) return false;
+  const sourceRaw = rawMedia.length > 0 ? rawMedia : fallbackRaw;
 
-      const key = `${m.id}:${m.url}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
+  const seenKeys = new Set<string>();
+  const seenUrls = new Set<string>();
+  const merged: MediaItem[] = [];
 
-      return true;
+  const pushItem = (item: any, idx: number, source: string) => {
+    const url = getMediaUrlFromEntry(item);
+    const streamUid = getStreamUidFromEntry(item);
+
+    if (!url && !streamUid) return;
+
+    const cleanUrl = stripSignedUrlQuery(url);
+    const key = getMediaStableKey(item, url) || streamUid || cleanUrl;
+
+    if (!key || seenKeys.has(key)) return;
+    if (cleanUrl && seenUrls.has(cleanUrl)) return;
+    if (!canViewerSeeMedia(item)) return;
+
+    if (typeof item === "string") {
+      seenKeys.add(key);
+      if (cleanUrl) seenUrls.add(cleanUrl);
+
+      merged.push({
+        id: `legacy-${source}-${idx}-${key}`,
+        mediaId: `legacy-${source}-${idx}-${key}`,
+        url,
+        mediaUrl: url,
+        type: inferType({ url }),
+        caption: "",
+        privacy: "public",
+      } as any);
+      return;
+    }
+
+    const id = String(item?.id || item?._id || item?.mediaId || streamUid || key);
+    const caption = String(item?.caption || item?.text || item?.description || "");
+    const privacy = String(item?.privacy || item?.visibility || item?.scope || "public").toLowerCase();
+    const type = inferType({ ...item, url, streamUid });
+
+    seenKeys.add(key);
+    if (cleanUrl) seenUrls.add(cleanUrl);
+
+    merged.push({
+      ...item,
+      id,
+      mediaId: String(item?.mediaId || id),
+      url,
+      mediaUrl: String(item?.mediaUrl || url),
+      videoUrl: String(item?.videoUrl || url),
+      type,
+      caption,
+      privacy,
+
+      provider: item?.provider,
+      storage: item?.storage,
+      streamUid,
+      playback: item?.playback,
+      thumbnailUrl: item?.thumbnailUrl,
+      cloudflareStream: item?.cloudflareStream,
+      status: item?.status || item?.cloudflareStream?.status,
+      duration: Number(item?.duration || item?.cloudflareStream?.duration || 0),
     });
-  
-  console.log('Processed visible media items:', merged.length, merged.slice(0, 2));
-  
+  };
+
+  sourceRaw.forEach((item, idx) =>
+    pushItem(item, idx, rawMedia.length > 0 ? "media" : "fallback")
+  );
+
   return merged;
 }, [user]);
 
@@ -805,21 +939,81 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   // ---------------------------------------------------------------------------
   // OPEN VIDEO VIEWER (shared universal file for reels)
   // ---------------------------------------------------------------------------
-  const openVideoViewer = useCallback((items: MediaItem[], index: number) => {
-    const onlyReels = items
-      .filter((x) => (x?.type || "image") === "reel" && !!x?.url)
-      .map((x) => ({
-        ...x,
-        id: String(x.id),
-        mediaId: String((x as any)?.mediaId || x.id),
-        url: String(x.url),
-        mediaUrl: String((x as any)?.mediaUrl || x.url),
-        title: fullName ? `${fullName}'s Reel` : "Reel",
-        poster: String((x as any)?.poster || (x as any)?.thumbnail || ""),
-        thumbnail: String((x as any)?.thumbnail || (x as any)?.poster || ""),
-      }));
+  const openVideoViewer = useCallback(async (items: MediaItem[], index: number) => {
+    const reelEntries = items.filter((x) => {
+      const streamUid = getStreamUidFromEntry(x);
 
-    const safeIndex = Math.max(0, Math.min(index, Math.max(0, onlyReels.length - 1)));
+      return (
+        (x?.type || "image") === "reel" &&
+        (
+          !!x?.url ||
+          !!x?.mediaUrl ||
+          !!x?.videoUrl ||
+          !!x?.playback?.hls ||
+          !!x?.playback?.dash ||
+          !!streamUid
+        )
+      );
+    });
+
+    const onlyReels = await Promise.all(
+      reelEntries.map(async (x) => {
+        const streamUid = getStreamUidFromEntry(x);
+        const existingUrl = String(
+          x.url ||
+            x.mediaUrl ||
+            x.videoUrl ||
+            x.playback?.hls ||
+            x.playback?.dash ||
+            ""
+        ).trim();
+
+        const resolvedStream = !existingUrl && streamUid
+          ? await resolveStreamPlayback(streamUid)
+          : {
+              url: "",
+              thumbnailUrl: "",
+              status: "",
+              duration: 0,
+            };
+
+        const resolvedUrl = existingUrl || resolvedStream.url;
+        const resolvedThumbnail = String(
+          (x as any)?.poster ||
+            (x as any)?.thumbnail ||
+            (x as any)?.thumbnailUrl ||
+            resolvedStream.thumbnailUrl ||
+            ""
+        ).trim();
+
+        return {
+          ...x,
+          id: String(x.id || streamUid),
+          mediaId: String((x as any)?.mediaId || x.id || streamUid),
+          url: resolvedUrl,
+          mediaUrl: resolvedUrl,
+          videoUrl: resolvedUrl,
+          title: fullName ? `${fullName}'s Reel` : "Reel",
+          poster: resolvedThumbnail,
+          thumbnail: resolvedThumbnail,
+          thumbnailUrl: resolvedThumbnail,
+          streamUid,
+          provider: (x as any)?.provider,
+          storage: (x as any)?.storage,
+          cloudflareStream: (x as any)?.cloudflareStream,
+          status: String((x as any)?.status || resolvedStream.status || ""),
+          duration: Number((x as any)?.duration || resolvedStream.duration || 0),
+        };
+      })
+    );
+
+    const target = items[Math.max(0, Math.min(index, Math.max(0, items.length - 1)))];
+    const targetKey = getMediaStableKey(target);
+    const safeIndexFromTarget = onlyReels.findIndex((x) => getMediaStableKey(x) === targetKey);
+    const safeIndex =
+      safeIndexFromTarget >= 0
+        ? safeIndexFromTarget
+        : Math.max(0, Math.min(index, Math.max(0, onlyReels.length - 1)));
 
     setVideoViewerItems(onlyReels);
     setVideoViewerIndex(safeIndex);

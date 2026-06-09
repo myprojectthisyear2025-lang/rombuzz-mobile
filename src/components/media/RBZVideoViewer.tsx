@@ -52,10 +52,24 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 export type RBZVideoViewerItem = {
   id: string | number;
-  url: string;
+  url?: string;
+  mediaUrl?: string;
+  videoUrl?: string;
   title?: string;
   poster?: string;
   thumbnail?: string;
+  thumbnailUrl?: string;
+
+  // Cloudflare Stream profile_reel support.
+  provider?: string;
+  storage?: string;
+  streamUid?: string;
+  playback?: any;
+  cloudflareStream?: any;
+  status?: string;
+  duration?: number;
+
+  [key: string]: any;
 };
 
 type RBZVideoViewerProps = {
@@ -69,6 +83,37 @@ type RBZVideoViewerProps = {
 };
 
 type VideoRefsMap = Record<number, Video | null>;
+
+function getVideoUrl(item?: RBZVideoViewerItem | null) {
+  return String(
+    item?.url ||
+      item?.mediaUrl ||
+      item?.videoUrl ||
+      item?.playback?.hls ||
+      item?.playback?.dash ||
+      ""
+  ).trim();
+}
+
+function getStreamUid(item?: RBZVideoViewerItem | null) {
+  return String(
+    item?.streamUid ||
+      item?.uid ||
+      item?.cloudflareStream?.uid ||
+      ""
+  ).trim();
+}
+
+function getVideoKey(item?: RBZVideoViewerItem | null, index?: number) {
+  return String(
+    item?.id ||
+      item?.mediaId ||
+      item?._id ||
+      getStreamUid(item) ||
+      getVideoUrl(item) ||
+      `video-${index ?? 0}`
+  );
+}
 
 function clampIndex(index: number, length: number) {
   if (length <= 0) return 0;
@@ -123,29 +168,42 @@ export default function RBZVideoViewer({
     >
   >({});
 
-  const normalizedItems = useMemo(() => {
+    const normalizedItems = useMemo<RBZVideoViewerItem[]>(() => {
     const seen = new Set<string>();
+    const nextItems: RBZVideoViewerItem[] = [];
 
-    return items.filter((item) => {
-      const url = String(item?.url || "").trim();
-      if (!url) return false;
-      if (seen.has(url)) return false;
-      seen.add(url);
-      return true;
+    items.forEach((item, index) => {
+      const url = getVideoUrl(item);
+      const streamUid = getStreamUid(item);
+      const key = getVideoKey(item, index);
+
+      if (!url && !streamUid) return;
+      if (seen.has(key)) return;
+
+      seen.add(key);
+
+      nextItems.push({
+        ...item,
+        id: String(item?.id || streamUid || key),
+        url,
+        mediaUrl: String(item?.mediaUrl || url),
+        videoUrl: String(item?.videoUrl || url),
+        streamUid,
+      });
     });
+
+    return nextItems;
   }, [items]);
 
   const safeInitialIndex = useMemo(() => {
     if (!normalizedItems.length) return 0;
 
     const originalSafeIndex = clampIndex(initialIndex, items.length);
-    const originalTarget = items[originalSafeIndex];
-    const targetUrl = String(originalTarget?.url || "").trim();
-
-    if (!targetUrl) return 0;
+    const originalTarget = items[originalSafeIndex] || null;
+    const targetKey = getVideoKey(originalTarget, originalSafeIndex);
 
     const normalizedIndex = normalizedItems.findIndex(
-      (item) => String(item?.url || "").trim() === targetUrl
+      (item, index) => getVideoKey(item, index) === targetKey
     );
 
     return normalizedIndex >= 0 ? normalizedIndex : 0;
@@ -293,13 +351,15 @@ export default function RBZVideoViewer({
 
   const retryActive = useCallback(async () => {
     const ref = videoRefs.current[activeIndex];
-    if (!ref) return;
+    const retryUrl = getVideoUrl(normalizedItems[activeIndex]);
+
+    if (!ref || !retryUrl) return;
 
     try {
       await ref.unloadAsync();
       await ref.loadAsync(
         {
-          uri: normalizedItems[activeIndex]?.url || "",
+          uri: retryUrl,
         },
         {
           shouldPlay: true,
@@ -452,12 +512,14 @@ export default function RBZVideoViewer({
     [activeIndex, clearControlsTimer, controlsVisible, seekBy, startControlsAutoHide]
   );
 
-   const renderItem = useCallback(
+     const renderItem = useCallback(
     ({ item, index }: { item: RBZVideoViewerItem; index: number }) => {
       const state = playbackByIndex[index];
       const active = index === activeIndex;
       const resolvedTitle = title || item?.title || "Video";
-      const posterUri = item?.poster || item?.thumbnail;
+      const posterUri = item?.poster || item?.thumbnail || item?.thumbnailUrl;
+      const videoUri = getVideoUrl(item);
+      const isStream = !!getStreamUid(item);
 
       return (
         <View style={styles.page}>
@@ -468,24 +530,38 @@ export default function RBZVideoViewer({
                 createTapHandler(index)(e.nativeEvent.pageX);
               }}
             >
-              <Video
-                ref={(ref) => {
-                  videoRefs.current[index] = ref;
-                }}
-                style={styles.video}
-                source={{ uri: item.url }}
-                usePoster={!!posterUri}
-                posterSource={posterUri ? { uri: posterUri } : undefined}
-                posterStyle={styles.poster}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={visible && active}
-                isLooping={false}
-                isMuted={sessionMuted}
-                progressUpdateIntervalMillis={250}
-                onPlaybackStatusUpdate={(status) =>
-                  updatePlaybackState(index, status)
-                }
-              />
+              {videoUri ? (
+                <Video
+                  ref={(ref) => {
+                    videoRefs.current[index] = ref;
+                  }}
+                  style={styles.video}
+                  source={{ uri: videoUri }}
+                  usePoster={!!posterUri}
+                  posterSource={posterUri ? { uri: posterUri } : undefined}
+                  posterStyle={styles.poster}
+                  resizeMode={ResizeMode.CONTAIN}
+                  shouldPlay={visible && active}
+                  isLooping={false}
+                  isMuted={sessionMuted}
+                  progressUpdateIntervalMillis={250}
+                  onPlaybackStatusUpdate={(status) =>
+                    updatePlaybackState(index, status)
+                  }
+                />
+              ) : (
+                <View style={styles.streamPendingWrap}>
+                  <Ionicons name="videocam" size={38} color="#fff" />
+                  <Text style={styles.streamPendingTitle}>
+                    {isStream ? "Reel is processing" : "Video unavailable"}
+                  </Text>
+                  <Text style={styles.streamPendingText}>
+                    {isStream
+                      ? "This Cloudflare Stream reel is still getting ready."
+                      : "This video does not have a playable URL yet."}
+                  </Text>
+                </View>
+              )}
 
               {active && controlsVisible && (
                 <>
@@ -781,8 +857,32 @@ const styles = StyleSheet.create({
   },
 
   poster: {
-    resizeMode: "contain",
+    resizeMode: "cover",
+  },
+
+  streamPendingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
     backgroundColor: "#000",
+  },
+
+  streamPendingTitle: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 12,
+    textAlign: "center",
+  },
+
+  streamPendingText: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 19,
+    marginTop: 6,
+    textAlign: "center",
   },
 
   topGradientMask: {

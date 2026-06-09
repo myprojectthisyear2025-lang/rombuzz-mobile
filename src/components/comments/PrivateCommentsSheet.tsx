@@ -33,11 +33,13 @@ import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   Dimensions,
   FlatList,
   Image,
   Keyboard,
   Modal,
+  PanResponder,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -198,10 +200,18 @@ function getMediaKeyCandidates(media: any) {
     media?._id,
     media?.mediaId,
     media?.postId,
+
+    // ✅ Cloudflare Stream reel identifiers
+    media?.streamUid,
+    media?.uid,
+    media?.cloudflareStream?.uid,
+
     media?.url,
     media?.mediaUrl,
     media?.secureUrl,
     media?.secure_url,
+    media?.playback?.hls,
+    media?.playback?.dash,
   ]
     .map((value) => String(value || "").trim())
     .filter(Boolean);
@@ -277,18 +287,23 @@ function formatCommentTime(value: any) {
   return `${diffYear}y ago`;
 }
 
-async function uploadCommentPhotoToCloudinary(localUri: string) {
-  const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_PRESET;
+async function uploadCommentPhotoToR2(localUri: string) {
+  const token = await SecureStore.getItemAsync("RBZ_TOKEN");
 
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Cloudinary config is missing. Check EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_PRESET.");
+  if (!token) {
+    throw new Error("Please log in again before uploading a comment photo.");
   }
 
   const filename = localUri.split("/").pop() || `comment-photo-${Date.now()}.jpg`;
   const match = /\.(\w+)$/.exec(filename);
   const extension = match?.[1]?.toLowerCase() || "jpg";
-  const mimeType = extension === "png" ? "image/png" : "image/jpeg";
+
+  const mimeType =
+    extension === "png"
+      ? "image/png"
+      : extension === "webp"
+      ? "image/webp"
+      : "image/jpeg";
 
   const formData = new FormData();
   formData.append("file", {
@@ -296,21 +311,23 @@ async function uploadCommentPhotoToCloudinary(localUri: string) {
     name: filename,
     type: mimeType,
   } as any);
-  formData.append("upload_preset", uploadPreset);
-  formData.append("folder", "rombuzz/private-comments");
+  formData.append("purpose", "comment-photo");
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+  const res = await fetch(`${API_BASE}/upload-r2-file`, {
     method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     body: formData,
   });
 
   const json = await res.json().catch(() => null);
 
-  if (!res.ok || !json?.secure_url) {
-    throw new Error(json?.error?.message || "Failed to upload photo.");
+  if (!res.ok || !json?.r2Key) {
+    throw new Error(json?.error || json?.message || "Failed to upload photo.");
   }
 
-  return String(json.secure_url);
+  return String(json.r2Key || json.key || "");
 }
 
 export default function PrivateCommentsSheet({
@@ -371,6 +388,58 @@ export default function PrivateCommentsSheet({
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
   const [selectedComment, setSelectedComment] = useState<PrivateComment | null>(null);
   const [focusedCommentId, setFocusedCommentId] = useState("");
+  const [fullScreenPhotoUrl, setFullScreenPhotoUrl] = useState("");
+
+  const fullScreenPhotoTranslateY = useRef(new Animated.Value(0)).current;
+
+  const closeFullScreenPhoto = useCallback(() => {
+    Animated.timing(fullScreenPhotoTranslateY, {
+      toValue: 0,
+      duration: 120,
+      useNativeDriver: true,
+    }).start(() => {
+      setFullScreenPhotoUrl("");
+    });
+  }, [fullScreenPhotoTranslateY]);
+
+  const openFullScreenPhoto = useCallback(
+    (url: string) => {
+      const cleanUrl = String(url || "").trim();
+      if (!cleanUrl) return;
+
+      fullScreenPhotoTranslateY.setValue(0);
+      setFullScreenPhotoUrl(cleanUrl);
+    },
+    [fullScreenPhotoTranslateY]
+  );
+
+  const fullScreenPhotoPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy > 0) {
+            fullScreenPhotoTranslateY.setValue(gesture.dy);
+          }
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 90 || gesture.vy > 0.75) {
+            closeFullScreenPhoto();
+            return;
+          }
+
+          Animated.spring(fullScreenPhotoTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 10,
+          }).start();
+        },
+      }),
+    [closeFullScreenPhoto, fullScreenPhotoTranslateY]
+  );
 
   const safeTargetId = useMemo(() => String(targetId || "").trim(), [targetId]);
   const safeOwnerId = useMemo(() => String(ownerId || "").trim(), [ownerId]);
@@ -385,12 +454,7 @@ export default function PrivateCommentsSheet({
     }
   }, []);
 
-    const openEmojiKeyboard = useCallback(() => {
-    inputRef.current?.focus();
-    Keyboard.scheduleLayoutAnimation?.({ duration: 180, update: { type: "keyboard" } } as any);
-  }, []);
-
-  const pickCommentPhoto = useCallback(async () => {
+    const pickCommentPhoto = useCallback(async () => {
     if (editingCommentId) {
       Alert.alert("Photo comment", "Photo upload is only available for new comments right now.");
       return;
@@ -412,15 +476,15 @@ export default function PrivateCommentsSheet({
 
       if (result.canceled || !result.assets?.[0]?.uri) return;
 
-      const localUri = result.assets[0].uri;
+          const localUri = result.assets[0].uri;
 
       setSelectedPhotoUri(localUri);
       setSelectedPhotoUrl("");
       setUploadingPhoto(true);
 
-      const uploadedUrl = await uploadCommentPhotoToCloudinary(localUri);
+      const uploadedKey = await uploadCommentPhotoToR2(localUri);
 
-      setSelectedPhotoUrl(uploadedUrl);
+      setSelectedPhotoUrl(uploadedKey);
     } catch (error: any) {
       setSelectedPhotoUri("");
       setSelectedPhotoUrl("");
@@ -603,16 +667,18 @@ export default function PrivateCommentsSheet({
       const headers = await authHeaders();
 
       if (targetType === "gallery_media") {
-        const res = await fetch(`${API_BASE}/users/${safeOwnerId}`, { headers });
+        const res = await fetch(
+          `${API_BASE}/media/${safeOwnerId}/comments?mediaId=${encodeURIComponent(
+            safeTargetId
+          )}`,
+          { headers }
+        );
+
         if (!res.ok) throw new Error(await parseError(res));
 
         const json = await res.json();
-        const profileUser = json?.user || {};
-        const mediaList = Array.isArray(profileUser?.media) ? profileUser.media : [];
-        const media = findMediaByTargetId(mediaList, safeTargetId);
-
-        const rawComments = Array.isArray(media?.comments) ? media.comments : [];
-        const enriched = await enrichComments(rawComments, profileUser, headers);
+        const rawComments = Array.isArray(json?.comments) ? json.comments : [];
+        const enriched = await enrichComments(rawComments, ownerUser, headers);
         const ordered = orderThreadedComments(enriched);
 
         setComments(ordered);
@@ -1075,12 +1141,16 @@ export default function PrivateCommentsSheet({
               <Text style={styles.replyMetaText}>Replied to {parentAuthorName}</Text>
             ) : null}
 
-                   {String(item.text || "").trim() ? (
+          {String(item.text || "").trim() ? (
               <Text style={styles.commentText}>{item.text}</Text>
             ) : null}
 
                  {getCommentImage(item) ? (
-              <TouchableOpacity activeOpacity={0.9} style={styles.commentImageWrap}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={styles.commentImageWrap}
+                onPress={() => openFullScreenPhoto(getCommentImage(item))}
+              >
                 <Image source={{ uri: getCommentImage(item) }} style={styles.commentImage} />
               </TouchableOpacity>
             ) : null}
@@ -1116,8 +1186,15 @@ export default function PrivateCommentsSheet({
           </View>
         </View>
       );
-    },
-    [comments, focusedCommentId, openAuthorProfile, openActionMenu, toggleCommentHeart]
+      },
+    [
+      comments,
+      focusedCommentId,
+      openAuthorProfile,
+      openActionMenu,
+      openFullScreenPhoto,
+      toggleCommentHeart,
+    ]
   );
     return (
     <>
@@ -1255,17 +1332,8 @@ export default function PrivateCommentsSheet({
                 </View>
               ) : null}
 
-              <View style={styles.inputRow}>
+                <View style={styles.inputRow}>
                 <View style={styles.leftComposerActions}>
-                  <TouchableOpacity
-                    onPress={openEmojiKeyboard}
-                    hitSlop={8}
-                    style={styles.composerIconButton}
-                    activeOpacity={0.75}
-                  >
-                    <Ionicons name="happy-outline" size={22} color={PREMIUM.primary} />
-                  </TouchableOpacity>
-
                   <TouchableOpacity
                     onPress={pickCommentPhoto}
                     hitSlop={8}
@@ -1311,7 +1379,48 @@ export default function PrivateCommentsSheet({
                  </TouchableOpacity>
               </View>
             </View>
-          </View>
+                 </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!fullScreenPhotoUrl}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closeFullScreenPhoto}
+      >
+        <View style={styles.fullScreenPhotoBackdrop}>
+          <Pressable style={styles.fullScreenPhotoCloseLayer} onPress={closeFullScreenPhoto} />
+
+          <Animated.View
+            {...fullScreenPhotoPanResponder.panHandlers}
+            style={[
+              styles.fullScreenPhotoContent,
+              {
+                transform: [{ translateY: fullScreenPhotoTranslateY }],
+              },
+            ]}
+          >
+            <Image
+              source={{ uri: fullScreenPhotoUrl }}
+              style={styles.fullScreenPhotoImage}
+              resizeMode="contain"
+            />
+
+            <View style={styles.fullScreenPhotoTopBar}>
+              <TouchableOpacity
+                onPress={closeFullScreenPhoto}
+                hitSlop={12}
+                style={styles.fullScreenPhotoCloseButton}
+              >
+                <Ionicons name="close" size={22} color={PREMIUM.surface} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.fullScreenPhotoHintWrap}>
+            </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -1784,6 +1893,63 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 14,
     resizeMode: "cover",
+  },
+
+  fullScreenPhotoBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.96)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  fullScreenPhotoCloseLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  fullScreenPhotoContent: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  fullScreenPhotoImage: {
+    width: "100%",
+    height: "100%",
+  },
+
+  fullScreenPhotoTopBar: {
+    position: "absolute",
+    top: 48,
+    right: 18,
+    left: 18,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+
+  fullScreenPhotoCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  fullScreenPhotoHintWrap: {
+    position: "absolute",
+    bottom: 42,
+    alignSelf: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+
+  fullScreenPhotoHint: {
+    color: PREMIUM.surface,
+    fontSize: 12,
+    fontWeight: "600",
   },
 
   // Action Menu Styles

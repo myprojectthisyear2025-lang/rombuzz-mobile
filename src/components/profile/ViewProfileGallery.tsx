@@ -42,9 +42,26 @@ type ViewProfileMediaItem = {
   id?: string;
   url?: string;
   mediaUrl?: string;
+  fileUrl?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  secureUrl?: string;
+  secure_url?: string;
   type?: "image" | "reel" | "video" | string;
   caption?: string;
   privacy?: string;
+
+  // Cloudflare Stream profile_reel support
+  provider?: string;
+  storage?: string;
+  streamUid?: string;
+  playback?: any;
+  thumbnailUrl?: string;
+  thumbnail?: string;
+  poster?: string;
+  previewUrl?: string;
+  cloudflareStream?: any;
+
   [key: string]: any;
 };
 
@@ -58,12 +75,56 @@ type Props = {
   onOpenReel: (item: ViewProfileMediaItem, index: number) => void;
 };
 
+function getStreamUid(item: ViewProfileMediaItem) {
+  return String(
+    item?.streamUid ||
+      item?.uid ||
+      item?.cloudflareStream?.uid ||
+      ""
+  ).trim();
+}
+
+function isCloudflareStreamReel(item: ViewProfileMediaItem) {
+  return (
+    String(item?.provider || item?.storage || "").toLowerCase() === "cloudflare_stream" ||
+    !!getStreamUid(item)
+  );
+}
+
 function getUrl(item: ViewProfileMediaItem) {
-  return String(item?.url || item?.mediaUrl || item?.fileUrl || item?.imageUrl || item?.videoUrl || "").trim();
+  return String(
+    item?.url ||
+      item?.mediaUrl ||
+      item?.fileUrl ||
+      item?.imageUrl ||
+      item?.videoUrl ||
+      item?.secureUrl ||
+      item?.secure_url ||
+      item?.playback?.hls ||
+      item?.playback?.dash ||
+      ""
+  ).trim();
+}
+
+function getThumbnailUrl(item: ViewProfileMediaItem) {
+  return String(
+    item?.thumbnailUrl ||
+      item?.thumbnail ||
+      item?.poster ||
+      item?.previewUrl ||
+      item?.cloudflareStream?.thumbnailUrl ||
+      ""
+  ).trim();
 }
 
 function getKey(item: ViewProfileMediaItem, index: number, prefix: string) {
-  return String(item?.id || item?.mediaId || item?._id || `${prefix}-${index}-${getUrl(item)}`);
+  return String(
+    item?.id ||
+      item?.mediaId ||
+      item?._id ||
+      getStreamUid(item) ||
+      `${prefix}-${index}-${getUrl(item)}`
+  );
 }
 
 function MediaTile({
@@ -80,6 +141,8 @@ function MediaTile({
   onOpen: (item: ViewProfileMediaItem, index: number) => void;
 }) {
   const uri = getUrl(item);
+  const thumbnailUrl = getThumbnailUrl(item);
+  const isStream = isCloudflareStreamReel(item);
 
    return (
     <View
@@ -93,14 +156,25 @@ function MediaTile({
     >
       <Pressable onPress={() => onOpen(item, index)} style={styles.mediaPressable}>
         {kind === "reel" ? (
-          <Video
-            source={{ uri }}
-            style={styles.media}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-            isMuted
-            isLooping={false}
-          />
+          uri ? (
+            <Video
+              source={{ uri }}
+              style={styles.media}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={false}
+              isMuted
+              isLooping={false}
+            />
+          ) : thumbnailUrl ? (
+            <Image source={{ uri: thumbnailUrl }} style={styles.media} resizeMode="cover" />
+          ) : (
+            <View style={styles.streamPlaceholder}>
+              <Ionicons name="videocam" size={24} color={RBZ.white} />
+              <Text style={styles.streamPlaceholderText}>
+                {isStream ? "Processing" : "Reel"}
+              </Text>
+            </View>
+          )
         ) : (
           <Image source={{ uri }} style={styles.media} resizeMode="cover" />
         )}
@@ -322,6 +396,19 @@ const styles = StyleSheet.create({
   media: {
     width: "100%",
     height: "100%",
+  },
+  streamPlaceholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#111827",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  streamPlaceholderText: {
+    color: RBZ.white,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 6,
   },
   reelCenterPlay: {
     position: "absolute",

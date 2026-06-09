@@ -51,8 +51,8 @@ import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
 import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
-import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
 import { useChatMediaViewerController } from "@/src/features/chat/thread/ChatMediaViewerController";
+import { useChatMediaSender } from "@/src/features/chat/thread/useChatMediaSender";
 import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
 import SwipeReplyRow from "@/src/features/chat/thread/SwipeReplyRow";
 import {
@@ -93,6 +93,22 @@ const IS_EXPO_GO = Constants.appOwnership === "expo";
 
 const SCREEN_W = Dimensions.get("window").width;
 const BUBBLE_MAX_W = Math.floor(SCREEN_W * 0.72); // IG-like bubble width
+
+const PROTECTED_STARS = [
+  { id: "s1", left: "12%", top: "10%", size: 7 },
+  { id: "s2", left: "35%", top: "16%", size: 4 },
+  { id: "s3", left: "72%", top: "9%", size: 6 },
+  { id: "s4", left: "88%", top: "24%", size: 4 },
+  { id: "s5", left: "18%", top: "34%", size: 5 },
+  { id: "s6", left: "51%", top: "31%", size: 8 },
+  { id: "s7", left: "78%", top: "42%", size: 5 },
+  { id: "s8", left: "28%", top: "55%", size: 6 },
+  { id: "s9", left: "62%", top: "61%", size: 4 },
+  { id: "s10", left: "91%", top: "70%", size: 7 },
+  { id: "s11", left: "14%", top: "79%", size: 4 },
+  { id: "s12", left: "47%", top: "84%", size: 6 },
+  { id: "s13", left: "73%", top: "88%", size: 5 },
+];
 
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -264,6 +280,7 @@ const [expiredMedia, setExpiredMedia] = useState<Record<string, true>>({});
 // ✅ Double-tap ❤️ burst (IG-style)
 const [heartBurstId, setHeartBurstId] = useState<string | null>(null);
 const heartAnim = useRef(new Animated.Value(0)).current;
+const protectedMediaAnim = useRef(new Animated.Value(0)).current;
 const lastTapRef = useRef<Record<string, number>>({});
 const singleTapTimerRef = useRef<Record<string, any>>({});
 const timestampHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,11 +307,35 @@ const isGiftedPaidMedia = (m: any) => {
   return priceBC > 0 && (m?.type === "media" || !!m?.url);
 };
 
+const getChatVideoUri = (m: any) => {
+  return String(
+    m?.playback?.hls ||
+      m?.previewUrl ||
+      m?.signedUrl ||
+      m?.url ||
+      m?.mediaUrl ||
+      ""
+  ).trim();
+};
+
 const consumeEphemeralView = async (m: any) => {
   const maxViews = getMaxViews(m);
   if (!maxViews) return; // only for once/twice
 
   if (!m?.id || !roomId) return;
+
+  const deadId = String(m.id);
+
+  // ✅ Fast UI: view-once should disappear immediately after close.
+  // Do not wait 3-6 seconds for the backend round trip.
+  if (maxViews === 1) {
+    setExpiredMedia((prev) => ({
+      ...prev,
+      [deadId]: true,
+    }));
+
+    setMessages((prev) => prev.filter((msg) => String(msg?.id) !== deadId));
+  }
 
   try {
     const token = await SecureStore.getItemAsync("RBZ_TOKEN");
@@ -316,8 +357,6 @@ const consumeEphemeralView = async (m: any) => {
     }
 
     if (j?.viewsLeft === 0) {
-      const deadId = String(m.id);
-
       setExpiredMedia((prev) => ({
         ...prev,
         [deadId]: true,
@@ -575,6 +614,20 @@ const {
   latestAtTop: true,
 });
 
+const {
+  sendMediaPayload,
+  sendGalleryMedia,
+  sendCameraMedia,
+} = useChatMediaSender({
+  myId,
+  peerId,
+  roomId,
+  replyingTo,
+  setReplyingTo,
+  setMessages,
+  settleToLatest,
+});
+
 // ✅ Bottom spacing for inverted chat list:
 // composer is part of layout, not overlayed, so list only needs a tiny visual gap
 const SAFE_BOTTOM_INSET = Math.max(0, Number(insets.bottom || 0));
@@ -750,6 +803,29 @@ useEffect(() => {
     });
   };
 }, []);
+
+useEffect(() => {
+  const loop = Animated.loop(
+    Animated.sequence([
+      Animated.timing(protectedMediaAnim, {
+        toValue: 1,
+        duration: 1400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(protectedMediaAnim, {
+        toValue: 0,
+        duration: 1400,
+        useNativeDriver: true,
+      }),
+    ])
+  );
+
+  loop.start();
+
+  return () => {
+    loop.stop();
+  };
+}, [protectedMediaAnim]);
 
 
   // Load messages
@@ -1504,77 +1580,6 @@ const togglePinMessage = async (m: Msg) => {
     closeSheet();
   };
 
-    const sendMediaPayload = async (payloadObj: any) => {
-  if (!myId || !peerId) return;
-
-  // optimistic local
-  const tempId = `temp_media_${Date.now()}`;
-
-    const currentReply = replyingTo;
-
-    const temp: Msg = {
-    id: tempId,
-    from: myId,
-    to: peerId,
-    text: encodePayload(payloadObj),
-    type: "media",
-    time: new Date().toISOString(),
-    replyTo: currentReply,
-    _temp: true,
-  };
-
-  setMessages((p) => [...p, temp]);
-  setReplyingTo(null);
-
-  // ✅ keep latest media visible above composer too
-  settleToLatest(true);
-
-  try {
-    const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-
-    const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        text: encodePayload(payloadObj),
-        replyTo: currentReply || undefined,
-      }),
-    });
-
-     const j = await r.json().catch(() => ({}));
-
-    if (!r.ok) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      Alert.alert(
-        "Failed to send message",
-        j?.message || j?.error || "You cannot send messages in this chat."
-      );
-      return;
-    }
-
-    const serverMsg: Msg | null = j?.message || null;
-
-     if (serverMsg?.id) {
-      setMessages((prev) =>
-        dedupeById(
-          prev.map((m) =>
-            m.id === tempId ? mergeReplySnapshot(m, serverMsg) : m
-          )
-        )
-      );
-
-      // ✅ settle again after temp replacement
-      settleToLatest(true);
-    }
-
-  } catch {
-    setMessages((prev) => prev.filter((m) => m.id !== tempId));
-    Alert.alert("Send failed", "Could not send media.");
-  }
-};
 
   const send = async () => {
     const trimmed = text.trim();
@@ -1759,14 +1764,30 @@ const togglePinMessage = async (m: Msg) => {
     isSharedProfileMedia &&
     String(m?.mediaType || "").toLowerCase() === "photo";
 
-  const isShared = isSharedPost || isSharedReel || isSharedProfileMedia;
+   const isShared = isSharedPost || isSharedReel || isSharedProfileMedia;
 
   // basic media handling (web uses ::RBZ:: payload)
- const isMedia = !isShared && (m?.type === "media" || !!m?.url);
+ const isMedia =
+    !isShared &&
+    (
+      m?.type === "media" ||
+      !!m?.url ||
+      !!m?.mediaUrl ||
+      !!m?.streamUid ||
+      !!m?.cloudflareStream?.uid ||
+      String(m?.mediaType || "").toLowerCase() === "video" ||
+      String(m?.mediaType || "").toLowerCase() === "image" ||
+      String(m?.mediaType || "").toLowerCase() === "audio"
+    );
+
   const isAudio = m?.mediaType === "audio";
    const isGiftedMedia = isMedia && isGiftedPaidMedia(m);
  const reactLine = formatReactions(m?.reactions);
-  const isVideoCallHistory = isVideoCallHistoryMessage(m);
+
+  // ✅ Critical: normal chat videos must NOT be swallowed by video-call history UI.
+  // Stream videos can have duration/status fields, so the video-call detector can misread them.
+  const isVideoCallHistory = !isMedia && isVideoCallHistoryMessage(m);
+
   const meetMiddlePayload = getMeetMiddleBubblePayload(m);
   const isMeetMiddleConfirmed =
     meetMiddlePayload?.kind === "milestone" &&
@@ -2058,10 +2079,14 @@ const togglePinMessage = async (m: Msg) => {
             isMine ? styles.mediaMine : styles.mediaPeer,
           ]}
         >
-                 {m.mediaType === "video" ? (
+        
+                          {m.mediaType === "video" ? (
             <Video
-              source={{ uri: m.url }}
-              style={[styles.mediaThumb, getMaxViews(m) && styles.mediaBlur]}
+              source={{ uri: getChatVideoUri(m) }}
+              style={[
+                styles.mediaThumb,
+                getMaxViews(m) ? styles.mediaProtectedThumb : null,
+              ]}
               resizeMode={ResizeMode.COVER}
               shouldPlay={false}
               isMuted={!!m.muted}
@@ -2069,13 +2094,17 @@ const togglePinMessage = async (m: Msg) => {
           ) : (
             <Image
               source={{ uri: m.url }}
-              style={[styles.mediaThumb, getMaxViews(m) && styles.mediaBlur]}
+              style={[
+                styles.mediaThumb,
+                getMaxViews(m) ? styles.mediaProtectedThumb : null,
+              ]}
               resizeMode="cover"
+              blurRadius={getMaxViews(m) ? 48 : 0}
             />
           )}
 
-          {/* ✅ Center play badge for chat videos */}
-          {m.mediaType === "video" ? (
+          {/* ✅ Center play badge for normal openable videos only */}
+          {m.mediaType === "video" && !getMaxViews(m) ? (
             <View style={styles.videoPlayOverlay} pointerEvents="none">
               <View style={styles.videoPlayBadge}>
                 <Ionicons name="play" size={22} color={RBZ.white} />
@@ -2083,17 +2112,76 @@ const togglePinMessage = async (m: Msg) => {
             </View>
           ) : null}
 
-          {/* 🔒 Blur overlay for view-once / twice */}
+          {/* 🔒 Strong protected overlay for view-once / twice */}
           {getMaxViews(m) ? (
-            <View style={styles.mediaOverlay} pointerEvents="none">
-              <Ionicons name="eye" size={28} color={RBZ.white} />
-              <Text style={styles.mediaOverlayText}>Tap to view</Text>
+            <View style={styles.protectedMediaOverlay} pointerEvents="none">
+              <Animated.View
+                style={[
+                  styles.protectedSparkleLayer,
+                  {
+                    opacity: protectedMediaAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0.45, 1, 0.55],
+                    }),
+                    transform: [
+                      {
+                        translateY: protectedMediaAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [6, -8],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {PROTECTED_STARS.map((star) => {
+                  const scale = protectedMediaAnim.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.75, 1.35, 0.85],
+                  });
+
+                  return (
+                    <Animated.View
+                      key={star.id}
+                      style={[
+                        styles.protectedSparkleStar,
+                        {
+                          left: star.left as any,
+                          top: star.top as any,
+                          width: star.size,
+                          height: star.size,
+                          borderRadius: star.size / 2,
+                          transform: [{ scale }],
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </Animated.View>
+
+              <View style={styles.protectedPrivacyVeil} />
+
+              <View style={styles.protectedIcon}>
+                <Ionicons
+                  name={getMaxViews(m) === 1 ? "eye-off" : "repeat"}
+                  size={28}
+                  color={RBZ.white}
+                />
+              </View>
+
+              <Text style={styles.protectedTitle}>
+                {getMaxViews(m) === 1 ? "View once" : "View twice"}
+              </Text>
+
+              <Text style={styles.protectedSub}>
+                Tap to open privately
+              </Text>
             </View>
           ) : null}
 
           {getMaxViews(m) ? (
             <View style={styles.viewBadge}>
-              <Ionicons name="eye" size={14} color={RBZ.white} />
+              <Ionicons name="sparkles" size={14} color={RBZ.white} />
               <Text style={styles.viewBadgeText}>
                 {getMaxViews(m) === 1 ? "View once" : "View twice"}
               </Text>
@@ -2459,21 +2547,24 @@ const togglePinMessage = async (m: Msg) => {
               <View style={styles.composerRow}>
             {!composerExpanded ? (
               <>
-                <Pressable onPress={() => setPlusOpen(true)} style={styles.attachBtn}>
-                  <Ionicons name="add" size={22} color={RBZ.c1} />
-                </Pressable>
+         <Pressable onPress={() => setPlusOpen(true)} style={styles.attachBtn}>
+  <Ionicons name="images-outline" size={20} color={RBZ.c1} />
+</Pressable>
 
-                <Pressable onPress={() => setCameraOpen(true)} style={styles.cameraBtn}>
-                  <Ionicons name="camera" size={18} color={RBZ.c1} />
-                </Pressable>
+<Pressable onPress={() => setCameraOpen(true)} style={styles.cameraBtn}>
+  <Ionicons name="camera-outline" size={20} color={RBZ.c1} />
+</Pressable>
 
                 <View style={styles.voiceActionSlot}>
                   <VoiceRecorderButton
-                    onSend={(url) => {
+                    roomId={roomId}
+                    onSend={(url, meta) => {
                       sendMediaPayload({
                         type: "media",
                         mediaType: "audio",
                         url,
+                        previewUrl: meta?.previewUrl,
+                        storage: meta?.storage,
                       });
                     }}
                   />
@@ -2496,21 +2587,24 @@ const togglePinMessage = async (m: Msg) => {
             <View style={[styles.inputWrap, composerExpanded ? styles.inputWrapExpanded : null]}>
               {composerExpanded && composerActionsOpen ? (
                 <View style={styles.inlineActionsRow}>
-                  <Pressable onPress={() => setPlusOpen(true)} style={styles.inlineActionBtn}>
-                    <Ionicons name="add" size={22} color={RBZ.c1} />
-                  </Pressable>
+  <Pressable onPress={() => setPlusOpen(true)} style={styles.inlineActionBtn}>
+  <Ionicons name="images-outline" size={20} color={RBZ.c1} />
+</Pressable>
 
-                  <Pressable onPress={() => setCameraOpen(true)} style={styles.inlineActionBtn}>
-                    <Ionicons name="camera" size={18} color={RBZ.c1} />
-                  </Pressable>
+<Pressable onPress={() => setCameraOpen(true)} style={styles.inlineActionBtn}>
+  <Ionicons name="camera-outline" size={20} color={RBZ.c1} />
+</Pressable>
 
-                  <View style={styles.inlineVoiceWrap}>
+                   <View style={styles.inlineVoiceWrap}>
                     <VoiceRecorderButton
-                      onSend={(url) => {
+                      roomId={roomId}
+                      onSend={(url, meta) => {
                         sendMediaPayload({
                           type: "media",
                           mediaType: "audio",
                           url,
+                          previewUrl: meta?.previewUrl,
+                          storage: meta?.storage,
                         });
                       }}
                     />
@@ -2603,21 +2697,14 @@ const togglePinMessage = async (m: Msg) => {
   visible={plusOpen}
   onClose={() => setPlusOpen(false)}
   onSendPayload={async (p) => {
-    const url = await uploadToCloudinaryUnsigned(
-      p.localUri,
-      p.mediaType === "video" ? "video" : "image"
-    );
-
-    const payloadObj = {
-      type: "media",
-      url,
+    await sendGalleryMedia({
+      localUri: p.localUri,
       mediaType: p.mediaType,
       ephemeral: p.ephemeral,
       gift: p.gift,
       overlayText: p.overlayText || "",
-    };
-
-    await sendMediaPayload(payloadObj);
+      duration: p.duration,
+    });
   }}
 />
 ) : null}
@@ -2630,42 +2717,15 @@ const togglePinMessage = async (m: Msg) => {
     const item = items[0];
     if (!item) return;
 
-    try {
-      const url = await uploadToCloudinaryUnsigned(
-        item.uri,
-        item.mediaType === "video" ? "video" : "image"
-      );
-
-      const maxViews =
-        item.visibility === "once"
-          ? 1
-          : item.visibility === "twice"
-            ? 2
-            : 0;
-
-      const payloadObj = {
-        type: "media",
-        url,
-        mediaType: item.mediaType,
-        muted: item.mediaType === "video" ? !!item.previewMuted : false,
-        ephemeral:
-          maxViews > 0
-            ? {
-                mode: item.visibility,
-                maxViews,
-              }
-            : undefined,
-        overlayText: item.overlayText || "",
-      };
-
-      await sendMediaPayload(payloadObj);
-    } catch (e: any) {
-      Alert.alert(
-        "Camera",
-        e?.message || `Failed to send ${item.mediaType === "video" ? "video" : "photo"}`
-      );
-        throw e;
-    }
+    await sendCameraMedia({
+      uri: item.uri,
+      mediaType: item.mediaType,
+      visibility: item.visibility,
+      previewMuted: item.previewMuted,
+      overlayText: item.overlayText || "",
+      gift: item.gift,
+      duration: item.duration,
+    });
   }}
 />
 ) : null}
@@ -3167,7 +3227,9 @@ attachBtn: {
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
-  backgroundColor: "rgba(181,23,158,0.10)",
+  backgroundColor: "rgba(177,18,60,0.08)",
+  borderWidth: 1,
+  borderColor: "rgba(177,18,60,0.10)",
 },
 
 cameraBtn: {
@@ -3176,7 +3238,9 @@ cameraBtn: {
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
-  backgroundColor: "rgba(181,23,158,0.10)",
+  backgroundColor: "rgba(177,18,60,0.08)",
+  borderWidth: 1,
+  borderColor: "rgba(177,18,60,0.10)",
 },
 
 voiceActionSlot: {
@@ -3185,6 +3249,10 @@ voiceActionSlot: {
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
+  backgroundColor: "rgba(177,18,60,0.08)",
+  borderWidth: 1,
+  borderColor: "rgba(177,18,60,0.10)",
+  overflow: "hidden",
 },
 
    input: {
@@ -3550,6 +3618,10 @@ mediaThumb: {
 mediaBlur: {
   opacity: 0.15,
 },
+mediaProtectedThumb: {
+  opacity: 0.18,
+  transform: [{ scale: 1.12 }],
+},
 mediaOverlay: {
   ...StyleSheet.absoluteFillObject,
   backgroundColor: "rgba(0,0,0,0.35)",
@@ -3560,6 +3632,57 @@ mediaOverlayText: {
   color: RBZ.white,
   fontSize: 14,
   fontWeight: "900",
+},
+protectedMediaOverlay: {
+  ...StyleSheet.absoluteFillObject,
+  backgroundColor: "rgba(10,6,14,0.86)",
+  alignItems: "center",
+  justifyContent: "center",
+  paddingHorizontal: 18,
+},
+protectedPrivacyVeil: {
+  ...StyleSheet.absoluteFillObject,
+  backgroundColor: "rgba(177,18,60,0.22)",
+},
+protectedSparkleLayer: {
+  ...StyleSheet.absoluteFillObject,
+  zIndex: 1,
+},
+protectedSparkleStar: {
+  position: "absolute",
+  backgroundColor: "rgba(255,255,255,0.92)",
+  shadowColor: "#fff",
+  shadowOpacity: 0.9,
+  shadowRadius: 8,
+  shadowOffset: { width: 0, height: 0 },
+  elevation: 4,
+},
+protectedIcon: {
+  zIndex: 3,
+  width: 56,
+  height: 56,
+  borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "rgba(216,52,95,0.92)",
+  borderWidth: 1,
+  borderColor: "rgba(255,255,255,0.22)",
+  marginBottom: 10,
+},
+protectedTitle: {
+  zIndex: 3,
+  color: RBZ.white,
+  fontSize: 17,
+  fontWeight: "900",
+  textAlign: "center",
+},
+protectedSub: {
+  zIndex: 3,
+  color: "rgba(255,255,255,0.80)",
+  fontSize: 12,
+  fontWeight: "800",
+  textAlign: "center",
+  marginTop: 5,
 },
 
 videoPlayOverlay: {
@@ -3811,7 +3934,9 @@ inlineActionBtn: {
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
-  backgroundColor: "rgba(181,23,158,0.10)",
+  backgroundColor: "rgba(177,18,60,0.08)",
+  borderWidth: 1,
+  borderColor: "rgba(177,18,60,0.10)",
 },
 
 inlineVoiceWrap: {
@@ -3820,6 +3945,10 @@ inlineVoiceWrap: {
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
+  backgroundColor: "rgba(177,18,60,0.08)",
+  borderWidth: 1,
+  borderColor: "rgba(177,18,60,0.10)",
+  overflow: "hidden",
 },
 
   sheetDivider: { height: 1, backgroundColor: RBZ.line, marginVertical: 10 },

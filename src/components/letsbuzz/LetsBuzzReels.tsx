@@ -46,6 +46,13 @@ import GiftInsightSheet from "@/src/components/gifts/GiftInsightSheet";
 import GiftPicker from "@/src/components/gifts/GiftPicker";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { getSocket } from "@/src/lib/socket";
+import {
+  getReelPlayableUrl,
+  getStreamUid,
+  normalizeLetsBuzzReel,
+  shouldShowInLetsBuzzReels,
+  type LetsBuzzNormalizedReel,
+} from "./letsBuzzReelMedia";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -79,6 +86,16 @@ type BuzzPost = {
   mediaId?: string;
   fromGallery?: boolean;
   sourceType?: "gallery" | "post" | string;
+
+  // Cloudflare Stream profile_reel support
+  provider?: string;
+  storage?: string;
+  streamUid?: string;
+  playback?: any;
+  thumbnailUrl?: string;
+  cloudflareStream?: any;
+  status?: string;
+  duration?: number;
 };
 
 const RBZ = {
@@ -191,6 +208,7 @@ export default function LetsBuzzReels({
   const videoRefs = useRef<Record<string, any>>({});
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [resolvedStreamUrls, setResolvedStreamUrls] = useState<Record<string, string>>({});
 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [activeReel, setActiveReel] = useState<BuzzPost | null>(null);
@@ -225,6 +243,42 @@ export default function LetsBuzzReels({
   const fullName = useMemo(() => {
     return getOwnerName(currentReel?.user);
   }, [currentReel?.user]);
+
+  const resolveReelPlaybackUrl = useCallback(
+    async (post: BuzzPost | null) => {
+      if (!post) return "";
+
+      const directUrl = getReelPlayableUrl(post);
+      if (directUrl) return directUrl;
+
+      const uid = getStreamUid(post);
+      if (!uid) return "";
+
+      if (resolvedStreamUrls[uid]) return resolvedStreamUrls[uid];
+
+      try {
+        const headers = await authHeaders();
+        const res = await fetch(`${API_BASE}/stream/${uid}/playback`, { headers });
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) return "";
+
+        const nextUrl = String(json?.playback?.hls || json?.playback?.dash || "").trim();
+
+        if (nextUrl) {
+          setResolvedStreamUrls((prev) => ({
+            ...prev,
+            [uid]: nextUrl,
+          }));
+        }
+
+        return nextUrl;
+      } catch {
+        return "";
+      }
+    },
+    [resolvedStreamUrls]
+  );
 
    const fetchMeId = useCallback(async () => {
     try {
@@ -272,50 +326,18 @@ export default function LetsBuzzReels({
       const res = await fetch(`${API_BASE}/feed/letsbuzz`, { headers });
       const json = await res.json();
 
-      const raw: any[] = Array.isArray(json?.items) ? json.items : [];
+       const raw: any[] = Array.isArray(json?.items) ? json.items : [];
 
-      const baseList: BuzzPost[] = raw
-        .map((item: any): BuzzPost => {
-          const mediaId = String(item?.id || item?._id || "");
-          const caption = String(item?.caption || "");
+      const baseList: LetsBuzzNormalizedReel[] = raw
+        .map((item: any) => normalizeLetsBuzzReel(item))
+        .filter(
+          (item: LetsBuzzNormalizedReel | null): item is LetsBuzzNormalizedReel =>
+            item !== null
+        );
 
-          return {
-            id: mediaId,
-            mediaId,
-            userId: String(item?.userId || ""),
-            mediaUrl: String(item?.mediaUrl || ""),
-            type: String(item?.type || "video"),
-            caption,
-            text: stripCaptionTags(caption),
-            createdAt: item?.createdAt,
-            privacy: hasCaptionTag(caption, "scope:private")
-              ? "private"
-              : hasCaptionTag(caption, "scope:matches")
-              ? "matches"
-              : "public",
-            user: item?.user,
-            likesCount: 0,
-            commentsCount: 0,
-            isLiked: false,
-            fromGallery: true,
-            sourceType: "gallery",
-          };
-        })
-        .filter((item) => !!item.id && !!item.userId && !!item.mediaUrl);
-
-      const onlyReels = baseList.filter((item) => {
-        const type = String(item?.type || "").toLowerCase();
-        const caption = String(item?.caption || "").toLowerCase();
-        const hasMedia = !!String(item?.mediaUrl || "").trim();
-
-        const isVideo = type === "video" || type === "reel";
-        const isReelTag = caption.includes("kind:reel");
-        const isLetsBuzz = caption.includes("intent:letsbuzz");
-        const notPrivate = !caption.includes("scope:private");
-        const notMine = !myId || String(item.userId) !== String(myId);
-
-        return hasMedia && isVideo && isReelTag && isLetsBuzz && notPrivate && notMine;
-      });
+      const onlyReels = baseList.filter((item) =>
+        shouldShowInLetsBuzzReels(item, myId)
+      );
 
       const hydrated = await Promise.all(
         onlyReels.map(async (item) => {
@@ -327,11 +349,30 @@ export default function LetsBuzzReels({
               ? userJson.user.media
               : [];
 
-            const media = mediaList.find(
-              (mediaItem: any) =>
-                String(mediaItem?.id || mediaItem?._id || mediaItem?.mediaId || "") ===
-                String(item.mediaId || item.id)
-            );
+                  const targetKeys = [
+              item.mediaId,
+              item.id,
+              item.streamUid,
+              getStreamUid(item),
+            ]
+              .map((value) => String(value || "").trim())
+              .filter(Boolean);
+
+            const media = mediaList.find((mediaItem: any) => {
+              const mediaKeys = [
+                mediaItem?.id,
+                mediaItem?._id,
+                mediaItem?.mediaId,
+                mediaItem?.postId,
+                mediaItem?.streamUid,
+                mediaItem?.uid,
+                mediaItem?.cloudflareStream?.uid,
+              ]
+                .map((value) => String(value || "").trim())
+                .filter(Boolean);
+
+              return mediaKeys.some((key) => targetKeys.includes(key));
+            });
 
             if (!media) return item;
 
@@ -342,8 +383,17 @@ export default function LetsBuzzReels({
             commentCountByPostRef.current[String(item.id)] = visibleCommentCount;
             commentCountByPostRef.current[String(item.mediaId || item.id)] = visibleCommentCount;
 
-            return {
+             return {
               ...item,
+              mediaUrl: item.mediaUrl || getReelPlayableUrl(media),
+              provider: item.provider || media?.provider,
+              storage: item.storage || media?.storage,
+              streamUid: item.streamUid || getStreamUid(media),
+              playback: item.playback || media?.playback,
+              thumbnailUrl: item.thumbnailUrl || media?.thumbnailUrl,
+              cloudflareStream: item.cloudflareStream || media?.cloudflareStream,
+              status: item.status || media?.status || media?.cloudflareStream?.status,
+              duration: Number(item.duration || media?.duration || media?.cloudflareStream?.duration || 0),
               likesCount: countHeartReactions(reactions),
               commentsCount: visibleCommentCount,
               isLiked: reactions?.[myId] === "❤️",
@@ -737,6 +787,11 @@ export default function LetsBuzzReels({
     loadGiftSummary(currentReel);
   }, [currentReel?.id, currentReel?.mediaId, currentReel?.fromGallery, loadGiftSummary]);
 
+  useEffect(() => {
+    if (!currentReel) return;
+    resolveReelPlaybackUrl(currentReel).catch(() => {});
+  }, [currentReel?.id, currentReel?.streamUid, resolveReelPlaybackUrl]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -777,20 +832,38 @@ export default function LetsBuzzReels({
           renderItem={({ item, index }) => (
             <View style={styles.reelContainer}>
               <View style={styles.videoWrap}>
-                <Video
-                  ref={(ref) => {
-                    if (ref) videoRefs.current[String(item.id)] = ref;
-                  }}
-                  source={{ uri: item.mediaUrl || "" }}
-                  style={styles.video}
-                  resizeMode={ResizeMode.COVER}
-                  shouldPlay={index === currentIndex && !paused}
-                  isLooping
-                  isMuted={muted}
-                  useNativeControls={false}
-                  progressUpdateIntervalMillis={250}
-                  onError={() => {}}
-                />
+                            {(() => {
+                  const streamUid = getStreamUid(item);
+                  const playableUrl =
+                    getReelPlayableUrl(item) ||
+                    (streamUid ? resolvedStreamUrls[streamUid] || "" : "");
+
+                  if (!playableUrl) {
+                    return (
+                      <View style={[styles.video, styles.streamProcessing]}>
+                        <Ionicons name="videocam" size={42} color="rgba(255,255,255,0.85)" />
+                        <Text style={styles.streamProcessingText}>Preparing reel…</Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <Video
+                      ref={(ref) => {
+                        if (ref) videoRefs.current[String(item.id)] = ref;
+                      }}
+                      source={{ uri: playableUrl }}
+                      style={styles.video}
+                      resizeMode={ResizeMode.COVER}
+                      shouldPlay={index === currentIndex && !paused}
+                      isLooping
+                      isMuted={muted}
+                      useNativeControls={false}
+                      progressUpdateIntervalMillis={250}
+                      onError={() => {}}
+                    />
+                  );
+                })()}
 
                 {index === currentIndex ? (
                   <Pressable
@@ -1198,9 +1271,22 @@ const styles = StyleSheet.create({
     position: "relative",
   },
 
-  video: {
-    width: "100%",
-    height: "100%",
+   video: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+
+  streamProcessing: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: RBZ.darker,
+  },
+
+  streamProcessingText: {
+    color: RBZ.text,
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 10,
   },
 
   videoTapLayer: {

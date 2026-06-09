@@ -52,9 +52,47 @@ type Props = {
 };
 
 function displayName(row: GiftSummaryRow) {
-  const u = row.user || {};
+  const rawRow = row as any;
+  const u = rawRow.user || rawRow.fromUser || rawRow.sender || {};
   const full = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
-  return full || u.username || "User";
+  return full || u.name || u.username || "User";
+}
+
+function getRowAvatar(row: GiftSummaryRow) {
+  const rawRow = row as any;
+  const u: any = rawRow.user || rawRow.fromUser || rawRow.sender || {};
+
+  const direct =
+    u.avatar ||
+    u.avatarUrl ||
+    u.photoUrl ||
+    u.profilePic ||
+    u.imageUrl ||
+    u.picture ||
+    "";
+
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+
+  if (Array.isArray(u.photos)) {
+    const firstPhoto = u.photos.find((p: any) => {
+      if (typeof p === "string") return p.trim();
+      return p?.url || p?.mediaUrl || p?.photoUrl || p?.imageUrl;
+    });
+
+    if (typeof firstPhoto === "string") return firstPhoto.trim();
+
+    return String(
+      firstPhoto?.url ||
+        firstPhoto?.mediaUrl ||
+        firstPhoto?.photoUrl ||
+        firstPhoto?.imageUrl ||
+        ""
+    ).trim();
+  }
+
+  return "";
 }
 
 function giftImage(giftId: string) {
@@ -193,8 +231,11 @@ export default function GiftInsightSheet({
                       activeOpacity={0.75}
                     >
                       <View style={styles.avatar}>
-                        {!!item.user?.avatar ? (
-                          <Image source={{ uri: item.user.avatar }} style={styles.avatarImage} />
+                        {!!getRowAvatar(item) ? (
+                          <Image
+                            source={{ uri: getRowAvatar(item) }}
+                            style={styles.avatarImage}
+                          />
                         ) : (
                           <Text style={styles.avatarLetter}>
                             {displayName(item).slice(0, 1).toUpperCase()}

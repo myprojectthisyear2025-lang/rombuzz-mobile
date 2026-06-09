@@ -3,11 +3,12 @@
  * 📁 File: src/components/profile/Gallery/GallerySection.tsx
  * 🎯 Purpose: Profile → Gallery tab (Photos + Reels, upload, publish scope, fullscreen)
  *
- * Backend (NO backend changes):
+ * Backend:
+ *  - POST  /upload-r2-file       → upload file to Cloudflare R2
  *  - POST  /upload-media         → save media item into user.media[]
- *  - PATCH /media/:id/privacy    → set public/private (we map matches-only/private via caption tags)
+ *  - PATCH /media/:id/privacy    → set public/matches/private
  *
- * Caption Tags (stored inside `caption` so no backend changes):
+ * Caption Tags:
  *  - kind:photo | kind:reel
  *  - scope:public | scope:matches | scope:private
  *  - intent:discover | intent:viewprofile | intent:letsbuzz | intent:firstimpression
@@ -17,26 +18,23 @@
  * ============================================================================
  */
 
-import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
+import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
 import GalleryTabs from "./GalleryTabs";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";import FullscreenViewer from "./FullscreenViewer";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import FullscreenViewer from "./FullscreenViewer";
 import { pickMedia } from "./MediaUploader";
 import PhotoGrid from "./PhotoGrid";
+import ProfileUploadPreview from "./ProfileUploadPreview";
 import ReelGrid from "./ReelGrid";
 
 import {
   Alert,
-  Image,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  View
+  View,
 } from "react-native";
 
 const RBZ = {
@@ -58,7 +56,7 @@ type MediaItem = {
   url: string;
   type: "image" | "video";
   caption?: string;
-  privacy?: "public" | "private";
+  privacy?: "public" | "matches" | "private";
   createdAt?: any;
 };
 
@@ -142,46 +140,6 @@ function sortMediaNewestFirst(items: MediaItem[]) {
     .map(({ item }) => item);
 }
 
-function MediaPreview({
-  uri,
-  isVideo,
-}: {
-  uri: string;
-  isVideo: boolean;
-}) {
-  return (
-    <View
-      style={{
-        width: "100%",
-        height: 220,
-        borderRadius: 16,
-        overflow: "hidden",
-        backgroundColor: "#000",
-        marginBottom: 12,
-      }}
-    >
-      {isVideo ? (
-        <Video
-          source={{ uri }}
-          style={{ width: "100%", height: "100%" }}
-          resizeMode={ResizeMode.CONTAIN}
-          shouldPlay
-          isLooping
-          isMuted
-        />
-      ) : (
-        <Image
-          source={{ uri }}
-          style={{ width: "100%", height: "100%" }}
-          resizeMode="contain"
-        />
-      )}
-    </View>
-  );
-}
-
-
-
 export default function GallerySection({
   ownerId,
   media,
@@ -196,6 +154,8 @@ export default function GallerySection({
   deepLinkTargetType,
   deepLinkOwnerId,
   deepLinkOpenComments,
+  deepLinkOpenInsights,
+  deepLinkInsightsTab,
   deepLinkCommentId,
   deepLinkParentId,
   deepLinkReplyId,
@@ -208,10 +168,12 @@ export default function GallerySection({
   apiJson: (path: string, method: string, body: any) => Promise<any>;
   onRefresh: () => Promise<void> | void;
 
-  deepLinkTargetId?: string;
+   deepLinkTargetId?: string;
   deepLinkTargetType?: string;
   deepLinkOwnerId?: string;
   deepLinkOpenComments?: boolean;
+  deepLinkOpenInsights?: boolean;
+  deepLinkInsightsTab?: "gifts" | "comments";
   deepLinkCommentId?: string;
   deepLinkParentId?: string;
   deepLinkReplyId?: string;
@@ -279,6 +241,8 @@ useEffect(() => {
     deepLinkTargetType || "",
     deepLinkOwnerId || "",
     deepLinkOpenComments ? "comments" : "",
+    deepLinkOpenInsights ? "insights" : "",
+    deepLinkInsightsTab || "",
     deepLinkCommentId || "",
     deepLinkParentId || "",
     deepLinkReplyId || "",
@@ -313,6 +277,8 @@ useEffect(() => {
   deepLinkTargetType,
   deepLinkOwnerId,
   deepLinkOpenComments,
+  deepLinkOpenInsights,
+  deepLinkInsightsTab,
   deepLinkCommentId,
   deepLinkParentId,
   deepLinkReplyId,
@@ -337,50 +303,76 @@ const openPicker = async (target: MediaKind) => {
 };
 
 
- const savePicked = async () => {
+   const savePicked = async () => {
   if (!pickedAsset) return;
 
   try {
     setUploading(true);
 
-    // 1️⃣ Upload to Cloudinary (shared helper)
-    const cloudUrl = await uploadToCloudinaryUnsigned(
-      pickedAsset.uri,
-      pickedAsset.isVideo ? "video" : "image"
-    );
-
-    // 2️⃣ Build caption with tags
+    // 1️⃣ Build caption with tags before upload.
+    // Profile reels need this metadata during /stream/complete.
     const caption = buildCaption(kind, scope, intent, captionText);
 
-    // 3️⃣ Save metadata to backend
-    const saved = await apiJson("/upload-media", "POST", {
-      fileUrl: cloudUrl,
-      type: pickedAsset.isVideo ? "video" : "image",
-      caption,
-    });
-    console.log("UPLOAD RESPONSE:", JSON.stringify(saved, null, 2));
+    // 2️⃣ Upload actual file.
+    // - Images go to private Cloudflare R2.
+    // - Profile reels go to Cloudflare Stream direct upload.
+    const uploaded = await uploadRomBuzzMedia(
+      pickedAsset.uri,
+      pickedAsset.isVideo ? "video" : "image",
+      {
+        purpose: pickedAsset.isVideo ? "profile_reel" : "gallery-photo",
+        privacy: scope,
+        caption,
+        context: pickedAsset.isVideo ? "profile_reel" : "profile_gallery_photo",
+        filename: pickedAsset.isVideo ? "profile-reel.mp4" : "gallery-photo.jpg",
+      }
+    );
 
+    // 3️⃣ Cloudflare Stream profile reels are already saved by /stream/complete.
+    // Do not call /upload-media again for videos, or Stream metadata can be lost.
+    if (pickedAsset.isVideo) {
+      if (!uploaded?.streamUid) {
+        throw new Error("Stream upload did not return video UID");
+      }
 
-    // 4️⃣ Map scope → backend privacy
-    const backendPrivacy = scope === "public" ? "public" : "private";
+      console.log("STREAM PROFILE REEL UPLOAD RESPONSE:", JSON.stringify(uploaded, null, 2));
 
-    const newest =
-      Array.isArray(saved?.media) && saved.media.length > 0
-        ? saved.media[0]
-        : null;
+      setPublishOpen(false);
+      setPickedAsset(null);
 
-    if (newest?.id) {
-      await apiJson(`/media/${newest.id}/privacy`, "PATCH", {
-        privacy: backendPrivacy,
-      });
+      await onRefresh();
+
+      Alert.alert("Gallery", "Reel uploaded!");
+      return;
     }
 
-  setPublishOpen(false);
-setPickedAsset(null);
-await onRefresh();
+    const storedValue = uploaded?.r2Key || uploaded?.key || uploaded?.url || "";
+    if (!storedValue) {
+      throw new Error("Upload did not return media key");
+    }
 
-Alert.alert("Gallery", "Uploaded!");
+    // 4️⃣ Save R2 photo metadata to backend.
+    // IMPORTANT:
+    // - Send r2Key/fileKey when available.
+    // - Send privacy directly as public/matches/private.
+    // - Do NOT patch matches into private after this.
+    const saved = await apiJson("/upload-media", "POST", {
+      fileKey: uploaded?.r2Key || uploaded?.key || "",
+      r2Key: uploaded?.r2Key || uploaded?.key || "",
+      fileUrl: uploaded?.r2Key || uploaded?.key ? "" : uploaded?.url || "",
+      type: "image",
+      caption,
+      privacy: scope,
+    });
 
+    console.log("UPLOAD RESPONSE:", JSON.stringify(saved, null, 2));
+
+    setPublishOpen(false);
+    setPickedAsset(null);
+
+    await onRefresh();
+
+    Alert.alert("Gallery", "Uploaded!");
   } catch (e: any) {
     Alert.alert("Gallery", e?.message || "Upload failed");
   } finally {
@@ -546,97 +538,20 @@ const closePublish = () => {
 
       </View>
 
-      {/* Publish sheet (immediately after pick) */}
-      <Modal visible={publishOpen} transparent animationType="fade" onRequestClose={() => setPublishOpen(false)}>
-<Pressable
-  style={styles.backdrop}
-  onPress={() => setPublishOpen(false)}
-  pointerEvents="box-none"
-/>
-<View style={styles.sheet}>
-  <View style={styles.sheetHandle} />
-
-  {/* Header row */}
-  <View style={styles.sheetHeader}>
-    <Text style={styles.sheetTitle}>Publish settings</Text>
-
-    <Pressable onPress={closePublish} style={styles.sheetCloseBtn}>
-      <Ionicons name="close" size={20} color={RBZ.ink} />
-    </Pressable>
-  </View>
-
-  {/* 🔽 SCROLLABLE CONTENT */}
- <ScrollView
-  showsVerticalScrollIndicator={false}
-  contentContainerStyle={styles.sheetScroll}
-  keyboardShouldPersistTaps="handled"
-  bounces
->
-
-    <Text style={styles.sheetSub}>
-      This decides where the upload appears across Discover / ViewProfile / LetsBuzz.
-    </Text>
-
-{pickedAsset && (
-  <MediaPreview
-    uri={pickedAsset.uri}
-    isVideo={pickedAsset.isVideo}
-  />
-)}
-
-
-
-    {/* Who can see this */}
-    <Text style={styles.sheetLabel}>Who can see this?</Text>
-    <View style={styles.choiceRow}>
-      <ChoiceChip label="Public" active={scope === "public"} onPress={() => setScope("public")} tone="c2" />
-      <ChoiceChip label="Matched-only" active={scope === "matches"} onPress={() => setScope("matches")} tone="c4" />
-      <ChoiceChip label="Private" active={scope === "private"} onPress={() => setScope("private")} tone="ink" />
-    </View>
-
-    {/* Intent */}
-    <Text style={[styles.sheetLabel, { marginTop: 12 }]}>Intent</Text>
-    <View style={styles.choiceRow}>
-      <ChoiceChip label="Discover" active={intent === "discover"} onPress={() => setIntent("discover")} tone="c2" />
-      <ChoiceChip label="ViewProfile" active={intent === "viewprofile"} onPress={() => setIntent("viewprofile")} tone="c3" />
-    </View>
-    <View style={[styles.choiceRow, { marginTop: 8 }]}>
-      <ChoiceChip label="LetsBuzz" active={intent === "letsbuzz"} onPress={() => setIntent("letsbuzz")} tone="c4" />
-      <ChoiceChip label="First Impression" active={intent === "firstimpression"} onPress={() => setIntent("firstimpression")} tone="ink" />
-    </View>
-
-    {/* Caption */}
-    <Text style={[styles.sheetLabel, { marginTop: 12 }]}>Caption (optional)</Text>
-    <TextInput
-      value={captionText}
-      onChangeText={setCaptionText}
-      placeholder="Add a short vibe…"
-      placeholderTextColor="rgba(17,24,39,0.35)"
-      style={styles.input}
-    />
-
-    {/* Tools */}
-    <View style={styles.toolsRow}>
-      <ToolBtn icon="crop-outline" label="Crop" />
-      <ToolBtn icon="color-filter-outline" label="Filters" />
-      <ToolBtn icon="text-outline" label="Text" />
-      <ToolBtn icon="sparkles-outline" label="Edit" />
-    </View>
-
-    <Text style={styles.noteTiny}>
-      Editor tools above are the UI shell. Next step: we wire Crop/Text/Filters into a dedicated RBZ Editor screen.
-    </Text>
-  </ScrollView>
-
-  {/* 🔒 FIXED FOOTER BUTTON */}
-  <Pressable onPress={savePicked} style={styles.publishBtn} disabled={uploading}>
-    <Text style={styles.publishBtnText}>
-      {uploading ? "Uploading…" : "Publish"}
-    </Text>
-    <Ionicons name="arrow-forward" size={16} color={RBZ.white} />
-  </Pressable>
-</View>
- </Modal>
+      <ProfileUploadPreview
+        visible={publishOpen}
+        asset={pickedAsset}
+        kind={kind}
+        scope={scope}
+        intent={intent}
+        captionText={captionText}
+        uploading={uploading}
+        onClose={closePublish}
+        onPublish={savePicked}
+        onScopeChange={setScope}
+        onIntentChange={setIntent}
+        onCaptionChange={setCaptionText}
+      />
 
     <FullscreenViewer
   item={viewerOpen ? list[activeIndex] : null}
@@ -648,6 +563,8 @@ const closePublish = () => {
   apiFetch={apiFetch}
   apiJson={apiJson}
   deepLinkOpenComments={deepLinkOpenComments}
+  deepLinkOpenInsights={deepLinkOpenInsights}
+  deepLinkInsightsTab={deepLinkInsightsTab}
   deepLinkCommentId={deepLinkCommentId}
   deepLinkParentId={deepLinkParentId}
   deepLinkReplyId={deepLinkReplyId}
@@ -662,46 +579,6 @@ const closePublish = () => {
 />
 
   </View>
-  );
-}
-
-function ToolBtn({ icon, label }: { icon: any; label: string }) {
-  return (
-    <Pressable style={styles.toolBtn}>
-      <Ionicons name={icon} size={18} color={RBZ.ink} />
-      <Text style={styles.toolText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function ChoiceChip({
-  label,
-  active,
-  onPress,
-  tone,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  tone: keyof typeof RBZ;
-}) {
-  const border =
-    tone === "ink" ? "rgba(17,24,39,0.25)" : tone === "c2" ? "rgba(216,52,95,0.35)" : "rgba(181,23,158,0.35)";
-  const bg =
-    active
-      ? tone === "ink"
-        ? "rgba(17,24,39,0.92)"
-        : tone === "c2"
-        ? RBZ.c2
-        : RBZ.c4
-      : "rgba(255,255,255,0.65)";
-
-  const color = active ? RBZ.white : (tone === "ink" ? RBZ.ink : RBZ[tone]);
-
-  return (
-    <Pressable onPress={onPress} style={[styles.chip, { borderColor: border, backgroundColor: bg }]}>
-      <Text style={[styles.chipText, { color }]}>{label}</Text>
-    </Pressable>
   );
 }
 

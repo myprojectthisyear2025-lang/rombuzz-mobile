@@ -1,3 +1,8 @@
+/* add these features
+disable gift receiving
+*/
+
+
 /**
  * ============================================================================
  * 📁 File: app/(tabs)/settings/privacy.tsx

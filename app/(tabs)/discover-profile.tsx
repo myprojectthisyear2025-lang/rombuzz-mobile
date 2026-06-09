@@ -159,7 +159,19 @@ function normalizeImageUrl(value: any) {
 
 function getImageUrlFromEntry(entry: any) {
   if (typeof entry === "string") return normalizeImageUrl(entry);
-  return normalizeImageUrl(entry?.url);
+
+  return normalizeImageUrl(
+    entry?.url ||
+      entry?.mediaUrl ||
+      entry?.fileUrl ||
+      entry?.secureUrl ||
+      entry?.secure_url ||
+      entry?.src ||
+      entry?.imageUrl ||
+      entry?.photoUrl ||
+      entry?.videoUrl ||
+      ""
+  );
 }
 
 function getMediaVisibility(entry: any) {
@@ -168,6 +180,23 @@ function getMediaVisibility(entry: any) {
 
 function getMediaCaption(entry: any) {
   return String(entry?.caption || "").toLowerCase().trim();
+}
+
+function stripSignedUrlQuery(url: string) {
+  return String(url || "").split("?")[0].split("#")[0].trim();
+}
+
+function getMediaStableKey(entry: any) {
+  if (typeof entry === "string") return stripSignedUrlQuery(entry);
+
+  return String(
+    entry?.r2Key ||
+      entry?.key ||
+      entry?.mediaId ||
+      entry?.id ||
+      entry?._id ||
+      stripSignedUrlQuery(getImageUrlFromEntry(entry))
+  ).trim();
 }
 
 function isDiscoverSafeMediaEntry(entry: any) {
@@ -301,33 +330,37 @@ const distanceText = useMemo(() => {
   }, [user]);
 
  const photos: string[] = useMemo(() => {
-  const set = new Set<string>();
-  const avatarUrl = normalizeImageUrl(user?.avatar);
+  const seen = new Set<string>();
+  const out: string[] = [];
 
-  if (avatarUrl) {
-    set.add(avatarUrl);
-  }
+  const pushEntry = (entry: any) => {
+    if (!isDiscoverSafeMediaEntry(entry)) return;
 
+    const url = getImageUrlFromEntry(entry);
+    const key = getMediaStableKey(entry) || stripSignedUrlQuery(url);
+
+    if (!url || !key || seen.has(key)) return;
+
+    seen.add(key);
+    out.push(url);
+  };
+
+  // Public gallery media is the source of truth.
+  // Do not put avatar into the Photos grid.
   if (Array.isArray(user?.media)) {
-    user.media.forEach((m: any) => {
-      if (!isDiscoverSafeMediaEntry(m)) return;
-      const url = getImageUrlFromEntry(m);
-      if (url) set.add(url);
-    });
+    user.media.forEach(pushEntry);
   }
 
-  if (Array.isArray(user?.photos)) {
-    user.photos.forEach((p: any) => {
-      if (typeof p !== "string" && !isDiscoverSafeMediaEntry(p)) return;
-      const url = getImageUrlFromEntry(p);
-      if (url) set.add(url);
-    });
+  // Legacy fallback only. Backend may already duplicate media into photos,
+  // so only use this if media produced nothing.
+  if (out.length === 0 && Array.isArray(user?.photos)) {
+    user.photos.forEach(pushEntry);
   }
 
-  return Array.from(set).slice(0, 9);
+  return out.slice(0, 9);
 }, [user]);
 
-  const heroImage = photos[0] || normalizeImageUrl(user?.avatar);
+  const heroImage = normalizeImageUrl(user?.avatar) || photos[0];
  const relationshipMode = useMemo(() => {
   if (statusLoading) return "loading";
   if (relationshipStatus?.matched) return "matched";
@@ -430,68 +463,54 @@ const loadProfile = async (options?: { showSpinner?: boolean }) => {
     });
     const data = await res.json();
 
-    if (data?.user) {
+      if (data?.user) {
       const next = pickPublicFields(data.user);
 
-      setUser((prev: any) => {
-        const mergedMedia = [
-          ...(Array.isArray(prev?.media) ? prev.media : []),
-          ...(Array.isArray(next?.media) ? next.media : []),
-        ];
+      const dedupe = (arr: any[]) => {
+        const seen = new Set<string>();
+        const out: any[] = [];
 
-        const mergedPhotos = [
-          ...(Array.isArray(prev?.photos) ? prev.photos : []),
-          ...(Array.isArray(next?.photos) ? next.photos : []),
-        ];
+        for (const x of Array.isArray(arr) ? arr : []) {
+          if (!isDiscoverSafeMediaEntry(x)) continue;
 
-        const dedupe = (arr: any[]) => {
-          const seen = new Set<string>();
-          const out: any[] = [];
+          const url = getImageUrlFromEntry(x);
+          const key = getMediaStableKey(x) || stripSignedUrlQuery(url);
 
-          for (const x of arr) {
-            const k = getImageUrlFromEntry(x);
-            if (!k || seen.has(k)) continue;
+          if (!url || !key || seen.has(key)) continue;
 
-            seen.add(k);
-            out.push(typeof x === "string" ? k : { ...x, url: k });
-          }
+          seen.add(key);
+          out.push(typeof x === "string" ? url : { ...x, url });
+        }
 
-          return out;
-        };
+        return out;
+      };
 
-        const base = { ...(prev || {}) };
-
-        Object.entries(next || {}).forEach(([k, v]) => {
-          if (v !== undefined && v !== null && !(Array.isArray(v) && v.length === 0)) {
-            (base as any)[k] = v;
-          }
-        });
-
-   return {
-  ...base,
-  distanceMeters:
-    typeof (next as any)?.distanceMeters === "number"
-      ? (next as any).distanceMeters
-      : null,
-  distanceUnit:
-    typeof (next as any)?.distanceUnit === "string"
-      ? (next as any).distanceUnit
-      : "",
-  distanceValue:
-    typeof (next as any)?.distanceValue === "number"
-      ? (next as any).distanceValue
-      : null,
-  distanceText:
-    typeof (next as any)?.distanceText === "string"
-      ? (next as any).distanceText
-      : "",
-  distanceSource:
-    typeof (next as any)?.distanceSource === "string"
-      ? (next as any).distanceSource
-      : "",
-  media: dedupe(mergedMedia),
-  photos: dedupe(mergedPhotos),
-};
+      // Backend response is source of truth after hydration.
+      // Do not keep preview media, because preview can duplicate or be stale.
+      setUser({
+        ...next,
+        distanceMeters:
+          typeof (next as any)?.distanceMeters === "number"
+            ? (next as any).distanceMeters
+            : null,
+        distanceUnit:
+          typeof (next as any)?.distanceUnit === "string"
+            ? (next as any).distanceUnit
+            : "",
+        distanceValue:
+          typeof (next as any)?.distanceValue === "number"
+            ? (next as any).distanceValue
+            : null,
+        distanceText:
+          typeof (next as any)?.distanceText === "string"
+            ? (next as any).distanceText
+            : "",
+        distanceSource:
+          typeof (next as any)?.distanceSource === "string"
+            ? (next as any).distanceSource
+            : "",
+        media: dedupe((next as any)?.media),
+        photos: dedupe((next as any)?.photos),
       });
 
       setHydrated(true);
@@ -1035,8 +1054,8 @@ if (loading && !user) {
                   onPress={goToMatchedProfile}
                   style={[styles.actionButton, styles.sendButton, styles.fullActionButton]}
                 >
-                  <Ionicons name="chatbubbles" size={20} color={RBZ.white} />
-                  <Text style={styles.sendText}>Open Chat</Text>
+                  <Ionicons name="person" size={20} color={RBZ.white} />
+                  <Text style={styles.sendText}>Open Profile</Text>
                             </Pressable>
                       </>
             )}

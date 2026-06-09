@@ -16,7 +16,7 @@
  * ============================================================
  */
 
-import { uploadToCloudinaryUnsigned } from "@/src/config/uploadMedia";
+import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import React, { useEffect, useRef, useState } from "react";
@@ -48,8 +48,10 @@ function formatMs(ms: number) {
 
 export default function VoiceRecorderButton({
   onSend,
+  roomId,
 }: {
-  onSend: (url: string) => void;
+  onSend: (url: string, meta?: { previewUrl?: string; storage?: string; r2Key?: string }) => void;
+  roomId?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -286,7 +288,7 @@ export default function VoiceRecorderButton({
     setOpen(false);
   };
 
-  const sendPreview = async () => {
+    const sendPreview = async () => {
     if (!previewUri || busyRef.current) return;
     busyRef.current = true;
 
@@ -298,12 +300,20 @@ export default function VoiceRecorderButton({
         } catch {}
       }
 
-      const url = await uploadToCloudinaryUnsigned(previewUri, "audio");
+    const uploaded = await uploadRomBuzzMedia(previewUri, "audio", {
+        purpose: "chat-audio",
+        roomId,
+      });
       await resetPreview();
 
       setRecordingMs(0);
       setOpen(false);
-      onSend(url);
+
+      onSend(uploaded.r2Key || uploaded.url, {
+        previewUrl: uploaded.signedUrl || uploaded.url,
+        storage: uploaded.storage,
+        r2Key: uploaded.r2Key,
+      });
     } catch (e) {
       Alert.alert("Voice message failed", "Try again.");
     } finally {
@@ -376,13 +386,13 @@ export default function VoiceRecorderButton({
     );
   };
 
-  return (
-    <>
-      <Pressable style={styles.iconBtn} onPress={() => setOpen(true)}>
-        <Ionicons name="mic" size={20} color={RBZ.white} />
-      </Pressable>
+return (
+  <>
+    <Pressable style={styles.iconBtn} onPress={() => setOpen(true)}>
+      <Ionicons name="mic-outline" size={20} color={RBZ.c1} />
+    </Pressable>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={discardAll}>
+    <Modal visible={open} transparent animationType="fade" onRequestClose={discardAll}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text style={styles.title}>Voice message</Text>
@@ -435,14 +445,14 @@ export default function VoiceRecorderButton({
 }
 
 const styles = StyleSheet.create({
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(181,23,158,0.18)",
-  },
+iconBtn: {
+  width: 40,
+  height: 40,
+  borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "transparent",
+},
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

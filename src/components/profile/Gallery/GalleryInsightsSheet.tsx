@@ -96,6 +96,8 @@ export default function GalleryInsightsSheet({
 
   // Notification deep-link support
   deepLinkOpenComments,
+  deepLinkOpenInsights,
+  deepLinkInsightsTab,
   deepLinkCommentId,
   deepLinkParentId,
   deepLinkReplyId,
@@ -107,6 +109,8 @@ export default function GalleryInsightsSheet({
   bottomInset: number;
 
   deepLinkOpenComments?: boolean;
+  deepLinkOpenInsights?: boolean;
+  deepLinkInsightsTab?: "gifts" | "comments";
   deepLinkCommentId?: string;
   deepLinkParentId?: string;
   deepLinkReplyId?: string;
@@ -120,10 +124,11 @@ export default function GalleryInsightsSheet({
   const [insights, setInsights] = useState<any>(null);
   const [errMsg, setErrMsg] = useState<string>("");
 
-    // Shared private comments sheet
+      // Shared private comments sheet
   const [privateCommentsOpen, setPrivateCommentsOpen] = useState(false);
   const [privateCommentsCount, setPrivateCommentsCount] = useState(0);
   const deepLinkCommentsConsumedRef = useRef("");
+  const deepLinkInsightsConsumedRef = useRef("");
 
   // Gift summary data
   const [giftSummary, setGiftSummary] = useState<GiftSummaryResponse | null>(null);
@@ -296,6 +301,27 @@ export default function GalleryInsightsSheet({
     setExpandedGiftRow(null);
     setPrivateCommentsOpen(true);
   }, [mediaId, ownerId]);
+
+  useEffect(() => {
+    if (!deepLinkOpenInsights) return;
+    if (!ownerId || !mediaId) return;
+
+    const nextTab = deepLinkInsightsTab === "comments" ? "comments" : "gifts";
+
+    const consumedKey = [
+      String(ownerId || ""),
+      String(mediaId || ""),
+      nextTab,
+    ].join(":");
+
+    if (deepLinkInsightsConsumedRef.current === consumedKey) return;
+
+    deepLinkInsightsConsumedRef.current = consumedKey;
+    setExpandedGiftRow(null);
+    setPrivateCommentsOpen(false);
+    setTab(nextTab);
+    setDrawerOpen(true);
+  }, [deepLinkOpenInsights, deepLinkInsightsTab, ownerId, mediaId]);
 
   useEffect(() => {
     if (!deepLinkOpenComments) return;

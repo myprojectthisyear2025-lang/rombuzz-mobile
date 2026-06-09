@@ -122,10 +122,31 @@ function parseRBZ(text: any): any | null {
 }
 
 function pickMediaUrl(m: AnyMsg): string {
+  const p = parseRBZ(m?.text);
+
+  const isStreamVideo =
+    String(m?.provider || m?.storage || p?.provider || p?.storage || "").toLowerCase() ===
+      "cloudflare_stream" ||
+    !!m?.streamUid ||
+    !!m?.cloudflareStream?.uid ||
+    !!p?.streamUid ||
+    !!p?.cloudflareStream?.uid;
+
+  if (isStreamVideo) {
+    const streamUrl = String(
+      m?.playback?.hls ||
+        p?.playback?.hls ||
+        m?.url ||
+        p?.url ||
+        ""
+    ).trim();
+
+    if (streamUrl) return streamUrl;
+  }
+
   const direct = String(m?.url || m?.mediaUrl || "");
   if (direct) return direct;
 
-  const p = parseRBZ(m?.text);
   return (
     String(
       p?.url ||

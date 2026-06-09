@@ -124,6 +124,72 @@ function normalizeImageUrl(value: any) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getImageUrlFromEntry(entry: any) {
+  if (typeof entry === "string") return normalizeImageUrl(entry);
+
+  return normalizeImageUrl(
+    entry?.url ||
+      entry?.mediaUrl ||
+      entry?.fileUrl ||
+      entry?.secureUrl ||
+      entry?.secure_url ||
+      entry?.src ||
+      entry?.imageUrl ||
+      entry?.photoUrl ||
+      entry?.videoUrl ||
+      ""
+  );
+}
+
+function getMediaVisibility(entry: any) {
+  return String(entry?.privacy || entry?.visibility || entry?.scope || "")
+    .toLowerCase()
+    .trim();
+}
+
+function getMediaCaption(entry: any) {
+  return String(entry?.caption || entry?.text || entry?.description || "")
+    .toLowerCase()
+    .trim();
+}
+
+function isDiscoverSafeMediaEntry(entry: any) {
+  if (typeof entry === "string") return !!normalizeImageUrl(entry);
+
+  const url = getImageUrlFromEntry(entry);
+  if (!url) return false;
+
+  const visibility = getMediaVisibility(entry);
+  const caption = getMediaCaption(entry);
+  const type = String(entry?.type || entry?.mediaType || "")
+    .toLowerCase()
+    .trim();
+
+  if (
+    visibility === "private" ||
+    visibility === "matches" ||
+    visibility === "matched" ||
+    visibility === "matched-only" ||
+    visibility === "matched_only" ||
+    visibility === "hidden" ||
+    visibility === "specific"
+  ) {
+    return false;
+  }
+
+  if (caption.includes("scope:private")) return false;
+  if (caption.includes("scope:matches")) return false;
+  if (caption.includes("scope:matched")) return false;
+  if (caption.includes("privacy:private")) return false;
+  if (caption.includes("privacy:matches")) return false;
+  if (caption.includes("privacy:matched")) return false;
+  if (caption.includes("kind:reel")) return false;
+  if (caption.includes("kind:video")) return false;
+  if (type === "video" || type === "reel") return false;
+
+  return true;
+}
+
 function extractUserImageUrls(user: any): string[] {
   if (!user) return [];
 
@@ -137,19 +203,23 @@ function extractUserImageUrls(user: any): string[] {
     urls.push(url);
   };
 
+  // Avatar is allowed as the fallback/hero Discover image.
   pushUrl(user.avatar);
 
   if (Array.isArray(user.media)) {
     user.media.forEach((m: any) => {
-      pushUrl(typeof m === "string" ? m : m?.url);
+      if (!isDiscoverSafeMediaEntry(m)) return;
+      pushUrl(getImageUrlFromEntry(m));
     });
   }
 
   if (Array.isArray(user.photos)) {
     user.photos.forEach((p: any) => {
-      pushUrl(typeof p === "string" ? p : p?.url);
+      if (!isDiscoverSafeMediaEntry(p)) return;
+      pushUrl(getImageUrlFromEntry(p));
     });
   }
+
   return urls;
 }
 
@@ -627,13 +697,21 @@ const removeTopCard = useCallback(() => {
 
     // We pass a preview payload because Discover already returns safe profile fields
     // and we don't want to depend on extra endpoints.
+       const safePreviewMedia = Array.isArray(current.media)
+      ? current.media.filter((m: any) => isDiscoverSafeMediaEntry(m))
+      : [];
+
+    const safePreviewPhotos = Array.isArray((current as any).photos)
+      ? (current as any).photos.filter((p: any) => isDiscoverSafeMediaEntry(p))
+      : [];
+
     const preview = {
       id: current.id,
       firstName: current.firstName,
       lastName: current.lastName,
       avatar: normalizeImageUrl(current.avatar),
-      media: Array.isArray(current.media) ? current.media : [],
-      photos: Array.isArray((current as any).photos) ? (current as any).photos : [],
+      media: safePreviewMedia,
+      photos: safePreviewPhotos,
       dob: current.dob,
 
           city: current.city,

@@ -41,12 +41,47 @@ type GalleryVideoViewerProps = {
   screenWidth: number;
   screenHeight: number;
   insets: EdgeInsets;
+  apiFetch?: (path: string, init?: RequestInit) => Promise<any>;
 };
+
+function getStreamUid(item: any) {
+  return String(
+    item?.streamUid ||
+      item?.uid ||
+      item?.cloudflareStream?.uid ||
+      ""
+  ).trim();
+}
+
+function getVideoPlayableUrl(item: any) {
+  return String(
+    item?.url ||
+      item?.mediaUrl ||
+      item?.videoUrl ||
+      item?.secureUrl ||
+      item?.secure_url ||
+      item?.playback?.hls ||
+      item?.playback?.dash ||
+      ""
+  ).trim();
+}
+
+function isCloudflareStreamVideo(item: any) {
+  return (
+    String(item?.provider || item?.storage || "").toLowerCase() === "cloudflare_stream" ||
+    !!getStreamUid(item)
+  );
+}
 
 function isVideoItem(item: any) {
   const type = String(item?.type || "").toLowerCase();
-  const url = String(item?.url || "").toLowerCase();
-  return type === "video" || type === "reel" || /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(url);
+  const url = getVideoPlayableUrl(item).toLowerCase();
+  return (
+    isCloudflareStreamVideo(item) ||
+    type === "video" ||
+    type === "reel" ||
+    /\.(mp4|mov|m4v|webm|m3u8)(\?|#|$)/i.test(url)
+  );
 }
 
 function formatTime(ms: number) {
@@ -68,6 +103,7 @@ function ActiveVideoItem({
   onChangeIndex,
   listRef,
   screenHeight,
+  apiFetch,
 }: {
   item: any;
   rowIndex: number;
@@ -80,6 +116,7 @@ function ActiveVideoItem({
   onChangeIndex: (i: number) => void;
   listRef: React.RefObject<Animated.FlatList<any> | null>;
   screenHeight: number;
+  apiFetch?: (path: string, init?: RequestInit) => Promise<any>;
 }) {
   const videoRef = useRef<Video | null>(null);
   const videoLoaded = useRef(false);
@@ -87,7 +124,50 @@ function ActiveVideoItem({
   const [paused, setPaused] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
+  const [resolvedUrl, setResolvedUrl] = useState(() => getVideoPlayableUrl(item));
+  const [resolving, setResolving] = useState(false);
   const seeking = useSharedValue(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function resolveStreamPlayback() {
+      const existing = getVideoPlayableUrl(item);
+      if (existing) {
+        setResolvedUrl(existing);
+        return;
+      }
+
+      const uid = getStreamUid(item);
+      if (!uid || !apiFetch) {
+        setResolvedUrl("");
+        return;
+      }
+
+      try {
+        setResolving(true);
+        const data = await apiFetch(`/stream/${uid}/playback`);
+        const nextUrl = String(
+          data?.playback?.hls ||
+            data?.playback?.dash ||
+            ""
+        ).trim();
+
+        if (alive) setResolvedUrl(nextUrl);
+      } catch (err) {
+        console.log("Stream playback resolve failed:", err);
+        if (alive) setResolvedUrl("");
+      } finally {
+        if (alive) setResolving(false);
+      }
+    }
+
+    resolveStreamPlayback();
+
+    return () => {
+      alive = false;
+    };
+  }, [item?.id, item?.streamUid, item?.cloudflareStream?.uid, apiFetch]);
 
   useEffect(() => {
     if (!videoRef.current || !videoLoaded.current) return;
@@ -134,16 +214,25 @@ function ActiveVideoItem({
       pressRetentionOffset={{ top: 80, bottom: 120, left: 0, right: 0 }}
       onPress={() => {
         if (!isActive) return;
+        if (!resolvedUrl) return;
         setPaused((p) => !p);
       }}
     >
+      {!resolvedUrl ? (
+        <View style={[styles.streamLoading, { width: mediaWidth, height: mediaHeight }]}>
+          <Ionicons name="videocam" size={34} color={RBZ.white} />
+          <Text style={styles.streamLoadingText}>
+            {resolving ? "Preparing reel…" : "Reel is processing"}
+          </Text>
+        </View>
+      ) : (
       <Video
         ref={(ref) => {
           videoRef.current = ref;
           if (ref) videoLoaded.current = false;
         }}
-        key={`video-${item?.id || item?.url}-${rowIndex}`}
-        source={{ uri: item?.url }}
+        key={`video-${item?.id || item?.streamUid || item?.url}-${rowIndex}`}
+        source={{ uri: resolvedUrl }}
         onLoad={() => {
           videoLoaded.current = true;
           if (isActive && !paused) videoRef.current?.playAsync?.();
@@ -173,6 +262,7 @@ function ActiveVideoItem({
         }}
         onError={(e) => console.log("Video error:", e)}
       />
+      )}
 
       {paused && isActive ? (
         <View style={styles.pausedOverlay} pointerEvents="none">
@@ -232,6 +322,7 @@ export default function GalleryVideoViewer({
   screenWidth,
   screenHeight,
   insets,
+  apiFetch,
 }: GalleryVideoViewerProps) {
   const listRef = useRef<Animated.FlatList<any>>(null);
 
@@ -281,7 +372,7 @@ export default function GalleryVideoViewer({
             ]}
           >
             {isVideoItem(rowItem) ? (
-              <ActiveVideoItem
+                <ActiveVideoItem
                 item={rowItem}
                 rowIndex={rowIndex}
                 activeIndex={activeIndex}
@@ -293,6 +384,7 @@ export default function GalleryVideoViewer({
                 onChangeIndex={onChangeIndex}
                 listRef={listRef}
                 screenHeight={screenHeight}
+                apiFetch={apiFetch}
               />
             ) : (
               <PassivePhotoItem item={rowItem} mediaWidth={mediaWidth} mediaHeight={mediaHeight} />
@@ -319,6 +411,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignSelf: "stretch",
     justifyContent: "center",
+  },
+
+  streamLoading: {
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#111827",
+    borderRadius: 18,
+  },
+
+  streamLoadingText: {
+    marginTop: 10,
+    color: RBZ.white,
+    fontSize: 13,
+    fontWeight: "800",
   },
 
   pausedOverlay: {

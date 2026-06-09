@@ -46,10 +46,9 @@ export default function SettingsHome() {
         <NavRow icon="help-circle-outline" label="Help" onPress={() => router.push("/(tabs)/settings/help")} />
       </Card>
 
-      <SectionTitle>Danger zone</SectionTitle>
+        <SectionTitle>Danger zone</SectionTitle>
       <Card>
-        <NavRow icon="pause-circle-outline" label="Deactivate account" onPress={() => router.push("/(tabs)/settings/manage-account")} />
-        <NavRow icon="trash-outline" label="Delete account" onPress={() => router.push("/(tabs)/settings/manage-account?mode=delete")} danger />
+        <NavRow icon="trash-outline" label="Delete account" onPress={() => router.push("/(tabs)/settings/manage-account")} danger />
         <NavRow
           icon="log-out-outline"
           label="Logout"

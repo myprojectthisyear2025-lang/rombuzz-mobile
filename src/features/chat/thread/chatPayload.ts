@@ -49,7 +49,23 @@ export const maybeDecode = (m: any) => {
   if (typeof m?.text === "string" && m.text.startsWith(RBZ_TAG)) {
     try {
       const payload = JSON.parse(m.text.slice(RBZ_TAG.length));
-      return { ...m, ...payload };
+
+      // ✅ Important:
+      // Some backend unlock events/messages may include fresh top-level gift
+      // metadata while the encoded ::RBZ:: text still contains the original
+      // locked gift payload. The server/top-level gift metadata must win here,
+      // otherwise the UI can keep rendering the old locked/black state.
+      return {
+        ...m,
+        ...payload,
+        gift:
+          payload?.gift || m?.gift
+            ? {
+                ...(payload?.gift || {}),
+                ...(m?.gift || {}),
+              }
+            : undefined,
+      };
     } catch {
       return m;
     }
@@ -86,10 +102,38 @@ export const decodeCached = (m: any) => {
     m?.actorName || ""
   )}|${String(m?.pinnedTargetId || "")}`;
 
-  // sig changes if message text/deleted/edited/seen/reactions/replyTo/pin state changes
+  const giftSig = (() => {
+    try {
+      return JSON.stringify(m?.gift || null);
+    } catch {
+      return "";
+    }
+  })();
+
+  const mediaSig = (() => {
+    try {
+      return JSON.stringify({
+        url: m?.url || "",
+        mediaUrl: m?.mediaUrl || "",
+        previewUrl: m?.previewUrl || "",
+        signedUrl: m?.signedUrl || "",
+        thumbnailUrl: m?.thumbnailUrl || "",
+        streamUid: m?.streamUid || "",
+        cloudflareStream: m?.cloudflareStream || null,
+        playback: m?.playback || null,
+        storage: m?.storage || "",
+        provider: m?.provider || "",
+        status: m?.status || "",
+      });
+    } catch {
+      return "";
+    }
+  })();
+
+  // sig changes if message text/deleted/edited/seen/reactions/replyTo/pin/gift/media state changes
   const sig = `${String(m?.text || "")}|${String(m?.deleted || "")}|${String(
     m?.edited || ""
-  )}|${String(m?.seen || "")}|${reactionsSig}|${replySig}|${pinSig}`;
+  )}|${String(m?.seen || "")}|${reactionsSig}|${replySig}|${pinSig}|${giftSig}|${mediaSig}`;
 
   const hit = decodedCacheRef.current.get(id);
   if (hit && hit.sig === sig) return hit.val;

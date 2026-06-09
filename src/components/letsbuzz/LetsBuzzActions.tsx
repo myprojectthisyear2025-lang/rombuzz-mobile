@@ -381,9 +381,10 @@ export function useLetsBuzzActions(meId: string) {
           />
         ) : null}
 
-        <GiftInsightSheet
+         <GiftInsightSheet
           visible={giftInsightsOpen}
           summary={giftSummary}
+          currentUserId={String(meId || "")}
           onClose={() => {
             setGiftInsightsOpen(false);
             setGiftSummary(null);

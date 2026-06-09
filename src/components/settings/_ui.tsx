@@ -44,10 +44,14 @@ export function ScreenShell({
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const handleBack = () => {
+    router.replace("/(tabs)/profile");
+  };
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={handleBack} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={22} color={RBZ.text} />
         </Pressable>
         <Text style={styles.headerTitle}>{title}</Text>
