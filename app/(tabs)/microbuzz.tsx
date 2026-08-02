@@ -119,6 +119,10 @@ const TIPS = [
 const TICK_MS = 2000;
 const RADIUS_KM = __DEV__ ? 0.75 : 0.1;
 
+// Backend deletes MicroBuzz selfies from R2 after 5 minutes.
+// Refresh a little early so active users do not show broken images.
+const MICROBUZZ_SELFIE_REFRESH_MS = 4.5 * 60 * 1000;
+
 type NearbyUser = {
   id: string;
   name?: string;
@@ -242,6 +246,7 @@ export default function MicroBuzzScreen() {
   const isActiveRef = useRef(false);
   const coordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const selfieUrlRef = useRef<string>("");
+  const selfieUploadedAtRef = useRef<number>(0);
 
   useEffect(() => {
     isActiveRef.current = isActive;
@@ -447,7 +452,7 @@ export default function MicroBuzzScreen() {
     return res;
   }
 
-  async function uploadSelfie(uri: string) {
+    async function uploadSelfie(uri: string) {
     const token = await getToken();
     const form = new FormData();
 
@@ -466,9 +471,44 @@ export default function MicroBuzzScreen() {
     });
 
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error || "Selfie upload failed");
-    if (!data?.url) throw new Error("Upload succeeded but no url returned");
-    return data.url as string;
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Selfie upload failed");
+    }
+
+    const storageKey = String(data?.r2Key || data?.key || "").trim();
+    const displayUrl = String(data?.signedUrl || data?.url || "").trim();
+
+    if (!storageKey) {
+      throw new Error("Upload succeeded but no R2 key returned");
+    }
+
+    return {
+      storageKey,
+      displayUrl,
+      storage: String(data?.storage || "r2"),
+      expiresAt: String(data?.expiresAt || ""),
+    };
+  }
+
+  async function ensureFreshMicroBuzzSelfieUpload() {
+    if (!mySelfieLocalUri) return selfieUrlRef.current;
+
+    const currentKey = selfieUrlRef.current;
+    const uploadedAt = selfieUploadedAtRef.current;
+    const ageMs = uploadedAt ? Date.now() - uploadedAt : Number.POSITIVE_INFINITY;
+
+    if (currentKey && ageMs < MICROBUZZ_SELFIE_REFRESH_MS) {
+      return currentKey;
+    }
+
+    const uploaded = await uploadSelfie(mySelfieLocalUri);
+
+    setSelfieUrl(uploaded.storageKey);
+    selfieUrlRef.current = uploaded.storageKey;
+    selfieUploadedAtRef.current = Date.now();
+
+    return uploaded.storageKey;
   }
 
   // REFRESH LOCATION: always query OS permission state each time before getting location
@@ -504,10 +544,12 @@ export default function MicroBuzzScreen() {
 
   async function heartbeatActivate() {
     const c = coordsRef.current;
-    const sUrl = selfieUrlRef.current;
-    if (!c || !sUrl) return;
+    if (!c) return;
 
     try {
+      const sUrl = await ensureFreshMicroBuzzSelfieUpload();
+      if (!sUrl) return;
+
       await apiFetch("/microbuzz/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -630,14 +672,13 @@ export default function MicroBuzzScreen() {
       if (!coordsRef.current) throw new Error("No location yet");
       if (!mySelfieLocalUri) throw new Error("Take a selfie first");
       
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setBusy("Going live…");
 
-      let url = selfieUrlRef.current;
-      if (!url) {
-        url = await uploadSelfie(mySelfieLocalUri);
-        setSelfieUrl(url);
-        selfieUrlRef.current = url;
+        const selfieStorageValue = await ensureFreshMicroBuzzSelfieUpload();
+
+      if (!selfieStorageValue) {
+        throw new Error("Selfie upload failed");
       }
 
       const c = coordsRef.current!;
@@ -647,7 +688,7 @@ export default function MicroBuzzScreen() {
         body: JSON.stringify({
           lat: c.lat,
           lng: c.lng,
-          selfieUrl: url,
+          selfieUrl: selfieStorageValue,
         }),
       });
 

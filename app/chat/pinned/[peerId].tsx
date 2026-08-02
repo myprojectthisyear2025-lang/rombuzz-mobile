@@ -15,6 +15,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "@/src/config/api";
+import {
+  readCachedChatThread,
+  writeCachedChatThread,
+} from "@/src/features/chat/thread/rbzChatThreadCache";
 import { getSocket } from "@/src/lib/socket";
 
 const RBZ = {
@@ -101,6 +105,16 @@ const getPinnedPreview = (m: any) => {
   return text.length > 120 ? `${text.slice(0, 117).trimEnd()}...` : text;
 };
 
+function buildPinnedMessages(list: any[]): PinnedMessage[] {
+  return (Array.isArray(list) ? list : [])
+    .filter((m: any) => !!m?.pinned && !m?.deleted && !m?._temp)
+    .sort(
+      (a: any, b: any) =>
+        toMs(b?.pinnedAt || b?.createdAt || b?.time) -
+        toMs(a?.pinnedAt || a?.createdAt || a?.time)
+    );
+}
+
 export default function PinnedMessagesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -129,11 +143,28 @@ export default function PinnedMessagesScreen() {
   }, []);
 
   useEffect(() => {
-    if (!myId || !peerId) return;
+    if (!myId || !peerId || !roomId) return;
+
+    let alive = true;
 
     (async () => {
+      let showedCached = false;
+
       setLoading(true);
+
       try {
+        const cached = await readCachedChatThread(roomId);
+
+        if (cached?.messages?.length && alive) {
+          const cachedPinned = buildPinnedMessages(cached.messages);
+
+          if (cachedPinned.length) {
+            showedCached = true;
+            setItems(cachedPinned);
+            setLoading(false);
+          }
+        }
+
         const token = await SecureStore.getItemAsync("RBZ_TOKEN");
         const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -141,21 +172,24 @@ export default function PinnedMessagesScreen() {
         const data = await r.json().catch(() => []);
         const list = Array.isArray(data) ? data : [];
 
-        const pinned = list
-          .filter((m: any) => !!m?.pinned && !m?.deleted && !m?._temp)
-          .sort(
-            (a: any, b: any) =>
-              toMs(b?.pinnedAt || b?.createdAt || b?.time) -
-              toMs(a?.pinnedAt || a?.createdAt || a?.time)
-          );
+        if (!alive) return;
 
-        setItems(pinned);
+        writeCachedChatThread(roomId, list).catch(() => {});
+        setItems(buildPinnedMessages(list));
       } catch {
-        setItems([]);
+        if (!showedCached && alive) {
+          setItems([]);
+        }
       } finally {
-        setLoading(false);
+        if (alive) {
+          setLoading(false);
+        }
       }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, [myId, peerId, roomId]);
 
   useEffect(() => {
@@ -241,6 +275,10 @@ export default function PinnedMessagesScreen() {
         <FlatList
           data={items}
           keyExtractor={(item) => String(item.id)}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews
           contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 20, gap: 10 }}
           renderItem={({ item }) => {
             const isMine = String(item.from) === String(myId);

@@ -21,6 +21,8 @@ import PremiumBuzzReceiverOverlay, {
 import { API_BASE } from "@/src/config/api";
 import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
 import { getSocket, onNotification } from "@/src/lib/socket";
+import { rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
+import { rbzStartupWarmup } from "@/src/performance/startup/rbzStartupWarmup";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Tabs, useRouter, useSegments } from "expo-router";
@@ -132,6 +134,12 @@ export default function TabLayout() {
 
   const tabName = segments?.[1] ?? null;
 
+  // ✅ Batch 2 startup warmup:
+  // This runs after layout mounts and never blocks tab rendering.
+  useEffect(() => {
+    rbzStartupWarmup().catch(() => {});
+  }, []);
+
   /* -------------------------------
      ✅ CHAT UNREAD TOTAL (BOTTOM BADGE)
      Rules:
@@ -147,10 +155,11 @@ export default function TabLayout() {
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const prevTabRef = useRef<string | null>(null);
 
-   // ✅ Bottom layout owns live chat unread now.
+  // ✅ Bottom layout owns live chat unread now.
   // Do NOT depend on chat.tsx being mounted.
   const chatUnreadSeenIdsRef = useRef<Record<string, number>>({});
   const chatUnreadSyncTimerRef = useRef<any>(null);
+  const chatUnreadFetchAtRef = useRef(0);
 
   // ✅ Active chat thread guard.
   // If Tom is already inside Kylie thread, Kylie messages should NOT bump layout badge.
@@ -211,9 +220,15 @@ export default function TabLayout() {
     } catch {}
   };
 
-  const fetchChatUnreadSummary = async () => {
+   const fetchChatUnreadSummary = async (force = false) => {
     try {
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+      const now = Date.now();
+
+      // ✅ PERF: layout stays mounted globally, so do not let it spam unread-summary.
+      if (!force && now - chatUnreadFetchAtRef.current < 15_000) return;
+      chatUnreadFetchAtRef.current = now;
+
+      const token = await rbzGetAuthToken();
       if (!token) return;
 
       const r = await fetch(`${API_BASE}/chat/unread-summary`, {
@@ -282,11 +297,11 @@ export default function TabLayout() {
       const raw = await SecureStore.getItemAsync(UNREAD_TOTAL_KEY);
       const n = Number(raw || 0) || 0;
 
-      if (!alive) return;
+       if (!alive) return;
       setChatUnreadTotal(n);
 
       // ✅ Then server truth, so badge is correct even after cold start.
-      fetchChatUnreadSummary();
+      fetchChatUnreadSummary(true);
     };
 
     const totalSub = DeviceEventEmitter.addListener(
@@ -336,8 +351,7 @@ export default function TabLayout() {
 
     const getMyId = async () => {
       try {
-        const raw = await SecureStore.getItemAsync("RBZ_USER");
-        const u = raw ? JSON.parse(raw) : null;
+        const u = await rbzGetCurrentUser();
         return String(u?.id || u?._id || "");
       } catch {
         return "";
@@ -423,12 +437,12 @@ export default function TabLayout() {
         }
       } catch {}
 
-      s.on("chat:unread:update", onUnreadUpdate);
+        s.on("chat:unread:update", onUnreadUpdate);
       s.on("chat:message", onIncomingMessage);
       s.on("direct:message", onIncomingMessage);
 
       // ✅ Fresh server truth when socket connects/reconnects.
-      s.on("connect", fetchChatUnreadSummary);
+      s.on("connect", () => fetchChatUnreadSummary(true));
 
       fetchChatUnreadSummary();
     })();
@@ -443,10 +457,10 @@ export default function TabLayout() {
 
       if (!s) return;
 
-      s.off("chat:unread:update", onUnreadUpdate);
+        s.off("chat:unread:update", onUnreadUpdate);
       s.off("chat:message", onIncomingMessage);
       s.off("direct:message", onIncomingMessage);
-      s.off("connect", fetchChatUnreadSummary);
+      s.off("connect");
     };
   }, []);
 
@@ -484,12 +498,12 @@ export default function TabLayout() {
  useEffect(() => {
   let alive = true;
 
-  const loadTabProfile = async () => {
-    const raw = await SecureStore.getItemAsync("RBZ_USER");
-    if (!alive || !raw) return;
+   const loadTabProfile = async () => {
+    if (!alive) return;
 
     try {
-      const u = JSON.parse(raw);
+      const u = await rbzGetCurrentUser();
+      if (!alive || !u) return;
 
       setProfilePhoto(
         u?.avatar ||
@@ -537,26 +551,53 @@ export default function TabLayout() {
     createdAt?: string;
   };
 
+  const NOTIF_UNREAD_TOTAL_KEY = "RBZ_notif_unread_total";
+
   const [notifToken, setNotifToken] = useState("");
   const [notifUnreadTotal, setNotifUnreadTotal] = useState(0);
   const seenNotifIds = useRef<Set<string>>(new Set());
+  const notifUnreadFetchAtRef = useRef(0);
 
-  useEffect(() => {
+   useEffect(() => {
+    const notifSub = DeviceEventEmitter.addListener(
+      "rbz:notif:unread-total",
+      (payload: any) => {
+        const total = Number(payload?.total || 0) || 0;
+        setNotifUnreadTotal(Math.max(0, total));
+      }
+    );
+
     (async () => {
-      const t = (await SecureStore.getItemAsync("RBZ_TOKEN")) || "";
+      const cachedNotifRaw = await SecureStore.getItemAsync(NOTIF_UNREAD_TOTAL_KEY);
+      const cachedNotifTotal = Number(cachedNotifRaw || 0) || 0;
+      setNotifUnreadTotal(Math.max(0, cachedNotifTotal));
+
+      const t = await rbzGetAuthToken();
       setNotifToken(t);
     })();
+
+    return () => {
+      notifSub.remove();
+    };
   }, []);
 
-  const fetchNotifUnreadTotal = async () => {
+   const fetchNotifUnreadTotal = async (force = false) => {
     if (!notifToken) return;
+
     try {
+      const now = Date.now();
+
+      // ✅ PERF: do not fetch the entire notifications list on every tab movement.
+      if (!force && now - notifUnreadFetchAtRef.current < 60_000) return;
+      notifUnreadFetchAtRef.current = now;
+
       const res = await fetch(`${API_BASE}/notifications`, {
         headers: { Authorization: `Bearer ${notifToken}` },
       });
       const data = await res.json().catch(() => []);
       if (!Array.isArray(data)) {
         setNotifUnreadTotal(0);
+        await SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, "0").catch(() => {});
         return;
       }
 
@@ -568,18 +609,28 @@ export default function TabLayout() {
         return !n?.read ? acc + 1 : acc;
       }, 0);
 
-      setNotifUnreadTotal(unread);
+      const safeUnread = Math.max(0, unread);
+      setNotifUnreadTotal(safeUnread);
+      await SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, String(safeUnread)).catch(() => {});
     } catch {
-      setNotifUnreadTotal(0);
+      // Keep cached/stale badge instead of forcing 0 on network failure.
     }
   };
 
-  // refresh on token load + any tab change (so it updates after reading notifications)
+   // ✅ PERF:
+  // Load once when token is ready.
+  // Only force refresh when entering Notifications tab, not on every tab movement.
   useEffect(() => {
     if (!notifToken) return;
-    fetchNotifUnreadTotal();
+
+    if (tabName === "notifications") {
+      fetchNotifUnreadTotal(true);
+      return;
+    }
+
+    fetchNotifUnreadTotal(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifToken, tabName]);
+  }, [notifToken, tabName === "notifications"]);
 
    // realtime bump
   useEffect(() => {
@@ -591,11 +642,17 @@ export default function TabLayout() {
       await getSocket();
       unsub = onNotification((n: NotificationItem) => {
         if (!n?.id) return;
-        if (seenNotifIds.current.has(n.id)) return;
+            if (seenNotifIds.current.has(n.id)) return;
         seenNotifIds.current.add(n.id);
 
         // if backend sends read=false (or missing), treat as unread
-        if (!n.read) setNotifUnreadTotal((c) => c + 1);
+        if (!n.read) {
+          setNotifUnreadTotal((c) => {
+            const next = Math.max(0, Number(c || 0) + 1);
+            SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, String(next)).catch(() => {});
+            return next;
+          });
+        }
       });
     })();
 

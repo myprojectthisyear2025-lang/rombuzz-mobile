@@ -17,9 +17,9 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
 import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { getDirectStreamThumbnailUrl } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
 
 const GRID_COLUMNS = 3;
 const GRID_GAP = 7;
@@ -141,10 +141,17 @@ function MediaTile({
   onOpen: (item: ViewProfileMediaItem, index: number) => void;
 }) {
   const uri = getUrl(item);
+  const streamUid = getStreamUid(item);
   const thumbnailUrl = getThumbnailUrl(item);
   const isStream = isCloudflareStreamReel(item);
 
-   return (
+  const reelPoster =
+    thumbnailUrl ||
+    (streamUid ? getDirectStreamThumbnailUrl(streamUid) : "");
+
+  const imageUri = kind === "reel" ? reelPoster : uri;
+
+  return (
     <View
       style={[
         styles.gridItem,
@@ -155,28 +162,19 @@ function MediaTile({
       ]}
     >
       <Pressable onPress={() => onOpen(item, index)} style={styles.mediaPressable}>
-        {kind === "reel" ? (
-          uri ? (
-            <Video
-              source={{ uri }}
-              style={styles.media}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={false}
-              isMuted
-              isLooping={false}
-            />
-          ) : thumbnailUrl ? (
-            <Image source={{ uri: thumbnailUrl }} style={styles.media} resizeMode="cover" />
-          ) : (
-            <View style={styles.streamPlaceholder}>
-              <Ionicons name="videocam" size={24} color={RBZ.white} />
-              <Text style={styles.streamPlaceholderText}>
-                {isStream ? "Processing" : "Reel"}
-              </Text>
-            </View>
-          )
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.media} resizeMode="cover" />
         ) : (
-          <Image source={{ uri }} style={styles.media} resizeMode="cover" />
+          <View style={styles.streamPlaceholder}>
+            <Ionicons
+              name={kind === "reel" ? "videocam" : "image"}
+              size={24}
+              color={RBZ.white}
+            />
+            <Text style={styles.streamPlaceholderText}>
+              {kind === "reel" && isStream ? "Processing" : kind === "reel" ? "Reel" : "Photo"}
+            </Text>
+          </View>
         )}
 
         {kind === "reel" ? (
@@ -192,7 +190,6 @@ function MediaTile({
           </>
         ) : null}
       </Pressable>
-
     </View>
   );
 }

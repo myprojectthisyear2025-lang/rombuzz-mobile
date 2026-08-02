@@ -45,6 +45,13 @@ import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet
 import GiftInsightSheet from "@/src/components/gifts/GiftInsightSheet";
 import GiftPicker from "@/src/components/gifts/GiftPicker";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
+import {
+  preloadLetsBuzzFeedImages,
+  readCachedLetsBuzzFeed,
+  readCachedLetsBuzzMeId,
+  writeCachedLetsBuzzFeed,
+  writeCachedLetsBuzzMeId,
+} from "@/src/features/performance/letsbuzz/rbzLetsBuzzFeedCache";
 import { getSocket } from "@/src/lib/socket";
 import {
   getReelPlayableUrl,
@@ -187,6 +194,17 @@ type LetsBuzzReelsProps = {
   replyId?: string;
 };
 
+function buildReelsFromLetsBuzzRaw(raw: any[], myId = "") {
+  const baseList: LetsBuzzNormalizedReel[] = raw
+    .map((item: any) => normalizeLetsBuzzReel(item))
+    .filter(
+      (item: LetsBuzzNormalizedReel | null): item is LetsBuzzNormalizedReel =>
+        item !== null
+    );
+
+  return baseList.filter((item) => shouldShowInLetsBuzzReels(item, myId));
+}
+
 export default function LetsBuzzReels({
   targetPostId,
   targetType,
@@ -202,8 +220,11 @@ export default function LetsBuzzReels({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reels, setReels] = useState<BuzzPost[]>([]);
+  const reelsRef = useRef<BuzzPost[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [meId, setMeId] = useState("");
+  const meIdRef = useRef("");
+  const bootedRef = useRef(false);
 
   const videoRefs = useRef<Record<string, any>>({});
   const [muted, setMuted] = useState(false);
@@ -239,6 +260,11 @@ export default function LetsBuzzReels({
   }, []);
 
   const currentReel = reels[currentIndex] || null;
+
+  const setReelsSafe = useCallback((next: BuzzPost[]) => {
+    reelsRef.current = Array.isArray(next) ? next : [];
+    setReels(reelsRef.current);
+  }, []);
 
   const fullName = useMemo(() => {
     return getOwnerName(currentReel?.user);
@@ -287,8 +313,19 @@ export default function LetsBuzzReels({
       const json = await res.json();
 
       const id = json?.user?.id || json?.id || json?.userId || "";
-      if (id) setMeId(String(id));
-    } catch {}
+
+      if (id) {
+        const safeId = String(id);
+        meIdRef.current = safeId;
+        setMeId(safeId);
+        await writeCachedLetsBuzzMeId(safeId);
+        return safeId;
+      }
+
+      return "";
+    } catch {
+      return "";
+    }
   }, []);
 
   const openComments = useCallback((post: BuzzPost) => {
@@ -308,39 +345,39 @@ export default function LetsBuzzReels({
     setCommentsOpen(true);
   }, []);
 
-  const loadReels = useCallback(async () => {
-    try {
-      const headers = await authHeaders();
+    const loadReels = useCallback(
+    async (options?: { silent?: boolean }) => {
+      try {
+        const headers = await authHeaders();
 
-      let myId = String(meId || "");
-      if (!myId) {
-        try {
-          const meRes = await fetch(`${API_BASE}/users/me`, { headers });
-          const meJson = await meRes.json();
+        let myId = String(meIdRef.current || "");
+        if (!myId) {
+          myId = await readCachedLetsBuzzMeId();
+          meIdRef.current = myId;
+        }
 
-          myId = String(meJson?.user?.id || meJson?.id || meJson?.userId || "");
-          if (myId) setMeId(myId);
-        } catch {}
-      }
+        if (!myId) {
+          fetchMeId().catch(() => {});
+        }
 
-      const res = await fetch(`${API_BASE}/feed/letsbuzz`, { headers });
-      const json = await res.json();
+        const res = await fetch(`${API_BASE}/feed/letsbuzz`, { headers });
+        const json = await res.json();
 
-       const raw: any[] = Array.isArray(json?.items) ? json.items : [];
+        const raw: any[] = Array.isArray(json?.items) ? json.items : [];
+        await writeCachedLetsBuzzFeed(raw);
 
-      const baseList: LetsBuzzNormalizedReel[] = raw
-        .map((item: any) => normalizeLetsBuzzReel(item))
-        .filter(
-          (item: LetsBuzzNormalizedReel | null): item is LetsBuzzNormalizedReel =>
-            item !== null
-        );
+        const onlyReels = buildReelsFromLetsBuzzRaw(raw, myId);
 
-      const onlyReels = baseList.filter((item) =>
-        shouldShowInLetsBuzzReels(item, myId)
-      );
+        // Show fresh feed immediately. Do NOT wait for /users/:id hydration.
+        setReelsSafe(onlyReels);
+        preloadLetsBuzzFeedImages(raw, 6);
 
-      const hydrated = await Promise.all(
-        onlyReels.map(async (item) => {
+        if (onlyReels.length) {
+          setLoading(false);
+        }
+
+        Promise.all(
+          onlyReels.map(async (item) => {
           try {
             const userRes = await fetch(`${API_BASE}/users/${item.userId}`, { headers });
             const userJson = await userRes.json();
@@ -401,16 +438,42 @@ export default function LetsBuzzReels({
           } catch {
             return item;
           }
-        })
-      );
+            })
+      )
+        .then((hydrated) => {
+          setReelsSafe(hydrated);
 
-         setReels(hydrated);
+          if (targetPostId) {
+            const idx = hydrated.findIndex((item) => String(item?.id) === String(targetPostId));
+
+            if (idx >= 0) {
+              const targetReel = hydrated[idx];
+
+              setCurrentIndex(idx);
+
+              setTimeout(() => {
+                try {
+                  listRef.current?.scrollToIndex({
+                    index: idx,
+                    animated: false,
+                    viewPosition: 0,
+                  });
+                } catch {}
+
+                if (deepLinkOpenComments && targetReel) {
+                  openComments(targetReel);
+                }
+              }, 150);
+            }
+          }
+        })
+        .catch(() => {});
 
       if (targetPostId) {
-        const idx = hydrated.findIndex((item) => String(item?.id) === String(targetPostId));
+        const idx = onlyReels.findIndex((item) => String(item?.id) === String(targetPostId));
 
         if (idx >= 0) {
-          const targetReel = hydrated[idx];
+          const targetReel = onlyReels[idx];
 
           setCurrentIndex(idx);
 
@@ -430,15 +493,18 @@ export default function LetsBuzzReels({
         }
       }
 
-       Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } catch (error) {
-      console.log("LetsBuzzReels load error:", error);
-    }
-  }, [deepLinkOpenComments, fadeAnim, meId, openComments, targetPostId]);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      } catch (error) {
+        console.log("LetsBuzzReels load error:", error);
+      }
+    },
+      [deepLinkOpenComments, fadeAnim, fetchMeId, openComments, setReelsSafe, targetPostId]
+  );
+
   const loadGiftSummary = useCallback(async (post: BuzzPost | null) => {
     try {
       const displayKey = getGiftDisplayKey(post);
@@ -719,11 +785,41 @@ export default function LetsBuzzReels({
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
+      if (bootedRef.current) return;
+      bootedRef.current = true;
+
+      let showedCached = false;
+
       try {
         setLoading(true);
-        await fetchMeId();
-        await loadReels();
+
+        const [cached, cachedMeId] = await Promise.all([
+          readCachedLetsBuzzFeed(),
+          readCachedLetsBuzzMeId(),
+        ]);
+
+        if (cachedMeId) {
+          meIdRef.current = cachedMeId;
+        }
+
+        if (cached?.items?.length && !cancelled) {
+          const cachedReels = buildReelsFromLetsBuzzRaw(
+            cached.items,
+            cachedMeId || meIdRef.current
+          );
+
+          if (cachedReels.length) {
+            showedCached = true;
+            setReelsSafe(cachedReels);
+            preloadLetsBuzzFeedImages(cached.items, 6);
+            setLoading(false);
+          }
+        }
+
+        fetchMeId().catch(() => {});
+        await loadReels({ silent: showedCached });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -753,11 +849,11 @@ export default function LetsBuzzReels({
       forceCommentCountsRerender((value) => value + 1);
     };
 
-    const onGiftNew = (event: any) => {
+       const onGiftNew = (event: any) => {
       const postId = String(event?.postId || event?.targetId || "");
       if (!postId) return;
 
-      const matched = reels.find(
+      const matched = reelsRef.current.find(
         (item) =>
           String(item.id) === postId ||
           String(item.mediaId || "") === postId ||
@@ -780,8 +876,7 @@ export default function LetsBuzzReels({
       socket.off?.("comment:deleted", onCommentDeleted);
       socket.off?.("buzz:gift:new", onGiftNew);
     };
-  }, [fetchMeId, loadGiftSummary, loadReels, socket]);
-
+  }, [fetchMeId, loadGiftSummary, loadReels, setReelsSafe, socket]);
   useEffect(() => {
     if (!currentReel?.id) return;
     loadGiftSummary(currentReel);
@@ -818,10 +913,14 @@ export default function LetsBuzzReels({
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       <View style={styles.reelsContainer}>
-        <FlatList
+            <FlatList
           ref={listRef}
           data={reels}
           keyExtractor={(item) => item.id}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          windowSize={3}
+          removeClippedSubviews
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -831,12 +930,30 @@ export default function LetsBuzzReels({
           }
           renderItem={({ item, index }) => (
             <View style={styles.reelContainer}>
-              <View style={styles.videoWrap}>
-                            {(() => {
+                      <View style={styles.videoWrap}>
+                {(() => {
+                  const isActive = index === currentIndex;
+                  const isWarm = Math.abs(index - currentIndex) <= 1;
                   const streamUid = getStreamUid(item);
                   const playableUrl =
                     getReelPlayableUrl(item) ||
                     (streamUid ? resolvedStreamUrls[streamUid] || "" : "");
+
+                  if (!isWarm) {
+                    const thumb = String(item.thumbnailUrl || "").trim();
+
+                    if (thumb) {
+                      return (
+                        <Image
+                          source={{ uri: thumb }}
+                          style={styles.video}
+                          resizeMode="cover"
+                        />
+                      );
+                    }
+
+                    return <View style={[styles.video, styles.streamProcessing]} />;
+                  }
 
                   if (!playableUrl) {
                     return (
@@ -855,11 +972,11 @@ export default function LetsBuzzReels({
                       source={{ uri: playableUrl }}
                       style={styles.video}
                       resizeMode={ResizeMode.COVER}
-                      shouldPlay={index === currentIndex && !paused}
+                      shouldPlay={isActive && !paused}
                       isLooping
                       isMuted={muted}
                       useNativeControls={false}
-                      progressUpdateIntervalMillis={250}
+                      progressUpdateIntervalMillis={500}
                       onError={() => {}}
                     />
                   );

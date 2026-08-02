@@ -50,6 +50,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "@/src/config/api";
+import {
+  readCachedChatThread,
+  writeCachedChatThread,
+} from "@/src/features/chat/thread/rbzChatThreadCache";
 
 const RBZ = {
   c1: "#b1123c",
@@ -205,6 +209,52 @@ function pickUnlockedBy(m: AnyMsg): string[] {
   return Array.from(new Set([...direct, ...nested]));
 }
 
+function buildPurchasedMediaRows(arr: AnyMsg[]): MediaRow[] {
+  return (Array.isArray(arr) ? arr : [])
+    .filter((m) => {
+      if (!m) return false;
+      if (m?.deleted) return false;
+      if (isEphemeral(m)) return false;
+
+      const type = String(m?.type || "");
+      const url = pickMediaUrl(m);
+      const giftLocked = pickGiftLocked(m);
+      const giftPriceBC = pickGiftPriceBC(m);
+      const isMedia = type === "media" || !!url;
+
+      if (!isMedia) return false;
+      if (!url) return false;
+
+      // ✅ Purchased Media means paid/gifted media.
+      // It must stay here after unlock too, so do not depend only on gift.locked.
+      if (!giftLocked && giftPriceBC <= 0) return false;
+
+      return true;
+    })
+    .map((m) => {
+      const id = String(m?.id || m?._id || "");
+      const url = pickMediaUrl(m);
+      const createdAtMs = toMs(m?.createdAt || m?.time);
+      const mediaType = pickMediaType(m);
+      const giftLocked = pickGiftLocked(m);
+      const giftPriceBC = pickGiftPriceBC(m);
+
+      return {
+        id,
+        url,
+        mediaType,
+        createdAtMs,
+        giftLocked,
+        giftPriceBC,
+        fromId: String(m?.from || m?.senderId || ""),
+        toId: String(m?.to || m?.receiverId || ""),
+        unlockedBy: pickUnlockedBy(m),
+      } as MediaRow;
+    })
+    .filter((x) => !!x.id && !!x.url)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs);
+}
+
 export default function PurchasedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -252,11 +302,26 @@ export default function PurchasedMediaHub() {
     })();
   }, []);
 
-  const load = async () => {
-    if (!myId || !peerId) return;
+   const load = async () => {
+    if (!myId || !peerId || !roomId) return;
+
+    let showedCached = false;
 
     setLoading(true);
+
     try {
+      const cached = await readCachedChatThread(roomId);
+
+      if (cached?.messages?.length) {
+        const cachedRows = buildPurchasedMediaRows(cached.messages);
+
+        if (cachedRows.length) {
+          showedCached = true;
+          setPurchased(cachedRows);
+          setLoading(false);
+        }
+      }
+
       const token = await SecureStore.getItemAsync("RBZ_TOKEN");
       const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -265,53 +330,12 @@ export default function PurchasedMediaHub() {
       const list = (await r.json()) as AnyMsg[];
       const arr = Array.isArray(list) ? list : [];
 
-      const media = arr
-        .filter((m) => {
-          if (!m) return false;
-          if (m?.deleted) return false;
-          if (isEphemeral(m)) return false;
-
-              const type = String(m?.type || "");
-          const url = pickMediaUrl(m);
-          const giftLocked = pickGiftLocked(m);
-          const giftPriceBC = pickGiftPriceBC(m);
-          const isMedia = type === "media" || !!url;
-
-          if (!isMedia) return false;
-          if (!url) return false;
-
-          // ✅ Purchased Media means paid/gifted media.
-          // It must stay here after unlock too, so do not depend only on gift.locked.
-          if (!giftLocked && giftPriceBC <= 0) return false;
-
-          return true;
-        })
-        .map((m) => {
-          const id = String(m?.id || m?._id || "");
-          const url = pickMediaUrl(m);
-          const createdAtMs = toMs(m?.createdAt || m?.time);
-          const mediaType = pickMediaType(m);
-          const giftLocked = pickGiftLocked(m);
-          const giftPriceBC = pickGiftPriceBC(m);
-
-          return {
-            id,
-            url,
-            mediaType,
-            createdAtMs,
-            giftLocked,
-            giftPriceBC,
-            fromId: String(m?.from || m?.senderId || ""),
-            toId: String(m?.to || m?.receiverId || ""),
-            unlockedBy: pickUnlockedBy(m),
-          } as MediaRow;
-        })
-        .filter((x) => !!x.id && !!x.url)
-        .sort((a, b) => b.createdAtMs - a.createdAtMs);
-
-      setPurchased(media);
+      writeCachedChatThread(roomId, arr).catch(() => {});
+      setPurchased(buildPurchasedMediaRows(arr));
     } catch {
-      setPurchased([]);
+      if (!showedCached) {
+        setPurchased([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -635,11 +659,15 @@ export default function PurchasedMediaHub() {
           <Text style={styles.emptySub}>Only locked / purchased media appears here.</Text>
         </View>
       ) : (
-        <FlatList
+         <FlatList
           data={data}
           key={mediaTab}
           keyExtractor={(x) => x.id}
           numColumns={3}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={5}
+          removeClippedSubviews
           columnWrapperStyle={{ gap }}
           contentContainerStyle={{
             paddingHorizontal: pad,

@@ -56,6 +56,8 @@ import {
 } from "@/src/components/profile/profileGalleryMedia";
 import { API_BASE } from "@/src/config/api";
 import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
+import { useCachedProfile } from "@/src/features/performance/useCachedProfile";
+import { rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 
 
 const RBZ = {
@@ -109,7 +111,7 @@ function buildGuidanceList(user: any) {
   }
 
   list.push(
-    { icon: "🔥", text: "Check in today to keep your BuzzStreak alive." },
+    { icon: "🔥", text: "Check in daily - 7 days straight earns 100 BuzzCoin." },
     { icon: "📍", text: "Try MicroBuzz to meet people nearby in real life." },
     { icon: "💞", text: "Swipe on Discover to find new matches." },
     { icon: "📝", text: "Post on MyBuzz so matches know you better." },
@@ -707,8 +709,9 @@ const [editTarget, setEditTarget] = useState<EditTarget>(null);
 const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
 // Add Story modal
 const [addStoryOpen, setAddStoryOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
+   const [uploading, setUploading] = useState(false);
 const hydratedOnceRef = useRef(false);
+const profilePerf = useCachedProfile();
 
   // ---------- Inline edit (Info tab only)
   type InlineField =
@@ -754,8 +757,9 @@ const hydratedOnceRef = useRef(false);
         ...(data?.user || {}),
       };
 
-      setUser(merged);
+          setUser(merged);
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
+      profilePerf.writeCachedProfile(merged).catch(() => {});
 
 
       setEditingField(null);
@@ -1015,21 +1019,32 @@ useEffect(() => {
 }, []);
 
  const hydrateUserFromLocal = useCallback(async () => {
-  if (hydratedOnceRef.current) return;
+  if (hydratedOnceRef.current && user) return true;
 
   try {
-    const cached = await SecureStore.getItemAsync("RBZ_USER");
-    if (!cached) return;
+    // ✅ Prefer full Profile cache first because it includes media/posts from /profile/full.
+    const cachedProfile = await profilePerf.readCachedProfile();
 
-    const u = JSON.parse(cached);
+    let u = cachedProfile?.user || null;
+
+    // ✅ Fallback to normal RBZ_USER if full profile cache is not ready yet.
+    if (!u) {
+      u = await rbzGetCurrentUser().catch(() => null);
+    }
+
+    if (!u) return false;
 
     setUser(u);
     hydrateFormFromUser(u);
     hydratedOnceRef.current = true;
+    setLoading(false);
+
+    return true;
   } catch (e) {
-    console.log("Failed to hydrate RBZ_USER", e);
+    console.log("Failed to hydrate cached profile", e);
+    return false;
   }
-}, [hydrateFormFromUser]);
+}, [hydrateFormFromUser, profilePerf, user]);
 
 
 const lastProfileSyncRef = useRef<number>(0);
@@ -1043,7 +1058,7 @@ const loadProfile = useCallback(
         setLoading(true);
       }
 
-      const data = await apiFetch("/profile/full");
+     const data = await profilePerf.fetchProfileFresh();
       const u = data?.user;
 
       if (u) {
@@ -1079,7 +1094,7 @@ const loadProfile = useCallback(
       }
     }
   },
-  [hydrateFormFromUser, loadMyStories, user]
+  [hydrateFormFromUser, loadMyStories, profilePerf, user]
 );
 
 

@@ -17,11 +17,12 @@
  */
 
 import { API_BASE } from "@/src/config/api";
+import { useCachedNotifications } from "@/src/features/performance/useCachedNotifications";
 import { getSocket, onNotification } from "@/src/lib/socket";
+import { rbzApiJson, rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -85,6 +86,19 @@ interface NotificationItem {
   read?: boolean;
   createdAt: string | Date;
   via?: string;
+}
+
+function toNotificationItems(list: any[]): NotificationItem[] {
+  return (Array.isArray(list) ? list : [])
+    .map((n: any) => ({
+      ...n,
+      id: String(n?.id || n?._id || ""),
+      toId: String(n?.toId || n?.to || ""),
+      type: (n?.type || "system") as NotificationType,
+      message: String(n?.message || ""),
+      createdAt: n?.createdAt || new Date().toISOString(),
+    }))
+    .filter((n: NotificationItem) => !!n.id);
 }
 
 const FILTERS: NotificationType[] = [
@@ -169,23 +183,28 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedNotification, setExpandedNotification] = useState<NotificationItem | null>(null);
 
-  // For menu positioning
+   // For menu positioning
   const menuRefs = useRef<{ [key: string]: { x: number, y: number, width: number, height: number } }>({});
   
   // de-dupe guard for real-time (avoid double inserts)
   const seenIds = useRef(new Set<string>());
+
+  const notificationPerf = useCachedNotifications();
+
+  const rememberNotifications = (list: NotificationItem[]) => {
+    notificationPerf.writeCachedNotifications(list).catch(() => {});
+  };
 
   // ---------------------------
   // Load token once
   // ---------------------------
     useEffect(() => {
     (async () => {
-      const t = (await SecureStore.getItemAsync("RBZ_TOKEN")) || "";
+      const t = await rbzGetAuthToken();
       setToken(t);
 
       try {
-        const rawUser = await SecureStore.getItemAsync("RBZ_USER");
-        const parsedUser = rawUser ? JSON.parse(rawUser) : null;
+        const parsedUser = await rbzGetCurrentUser();
         setCurrentUserId(String(parsedUser?.id || parsedUser?._id || ""));
       } catch {
         setCurrentUserId("");
@@ -200,26 +219,26 @@ export default function NotificationsScreen() {
     if (!token) return;
 
     try {
-      const res = await fetch(`${API_BASE}/notifications`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // ✅ Show cached notifications first so the page does not feel like a reload.
+      const cached = await notificationPerf.readCachedNotifications();
 
-      const data = await res.json().catch(() => null);
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.notifications)
-        ? data.notifications
-        : [];
+       if (cached.hit) {
+        const cachedList = toNotificationItems(cached.notifications);
+
+        seenIds.current.clear();
+        cachedList.forEach((n) => n?.id && seenIds.current.add(n.id));
+        setNotifications(cachedList);
+        setLoading(false);
+      }
+
+      // ✅ Fresh backend data refreshes quietly.
+      const fresh = await notificationPerf.fetchNotificationsFresh();
+      const freshList = toNotificationItems(fresh);
 
       seenIds.current.clear();
-      list.forEach((n: NotificationItem) => n?.id && seenIds.current.add(n.id));
+      freshList.forEach((n) => n?.id && seenIds.current.add(n.id));
 
-      setNotifications(
-        list.sort(
-          (a: NotificationItem, b: NotificationItem) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )
-      );
+      setNotifications(freshList);
     } catch (err) {
       console.warn("Fetch notifications failed:", err);
     } finally {
@@ -231,6 +250,7 @@ export default function NotificationsScreen() {
   useEffect(() => {
     if (!token) return;
     fetchNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // ---------------------------
@@ -251,11 +271,13 @@ export default function NotificationsScreen() {
         if (seenIds.current.has(n.id)) return;
         seenIds.current.add(n.id);
 
-        setNotifications((prev) => {
+                setNotifications((prev) => {
           const next = [n, ...prev];
           next.sort(
             (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
+
+          rememberNotifications(next as NotificationItem[]);
           return next;
         });
       });
@@ -291,94 +313,86 @@ export default function NotificationsScreen() {
   // ---------------------------
   // Helpers: API actions
   // ---------------------------
-  const markAsRead = async (id: string) => {
+   const markAsRead = async (id: string) => {
     // optimistic
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    setNotifications((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+      rememberNotifications(next as NotificationItem[]);
+      return next;
+    });
     setSelectedMenuId(null);
 
     try {
-      await fetch(`${API_BASE}/notifications/${id}/read`, {
+      await rbzApiJson(`/notifications/${id}/read`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
       });
     } catch {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: false } : n))
-      );
+      setNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, read: false } : n));
+        rememberNotifications(next as NotificationItem[]);
+        return next;
+      });
     }
   };
 
   const markAsUnread = async (id: string) => {
     // optimistic
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: false } : n))
-    );
+    setNotifications((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, read: false } : n));
+      rememberNotifications(next as NotificationItem[]);
+      return next;
+    });
     setSelectedMenuId(null);
 
     try {
-      await fetch(`${API_BASE}/notifications/${id}/unread`, {
+      await rbzApiJson(`/notifications/${id}/unread`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
       });
     } catch {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-      );
+      setNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+        rememberNotifications(next as NotificationItem[]);
+        return next;
+      });
     }
   };
 
   const markAllAsRead = async () => {
     const unread = notifications.filter((n) => !n.read);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
+    setNotifications((prev) => {
+      const next = prev.map((n) => ({ ...n, read: true }));
+      rememberNotifications(next as NotificationItem[]);
+      return next;
+    });
 
     try {
       await Promise.allSettled(
         unread.map((n) =>
-          fetch(`${API_BASE}/notifications/${n.id}/read`, {
+          rbzApiJson(`/notifications/${n.id}/read`, {
             method: "PATCH",
-            headers: { Authorization: `Bearer ${token}` },
           })
         )
       );
     } catch {}
   };
 
-  const deleteNotification = async (id: string) => {
+   const deleteNotification = async (id: string) => {
     // optimistic remove
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setNotifications((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      rememberNotifications(next as NotificationItem[]);
+      return next;
+    });
     setSelectedMenuId(null);
 
     try {
-      await fetch(`${API_BASE}/notifications/${id}`, {
+      await rbzApiJson(`/notifications/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
       } catch (err) {
       // if delete failed, refetch to stay consistent
-      try {
-        const res = await fetch(`${API_BASE}/notifications`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const data = await res.json().catch(() => null);
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.notifications)
-          ? data.notifications
-          : [];
-
-        seenIds.current.clear();
-        list.forEach((n: NotificationItem) => n?.id && seenIds.current.add(n.id));
-
-        setNotifications(
-          list.sort(
-            (a: NotificationItem, b: NotificationItem) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          )
-        );
-      } catch {}
+      fetchNotifications();
     }
   };
 
@@ -759,16 +773,7 @@ export default function NotificationsScreen() {
     return { top, right };
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="small" color={C1} />
-        <Text style={styles.loadingText}>Loading notifications...</Text>
-      </View>
-    );
-  }
-
-  return (
+   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -979,16 +984,28 @@ export default function NotificationsScreen() {
           );
         })}
 
-        {filteredNotifications.length === 0 && (
+             {filteredNotifications.length === 0 && (
           <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <FontAwesome5 name="bell-slash" size={40} color="#d1d5db" />
-            </View>
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptyText}>
-              When you get likes, comments, or matches, they'll appear here
-            </Text>
-            {filter !== "all" && (
+            {loading ? (
+              <>
+                <ActivityIndicator size="small" color={C1} />
+                <Text style={styles.emptyTitle}>Loading notifications...</Text>
+                <Text style={styles.emptyText}>
+                  Your latest activity will appear here.
+                </Text>
+              </>
+            ) : (
+              <>
+                <View style={styles.emptyIcon}>
+                  <FontAwesome5 name="bell-slash" size={40} color="#d1d5db" />
+                </View>
+                <Text style={styles.emptyTitle}>No notifications yet</Text>
+                <Text style={styles.emptyText}>
+                  When you get likes, comments, or matches, they'll appear here
+                </Text>
+              </>
+            )}
+            {filter !== "all" && !loading && (
               <TouchableOpacity
                 style={styles.emptyButton}
                 onPress={() => setFilter("all")}

@@ -51,6 +51,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "@/src/config/api";
+import {
+  readCachedChatThread,
+  writeCachedChatThread,
+} from "@/src/features/chat/thread/rbzChatThreadCache";
 
 const RBZ = {
   c1: "#b1123c",
@@ -195,6 +199,45 @@ function isGiftOrPurchasedMedia(m: AnyMsg): boolean {
   return pickGiftLocked(m) || pickGiftPriceBC(m) > 0;
 }
 
+function buildSharedMediaRows(arr: AnyMsg[]): MediaRow[] {
+  return (Array.isArray(arr) ? arr : [])
+    .filter((m) => {
+      if (!m) return false;
+      if (m?.deleted) return false;
+      if (isEphemeral(m)) return false;
+
+      // ✅ Shared Media should show only normal chat media.
+      // Gifted/paid media belongs ONLY in Purchased Media.
+      if (isGiftOrPurchasedMedia(m)) return false;
+
+      const type = String(m?.type || "");
+      const url = pickMediaUrl(m);
+      const isMedia = type === "media" || !!url;
+
+      if (!isMedia) return false;
+      if (!url) return false;
+
+      return true;
+    })
+    .map((m) => {
+      const id = String(m?.id || m?._id || "");
+      const url = pickMediaUrl(m);
+      const createdAtMs = toMs(m?.createdAt || m?.time);
+      const mediaType = pickMediaType(m);
+      const giftLocked = pickGiftLocked(m);
+
+      return {
+        id,
+        url,
+        mediaType,
+        createdAtMs,
+        giftLocked,
+      } as MediaRow;
+    })
+    .filter((x) => !!x.id && !!x.url)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs);
+}
+
 export default function SharedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -241,11 +284,26 @@ export default function SharedMediaHub() {
     })();
   }, []);
 
-  const load = async () => {
-    if (!myId || !peerId) return;
+   const load = async () => {
+    if (!myId || !peerId || !roomId) return;
+
+    let showedCached = false;
 
     setLoading(true);
+
     try {
+      const cached = await readCachedChatThread(roomId);
+
+      if (cached?.messages?.length) {
+        const cachedRows = buildSharedMediaRows(cached.messages);
+
+        if (cachedRows.length) {
+          showedCached = true;
+          setShared(cachedRows);
+          setLoading(false);
+        }
+      }
+
       const token = await SecureStore.getItemAsync("RBZ_TOKEN");
       const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -254,46 +312,12 @@ export default function SharedMediaHub() {
       const list = (await r.json()) as AnyMsg[];
       const arr = Array.isArray(list) ? list : [];
 
-       const media = arr
-        .filter((m) => {
-          if (!m) return false;
-          if (m?.deleted) return false;
-          if (isEphemeral(m)) return false;
-
-          // ✅ Shared Media should show only normal chat media.
-          // Gifted/paid media belongs ONLY in Purchased Media.
-          if (isGiftOrPurchasedMedia(m)) return false;
-
-          const type = String(m?.type || "");
-          const url = pickMediaUrl(m);
-          const isMedia = type === "media" || !!url;
-
-          if (!isMedia) return false;
-          if (!url) return false;
-
-          return true;
-        })
-        .map((m) => {
-          const id = String(m?.id || m?._id || "");
-          const url = pickMediaUrl(m);
-          const createdAtMs = toMs(m?.createdAt || m?.time);
-          const mediaType = pickMediaType(m);
-          const giftLocked = pickGiftLocked(m);
-
-          return {
-            id,
-            url,
-            mediaType,
-            createdAtMs,
-            giftLocked,
-          } as MediaRow;
-        })
-        .filter((x) => !!x.id && !!x.url)
-        .sort((a, b) => b.createdAtMs - a.createdAtMs);
-
-      setShared(media);
+      writeCachedChatThread(roomId, arr).catch(() => {});
+      setShared(buildSharedMediaRows(arr));
     } catch {
-      setShared([]);
+      if (!showedCached) {
+        setShared([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -548,11 +572,15 @@ export default function SharedMediaHub() {
           <Text style={styles.emptySub}>View once/twice media never appears here.</Text>
         </View>
       ) : (
-        <FlatList
+         <FlatList
           data={data}
           key={mediaTab}
           keyExtractor={(x) => x.id}
           numColumns={3}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={5}
+          removeClippedSubviews
           columnWrapperStyle={{ gap }}
           contentContainerStyle={{
             paddingHorizontal: pad,

@@ -29,6 +29,13 @@ import RBZImageViewer, {
   type RBZImageViewerItem,
 } from "@/src/components/media/RBZImageViewer";
 import { API_BASE } from "@/src/config/api";
+import {
+  preloadLetsBuzzFeedImages,
+  readCachedLetsBuzzFeed,
+  readCachedLetsBuzzMeId,
+  writeCachedLetsBuzzFeed,
+  writeCachedLetsBuzzMeId,
+} from "@/src/features/performance/letsbuzz/rbzLetsBuzzFeedCache";
 import { getSocket } from "@/src/lib/socket";
 import { useLetsBuzzActions } from "./LetsBuzzActions";
 
@@ -146,6 +153,54 @@ type LetsBuzzPostsProps = {
   replyId?: string;
 };
 
+function buildPostsFromLetsBuzzRaw(raw: any[], myId = "") {
+  const list: BuzzPost[] = raw
+    .map((p: any): BuzzPost => {
+      const mediaId = String(p?.id || p?._id || "");
+      const caption = String(p?.caption || "");
+
+      return {
+        id: mediaId,
+        mediaId,
+        fromGallery: true,
+        commentsCount: Array.isArray(p?.comments) ? p.comments.length : 0,
+
+        userId: String(p?.userId || ""),
+        mediaUrl: String(p?.mediaUrl || ""),
+        type: String(p?.type || "image") as BuzzPost["type"],
+        text: stripCaptionTags(caption),
+        createdAt: p?.createdAt,
+        user: p?.user,
+      };
+    })
+    .filter((p) => !!p.id && !!p.userId && !!p.mediaUrl);
+
+  const photosOnly = list.filter((p) => {
+    const source = raw.find(
+      (x: any) => String(x?.id || x?._id || "") === String(p.id)
+    );
+    const caption = String(source?.caption || "");
+    const type = String(p?.type || "").toLowerCase();
+
+    const notMine = !myId || String(p.userId) !== String(myId);
+    const notPrivate = !hasCaptionTag(caption, "scope:private");
+    const notReelTag = !hasCaptionTag(caption, "kind:reel");
+
+    const looksLikeVideo =
+      type === "video" ||
+      type === "reel" ||
+      /\.(mp4|mov|m4v|webm)$/i.test(String(p.mediaUrl || ""));
+
+    return notMine && notPrivate && notReelTag && !looksLikeVideo;
+  });
+
+  photosOnly.sort((a, b) => {
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  return photosOnly;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Component */
 /* -------------------------------------------------------------------------- */
@@ -166,6 +221,8 @@ export default function LetsBuzzPosts({
   const [refreshing, setRefreshing] = useState(false);
    const [posts, setPosts] = useState<BuzzPost[]>([]);
   const [meId, setMeId] = useState("");
+  const meIdRef = useRef("");
+  const bootedRef = useRef(false);
    const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [imageViewerIndex, setImageViewerIndex] = useState(0);
   const [imageViewerItems, setImageViewerItems] = useState<RBZImageViewerItem[]>([]);
@@ -221,114 +278,137 @@ export default function LetsBuzzPosts({
   }, [targetPostId, posts, deepLinkOpenComments, openComments]);
 
   /* ----------------------------- Loaders ----------------------------- */
-  const fetchMeId = useCallback(async () => {
+   const fetchMeId = useCallback(async () => {
     try {
       const h = await authHeaders();
       const r = await fetch(`${API_BASE}/users/me`, { headers: h });
       const j = await r.json();
       const id = j?.user?.id || j?.id || j?.userId;
-      if (id) setMeId(String(id));
-      return String(id || "");
+
+      if (id) {
+        const safeId = String(id);
+        meIdRef.current = safeId;
+        setMeId(safeId);
+        await writeCachedLetsBuzzMeId(safeId);
+        return safeId;
+      }
+
+      return "";
     } catch {
       return "";
     }
   }, []);
 
-  const loadPosts = useCallback(async () => {
-    try {
-      const h = await authHeaders();
+   const loadPosts = useCallback(
+    async (options?: { silent?: boolean }) => {
+      try {
+        const h = await authHeaders();
 
-      let myId = String(meId || "");
-      if (!myId) {
-        myId = await fetchMeId();
+        let myId = String(meIdRef.current || "");
+        if (!myId) {
+          myId = await readCachedLetsBuzzMeId();
+          meIdRef.current = myId;
+        }
+
+        if (!myId) {
+          fetchMeId().catch(() => {});
+        }
+
+        // ✅ same matched-gallery source family as reels
+        const r = await fetch(`${API_BASE}/feed/letsbuzz`, { headers: h });
+        const j = await r.json();
+
+        const raw: any[] = Array.isArray(j?.items) ? j.items : [];
+        await writeCachedLetsBuzzFeed(raw);
+
+        const photosOnly = buildPostsFromLetsBuzzRaw(raw, myId);
+
+        // Show the feed immediately. Do NOT wait for /users/:id hydration.
+        setPosts(photosOnly);
+        preloadLetsBuzzFeedImages(raw, 8);
+
+        if (photosOnly.length) {
+          setLoading(false);
+        }
+
+        Promise.all(
+          photosOnly.map(async (p) => {
+            try {
+              const ur = await fetch(`${API_BASE}/users/${p.userId}`, { headers: h });
+              const uj = await ur.json();
+
+              const mediaList = Array.isArray(uj?.user?.media) ? uj.user.media : [];
+              const media = mediaList.find(
+                (m: any) => String(m?.id || "") === String(p.mediaId || p.id)
+              );
+
+              const comments = Array.isArray(media?.comments) ? media.comments : [];
+
+              return {
+                ...p,
+                commentsCount: comments.length,
+              };
+            } catch {
+              return p;
+            }
+          })
+        )
+          .then((hydrated) => {
+            hydrated.sort((a, b) => {
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+
+            setPosts(hydrated);
+          })
+          .catch(() => {});
+      } catch (e) {
+        console.log("LetsBuzzPosts load error:", e);
+
+        if (!options?.silent) {
+          Alert.alert("LetsBuzz", "Failed to load posts.");
+        }
+      }
+    },
+    [fetchMeId]
+  );
+
+    const boot = useCallback(async () => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
+
+    let showedCached = false;
+
+    try {
+      setLoading(true);
+
+      const [cached, cachedMeId] = await Promise.all([
+        readCachedLetsBuzzFeed(),
+        readCachedLetsBuzzMeId(),
+      ]);
+
+      if (cachedMeId) {
+        meIdRef.current = cachedMeId;
       }
 
-      // ✅ same matched-gallery source family as reels
-      const r = await fetch(`${API_BASE}/feed/letsbuzz`, { headers: h });
-      const j = await r.json();
-
-      const raw: any[] = Array.isArray(j?.items) ? j.items : [];
-
-      const list: BuzzPost[] = raw
-        .map((p: any): BuzzPost => {
-          const mediaId = String(p?.id || p?._id || "");
-          const caption = String(p?.caption || "");
-
-          return {
-            id: mediaId,
-            mediaId,
-            fromGallery: true,
-            commentsCount: Array.isArray(p?.comments) ? p.comments.length : 0,
-
-            userId: String(p?.userId || ""),
-            mediaUrl: String(p?.mediaUrl || ""),
-            type: String(p?.type || "image") as BuzzPost["type"],
-            text: stripCaptionTags(caption),
-            createdAt: p?.createdAt,
-            user: p?.user,
-          };
-        })
-        .filter((p) => !!p.id && !!p.userId && !!p.mediaUrl);
-        
-      const photosOnly = list.filter((p) => {
-        const source = raw.find(
-          (x: any) => String(x?.id || x?._id || "") === String(p.id)
+      if (cached?.items?.length) {
+        const cachedPosts = buildPostsFromLetsBuzzRaw(
+          cached.items,
+          cachedMeId || meIdRef.current
         );
-        const caption = String(source?.caption || "");
-        const type = String(p?.type || "").toLowerCase();
 
-        const notMine = !myId || String(p.userId) !== String(myId);
-        const notPrivate = !hasCaptionTag(caption, "scope:private");
-        const notReelTag = !hasCaptionTag(caption, "kind:reel");
+        if (cachedPosts.length) {
+          showedCached = true;
+          setPosts(cachedPosts);
+          preloadLetsBuzzFeedImages(cached.items, 8);
+          setLoading(false);
+        }
+      }
 
-        const looksLikeVideo =
-          type === "video" ||
-          type === "reel" ||
-          /\.(mp4|mov|m4v|webm)$/i.test(String(p.mediaUrl || ""));
-
-        return notMine && notPrivate && notReelTag && !looksLikeVideo;
-      });
-
-      const hydrated = await Promise.all(
-        photosOnly.map(async (p) => {
-          try {
-            const ur = await fetch(`${API_BASE}/users/${p.userId}`, { headers: h });
-            const uj = await ur.json();
-
-            const mediaList = Array.isArray(uj?.user?.media) ? uj.user.media : [];
-            const media = mediaList.find(
-              (m: any) => String(m?.id || "") === String(p.mediaId || p.id)
-            );
-
-            const comments = Array.isArray(media?.comments) ? media.comments : [];
-
-            return {
-              ...p,
-              commentsCount: comments.length,
-            };
-          } catch {
-            return p;
-          }
-        })
-      );
-
-      // Sort by newest first
-      hydrated.sort((a, b) => {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-
-      setPosts(hydrated);
-    } catch (e) {
-      console.log("LetsBuzzPosts load error:", e);
-      Alert.alert("LetsBuzz", "Failed to load posts.");
+      fetchMeId().catch(() => {});
+      await loadPosts({ silent: showedCached });
+    } finally {
+      setLoading(false);
     }
-  }, [meId, fetchMeId]);
-
-  const boot = useCallback(async () => {
-    setLoading(true);
-    await fetchMeId();
-    await loadPosts();
-    setLoading(false);
   }, [fetchMeId, loadPosts]);
 
   const onRefresh = useCallback(async () => {
@@ -494,12 +574,16 @@ export default function LetsBuzzPosts({
 
   return (
     <View style={styles.container}>
-      <FlatList
+        <FlatList
         ref={listRef}
         data={posts}
         keyExtractor={(p) => p.id}
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews
         onScrollToIndexFailed={(info) => {
           setTimeout(() => {
             try {

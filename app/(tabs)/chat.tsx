@@ -34,7 +34,9 @@ import {
 } from "react-native";
 
 import { API_BASE } from "@/src/config/api";
+import { useCachedChatInbox } from "@/src/features/performance/useCachedChatInbox";
 import { getSocket } from "@/src/lib/socket";
+import { rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const RBZ = {
@@ -378,6 +380,43 @@ async function applyUnreadSummary(summary: any) {
 const nickKey = (meId: string, peerId: string) =>
   meId && peerId ? `RBZ_nick_${meId}_${peerId}` : "";
 
+function sameChatListForPaint(a: MatchUser[], b: MatchUser[]) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i];
+    const right = b[i];
+
+    if (safeId(left) !== safeId(right)) return false;
+
+    // ✅ Do not compare avatar URLs here.
+    // Signed R2/avatar URLs can refresh while the actual avatar did not change.
+    // Treating that as a row change causes visible avatar blinking.
+    if (fullName(left) !== fullName(right)) return false;
+
+    const leftLast = String(
+      left?.lastMessage?.id ||
+        left?.lastMessage?._id ||
+        left?.lastMessageTime ||
+        left?.updatedAt ||
+        ""
+    );
+
+    const rightLast = String(
+      right?.lastMessage?.id ||
+        right?.lastMessage?._id ||
+        right?.lastMessageTime ||
+        right?.updatedAt ||
+        ""
+    );
+
+    if (leftLast !== rightLast) return false;
+  }
+
+  return true;
+}
+
 export default function ChatTab() {
   const router = useRouter();
 const insets = useSafeAreaInsets();
@@ -400,6 +439,12 @@ const [actionPeer, setActionPeer] = useState<MatchUser | null>(null);
 const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
 const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
 const activePeerRef = useRef<string | null>(null);
+const chatCacheHydratedRef = useRef(false);
+const inboxCacheReadyRef = useRef(false);
+const inboxCacheOwnerIdRef = useRef("");
+const inboxCacheWriteTimerRef =
+  useRef<ReturnType<typeof setTimeout> | null>(null);
+const stableAvatarByPeerRef = useRef<Record<string, string>>({});
 
 // ✅ Dedup unread bumps (same message arrives via chat:message + direct:message etc)
 const seenMsgIdsRef = useRef<Record<string, number>>({}); // msgId -> timestamp(ms)
@@ -416,6 +461,56 @@ const presenceQueueRef = useRef<Record<string, boolean>>({});
 const presenceFlushRef = useRef<any>(null);
 
 const myId = useMemo(() => String(user?.id || user?._id || ""), [user]);
+
+const stableAvatarUrl = useCallback((m: MatchUser) => {
+  const pid = safeId(m);
+  const next = avatarUrl(m);
+
+  if (!pid) return next;
+
+  const prev = stableAvatarByPeerRef.current[pid];
+
+  if (prev) {
+    return prev;
+  }
+
+  stableAvatarByPeerRef.current[pid] = next;
+  return next;
+}, []);
+
+const {
+  readCachedInbox,
+  writeCachedInbox,
+  readCachedPresence,
+  fetchMatchesFresh,
+  refreshPresenceAfterPaint,
+} = useCachedChatInbox(myId);
+
+// ✅ Keep latest cache helpers in refs so effects do not re-run forever
+// just because hook-returned functions got recreated during render.
+const chatPerfRef = useRef({
+  readCachedInbox,
+  writeCachedInbox,
+  readCachedPresence,
+  fetchMatchesFresh,
+  refreshPresenceAfterPaint,
+});
+
+useEffect(() => {
+  chatPerfRef.current = {
+    readCachedInbox,
+    writeCachedInbox,
+    readCachedPresence,
+    fetchMatchesFresh,
+    refreshPresenceAfterPaint,
+  };
+}, [
+  readCachedInbox,
+  writeCachedInbox,
+  readCachedPresence,
+  fetchMatchesFresh,
+  refreshPresenceAfterPaint,
+]);
 
 // Listen for nickname updates from Thread Info
 useEffect(() => {
@@ -495,24 +590,40 @@ useEffect(() => {
     } catch {}
   };
 
-   useEffect(() => {
-    (async () => {
-      const raw = await SecureStore.getItemAsync("RBZ_USER");
-      const u = raw ? JSON.parse(raw) : null;
-      setUser(u);
+     useEffect(() => {
+    let alive = true;
 
-      const um = await getJSONStore(UNREAD_MAP_KEY, {});
+    (async () => {
+      // Uses the user already primed in memory by the tab layout when possible.
+      // On a true cold process, this performs one SecureStore read.
+      const cachedUser = await rbzGetCurrentUser().catch(() => null);
+
+      if (alive && cachedUser) {
+        setUser(cachedUser);
+      }
+
+      // Unread state is secondary UI. Load it in parallel after the user has
+      // already unlocked the per-user chat inbox cache.
+      const [um, tRaw] = await Promise.all([
+        getJSONStore(UNREAD_MAP_KEY, {}),
+        SecureStore.getItemAsync(UNREAD_TOTAL_KEY).catch(() => null),
+      ]);
+
+      if (!alive) return;
+
       setUnreadMap(um || {});
 
-      // ✅ load total for bottom tab badge
-      const tRaw = await SecureStore.getItemAsync(UNREAD_TOTAL_KEY);
       const t = Number(tRaw || 0) || 0;
       setUnreadTotal(t);
-      persistUnreadTotal(t); // emit once so Tabs can render immediately
+      persistUnreadTotal(t);
 
-      // ✅ NEW: always pull server truth once so badge can't get stuck at 0
+      // Pull server truth after cached rows have had a chance to paint.
       reconcileFromServer();
     })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // ✅ Do NOT clear unread when Chat tab opens.
@@ -585,9 +696,54 @@ const n = await SecureStore.getItemAsync(key);
   setNickMap(map);
 };
 
-    const loadChats = useCallback(
+const hydrateCachedChats = useCallback(async () => {
+  if (!myId) return false;
+
+  try {
+    const cached = await chatPerfRef.current.readCachedInbox();
+
+    const cachedMatches = Array.isArray(cached?.matches)
+      ? cached.matches
+      : [];
+
+    if (!cachedMatches.length) return false;
+
+    // The inbox is saved in its current visible order. Paint it immediately
+    // after one cache read. Presence, nicknames, pin settings, and server
+    // refresh must never block the actual rows.
+    inboxCacheReadyRef.current = true;
+    inboxCacheOwnerIdRef.current = myId;
+
+    setMatches(cachedMatches);
+    setFiltered(cachedMatches);
+    setLoading(false);
+
+    if (cached?.onlineMap && typeof cached.onlineMap === "object") {
+      setOnlineMap(cached.onlineMap);
+    }
+
+    // Nicknames can arrive after first paint.
+    loadNicknames(cachedMatches);
+
+    // A separately refreshed presence cache may be newer. Apply it later
+    // without delaying the visible chat list.
+    chatPerfRef.current.readCachedPresence()
+      .then((cachedPresence) => {
+        if (cachedPresence?.onlineMap) {
+          setOnlineMap(cachedPresence.onlineMap);
+        }
+      })
+      .catch(() => {});
+
+    return true;
+  } catch {
+    return false;
+  }
+}, [myId]);
+
+       const loadChats = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
-      if (!user || !myId) return;
+      if (!myId) return;
 
       if (mode === "refresh") {
         setRefreshing(true);
@@ -596,39 +752,22 @@ const n = await SecureStore.getItemAsync(key);
       }
 
       try {
-        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+        // ✅ PERF: cache FIRST.
+        // Do not wait for token/network before showing the old chat list.
+        if (mode === "initial" && !chatCacheHydratedRef.current) {
+          chatCacheHydratedRef.current = true;
+          await hydrateCachedChats();
+        }
+
+        const token = await rbzGetAuthToken();
 
         if (!token) {
           router.replace("/auth/login");
           return;
         }
 
-        const r = await fetch(`${API_BASE}/matches`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const data = await r.json();
-
-        let list: MatchUser[] = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.matches)
-          ? data.matches
-          : [];
-
-        // sort by last activity (same idea as web)
-        list = list
-          .map((m: any) => {
-            const ts =
-              m.lastMessageTime ||
-              m.lastMessage?.time ||
-              m.lastMessage?.createdAt ||
-              m.updatedAt ||
-              m.createdAt ||
-              0;
-
-            return { ...m, _sortTime: new Date(ts).getTime() || 0 };
-          })
-          .sort((a: any, b: any) => (b._sortTime || 0) - (a._sortTime || 0));
+               // ✅ PERF: fresh /matches still happens, but it no longer blocks first paint.
+        const list = await chatPerfRef.current.fetchMatchesFresh();
 
         // ✅ Chat list must always be based on real matched users.
         // Do NOT filter matched users with device-local hidden state.
@@ -639,57 +778,116 @@ const n = await SecureStore.getItemAsync(key);
         const storedOrder = await getJSONStore(CHAT_ORDER_KEY(myId), []);
         const storedPinned = await getJSONStore(PINNED_CHATS_KEY(myId), []);
 
-        const orderedVisible = applyPinnedOrder(
+              const orderedVisible = applyPinnedOrder(
           applyStoredOrder(visible, storedOrder),
           Array.isArray(storedPinned) ? storedPinned : []
         );
 
-        setMatches(orderedVisible);
-        setFiltered(orderedVisible);
-        loadNicknames(visible);
+        inboxCacheReadyRef.current = true;
+        inboxCacheOwnerIdRef.current = myId;
 
-        // Snapshot presence (same as web logic)
-        const states = await Promise.all(
-          list.map(async (m: any) => {
-            const id = safeId(m);
+        setMatches((prev) => {
+          if (sameChatListForPaint(prev, orderedVisible)) {
+            return prev;
+          }
 
-            try {
-              const pr = await fetch(`${API_BASE}/presence/${id}`);
-              const pj = await pr.json();
-
-              return { id, online: !!pj?.online };
-            } catch {
-              return { id, online: false };
-            }
-          })
-        );
-
-        setOnlineMap((prev) => {
-          const out = { ...prev };
-          states.forEach((s) => {
-            out[s.id] = s.online;
-          });
-          return out;
+          setFiltered(orderedVisible);
+          return orderedVisible;
         });
+
+            loadNicknames(orderedVisible);
+        setLoading(false);
+
+           // Save fresh inbox for next instant open.
+        chatPerfRef.current.writeCachedInbox(orderedVisible, onlineMap).catch(() => {});
+
+        // ✅ PERF: presence fetch is now delayed until after chat list appears.
+        // This removes the old blocking N+1 presence wait from tab navigation.
+        chatPerfRef.current.refreshPresenceAfterPaint(orderedVisible)
+          .then((freshPresence) => {
+            if (!freshPresence || !Object.keys(freshPresence).length) return;
+
+            setOnlineMap((prev) => {
+               const next = {
+                ...prev,
+                ...freshPresence,
+              };
+
+              chatPerfRef.current.writeCachedInbox(orderedVisible, next).catch(() => {});
+              return next;
+            });
+          })
+          .catch(() => {});
 
         // ✅ Also refresh unread truth during pull-down refresh.
         await reconcileFromServer();
       } catch (e) {
         console.log("❌ Chat load failed", e);
-        setMatches([]);
-        setFiltered([]);
-      } finally {
+
+        // ✅ PERF: do not wipe stale cached UI just because fresh network failed.
+        if (mode === "refresh") {
+          setRefreshing(false);
+        }
+         } finally {
         setLoading(false);
         setRefreshing(false);
       }
-    },
-    [user, myId, router]
+       },
+    [myId, router, hydrateCachedChats]
   );
-
-  // Load matches (same endpoint as web)
+   // Load matches (same endpoint as web)
   useEffect(() => {
     loadChats("initial");
   }, [loadChats]);
+
+  // Persist every visible inbox change, including socket previews, pin/order
+  // changes, deletes, and refreshed presence. Debouncing avoids excessive
+  // storage writes when several socket events arrive close together.
+  useEffect(() => {
+    if (
+      !myId ||
+      !inboxCacheReadyRef.current ||
+      inboxCacheOwnerIdRef.current !== myId
+    ) {
+      return;
+    }
+
+    if (inboxCacheWriteTimerRef.current) {
+      clearTimeout(inboxCacheWriteTimerRef.current);
+    }
+
+    inboxCacheWriteTimerRef.current = setTimeout(() => {
+      chatPerfRef.current
+        .writeCachedInbox(matches, onlineMap)
+        .catch(() => {});
+
+      inboxCacheWriteTimerRef.current = null;
+    }, 300);
+
+    return () => {
+      if (inboxCacheWriteTimerRef.current) {
+        clearTimeout(inboxCacheWriteTimerRef.current);
+        inboxCacheWriteTimerRef.current = null;
+      }
+    };
+  }, [matches, myId, onlineMap]);
+
+  // ✅ If startup warmup finishes while this tab is mounted,
+  // hydrate cached inbox without waiting for another tab visit.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("rbz:chat:inbox-warmed", (payload: any) => {
+      const warmedMeId = String(payload?.meId || "");
+      if (!myId || warmedMeId !== myId) return;
+
+      // Do not replace a list that already came from cache or the network.
+      // This event is only useful when the screen initially had no cache.
+      if (inboxCacheReadyRef.current) return;
+
+      hydrateCachedChats().catch(() => {});
+    });
+
+    return () => sub.remove();
+  }, [myId, hydrateCachedChats]);
 
 useEffect(() => {
   if (!user) return;
@@ -1256,7 +1454,7 @@ const bumpReactionPreview = (raw: any) => {
       patchRoomPrefs(pid, { forceUnread: false }).catch(() => {});
     }
 
-    // ✅ Web parity: bump thread to top + persist order on open
+     // ✅ Web parity: bump thread to top + persist order on open
     setMatches((prev) => {
       const next = reorderMatchesPersist(myId, prev, pid);
       setFiltered(next);
@@ -1268,7 +1466,7 @@ const bumpReactionPreview = (raw: any) => {
       params: {
         peerId: pid,
         name: fullName(peer),
-        avatar: avatarUrl(peer),
+        avatar: stableAvatarUrl(peer),
       },
     });
   };
@@ -1294,13 +1492,7 @@ const bumpReactionPreview = (raw: any) => {
         </View>
       </LinearGradient>
 
-      {loading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator />
-          <Text style={{ color: RBZ.gray, marginTop: 10 }}>Loading chats…</Text>
-        </View>
-            ) : (
-             <FlatList
+          <FlatList
           style={styles.list}
           data={filtered}
           keyExtractor={(m) => String(safeId(m))}
@@ -1318,15 +1510,22 @@ const bumpReactionPreview = (raw: any) => {
           removeClippedSubviews
           initialNumToRender={12}
           maxToRenderPerBatch={12}
-          windowSize={7}
+                 windowSize={7}
                 ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name="chatbubble-ellipses-outline" size={42} color={RBZ.gray} />
-              <Text style={styles.emptyTitle}>No chats yet</Text>
-              <Text style={styles.emptySub}>
-                Once you match, your conversations will appear here.
-              </Text>
-            </View>
+            loading ? (
+              <View style={styles.empty}>
+                <ActivityIndicator color={RBZ.c1} />
+                <Text style={styles.emptySub}>Loading chats…</Text>
+              </View>
+            ) : (
+              <View style={styles.empty}>
+                <Ionicons name="chatbubble-ellipses-outline" size={42} color={RBZ.gray} />
+                <Text style={styles.emptyTitle}>No chats yet</Text>
+                <Text style={styles.emptySub}>
+                  Once you match, your conversations will appear here.
+                </Text>
+              </View>
+            )
           }
           renderItem={({ item: m }) => {
             const pid = safeId(m);
@@ -1344,8 +1543,8 @@ const bumpReactionPreview = (raw: any) => {
                 delayLongPress={280}
                 style={[styles.row, pinned ? styles.rowPinned : null]}
               >
-                <View style={styles.avatarWrap}>
-                  <Image source={{ uri: avatarUrl(m) }} style={styles.avatar} />
+                 <View style={styles.avatarWrap}>
+                  <Image source={{ uri: stableAvatarUrl(m) }} style={styles.avatar} />
                   {online ? <View style={styles.onlineDot} /> : null}
                 </View>
 
@@ -1376,18 +1575,23 @@ const bumpReactionPreview = (raw: any) => {
                 </View>
               </Pressable>
             );
-          }}
+                }}
               />
-      )}
 
-      <Modal
+          <Modal
         visible={!!actionPeer}
         transparent
         animationType="fade"
         onRequestClose={() => setActionPeer(null)}
       >
         <Pressable style={styles.sheetBackdrop} onPress={() => setActionPeer(null)}>
-          <Pressable style={styles.actionSheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[
+              styles.actionSheet,
+              { paddingBottom: Math.max(28, 18 + insets.bottom) },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
             {actionPeer ? (
               <>
                 <View style={styles.sheetHandle} />
@@ -1566,7 +1770,6 @@ const styles = StyleSheet.create({
   actionSheet: {
     paddingTop: 10,
     paddingHorizontal: 16,
-    paddingBottom: 28,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     backgroundColor: RBZ.white,

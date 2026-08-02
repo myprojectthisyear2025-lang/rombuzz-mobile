@@ -15,12 +15,13 @@
  */
 
 import { API_BASE } from "@/src/config/api";
+import { useCachedDiscoverDeck } from "@/src/features/performance/useCachedDiscoverDeck";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -368,6 +369,37 @@ function applyClientOnlyFilters(list: any[], filters: DiscoverFilters) {
   });
 }
 
+function getUserStableId(user: any) {
+  return String(user?.id || user?._id || "").trim();
+}
+
+function sameUserOrder(a: any[], b: any[]) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+
+  return a.every((item, index) => {
+    const left = getUserStableId(item);
+    const right = getUserStableId(b[index]);
+    return !!left && left === right;
+  });
+}
+
+function keepVisibleCardStable(prev: any[], fresh: any[]) {
+  if (!Array.isArray(prev) || prev.length === 0) return fresh;
+  if (!Array.isArray(fresh) || fresh.length === 0) return fresh;
+
+  if (sameUserOrder(prev, fresh)) return prev;
+
+  const currentId = getUserStableId(prev[0]);
+  if (!currentId) return fresh;
+
+  const freshCurrent = fresh.find((u) => getUserStableId(u) === currentId);
+  if (!freshCurrent) return fresh;
+
+  const rest = fresh.filter((u) => getUserStableId(u) !== currentId);
+  return [freshCurrent, ...rest];
+}
+
 export default function DiscoverSwipeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -432,6 +464,7 @@ const nextScale = useAnimatedStyle(() => ({
 
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<any[]>([]);
+  const usersRef = useRef<any[]>([]);
   const current = users[0] || null;
 
   // ✅ LookingFor filter ("All" = empty string)
@@ -447,11 +480,40 @@ const nextScale = useAnimatedStyle(() => ({
   const [phase, setPhase] = useState<"strict" | "fallback">("strict");
   const [expandedSearch, setExpandedSearch] = useState(false);
   const [message, setMessage] = useState<string>("");
+  const [quietRefreshing, setQuietRefreshing] = useState(false);
   const [buzzing, setBuzzing] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
 
   // “reveal” controls blurRadius for blurred profiles (tap/drag reveals)
   const [reveal, setReveal] = useState(0);
+
+  const {
+    hydrateCachedDiscoverDeck,
+    saveCachedDiscoverDeck,
+    preloadDiscoverImages,
+  } = useCachedDiscoverDeck();
+
+  const discoverCacheInput = useMemo(
+    () => ({
+      filters: appliedFilters as Record<string, any>,
+      lookingFor: expandedSearch || phase === "fallback" ? "" : filterLookingFor,
+      phase,
+      expanded: expandedSearch || phase === "fallback",
+    }),
+    [appliedFilters, expandedSearch, filterLookingFor, phase]
+  );
+
+  const persistDiscoverDeck = useCallback(
+    (nextUsers: any[]) => {
+      saveCachedDiscoverDeck(discoverCacheInput, nextUsers);
+      preloadDiscoverImages(nextUsers);
+    },
+    [discoverCacheInput, preloadDiscoverImages, saveCachedDiscoverDeck]
+  );
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
 
    useEffect(() => {
     setAppliedFilters(parsedFilters);
@@ -465,6 +527,28 @@ const nextScale = useAnimatedStyle(() => ({
        setPhase("strict");
     setExpandedSearch(false);
   }, [parsedFilters]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const hydrateDeckBeforeNetwork = async () => {
+      const cached = await hydrateCachedDiscoverDeck(discoverCacheInput);
+
+      if (!alive || !cached.hit) return;
+
+      setUsers(cached.users);
+      setReveal(0);
+      setPhotoIndex(0);
+      setLoading(false);
+      preloadDiscoverImages(cached.users);
+    };
+
+    hydrateDeckBeforeNetwork();
+
+    return () => {
+      alive = false;
+    };
+  }, [discoverCacheInput, hydrateCachedDiscoverDeck, preloadDiscoverImages]);
 
   const authHeaders = useCallback(async () => {
     const token = await SecureStore.getItemAsync("RBZ_TOKEN");
@@ -521,14 +605,20 @@ const nextScale = useAnimatedStyle(() => ({
     }
   }, []);
 
-   const fetchDiscover = useCallback(
+    const fetchDiscover = useCallback(
     async (override?: {
       lookingFor?: string;
       phase?: "strict" | "fallback";
       expanded?: boolean;
+      withFreshCoords?: boolean;
+      silent?: boolean;
     }) => {
-      setLoading(true);
-      setMessage("");
+      let hadUsableCache = false;
+      const silent = !!override?.silent;
+
+      if (silent) {
+        setQuietRefreshing(true);
+      }
 
       try {
         const lookingFor =
@@ -551,10 +641,34 @@ const nextScale = useAnimatedStyle(() => ({
             ? buildExpandedFilters(appliedFilters)
             : appliedFilters;
 
-        const qs = new URLSearchParams();
-
         const effectiveLookingFor =
           shouldExpand || nextPhase === "fallback" ? "" : lookingFor;
+
+              const requestCacheInput = {
+          filters: effective as Record<string, any>,
+          lookingFor: effectiveLookingFor,
+          phase: nextPhase,
+          expanded: shouldExpand || nextPhase === "fallback",
+        };
+
+        if (!silent) {
+          setMessage("");
+        }
+
+        const cached = await hydrateCachedDiscoverDeck(requestCacheInput);
+
+        if (cached.hit) {
+          hadUsableCache = true;
+          setUsers(cached.users);
+          setReveal(0);
+          setPhotoIndex(0);
+          setLoading(false);
+          preloadDiscoverImages(cached.users);
+        } else if (!silent) {
+          setLoading(true);
+        }
+
+        const qs = new URLSearchParams();
 
         if (effectiveLookingFor) qs.set("lookingFor", effectiveLookingFor);
         if (nextPhase) qs.set("phase", nextPhase);
@@ -598,16 +712,18 @@ const nextScale = useAnimatedStyle(() => ({
           qs.set("petsPreference", effective.petsPreference[0]);
         }
 
-             const freshCoords = await getFreshDeviceCoords();
+        if (override?.withFreshCoords === true) {
+          const freshCoords = await getFreshDeviceCoords();
 
-        if (freshCoords) {
-          qs.set("lat", String(freshCoords.lat));
-          qs.set("lng", String(freshCoords.lng));
+          if (freshCoords) {
+            qs.set("lat", String(freshCoords.lat));
+            qs.set("lng", String(freshCoords.lng));
 
-          if (freshCoords.isoCountryCode) {
-            qs.set("viewerCountry", freshCoords.isoCountryCode);
-          } else if (freshCoords.country) {
-            qs.set("viewerCountry", freshCoords.country);
+            if (freshCoords.isoCountryCode) {
+              qs.set("viewerCountry", freshCoords.isoCountryCode);
+            } else if (freshCoords.country) {
+              qs.set("viewerCountry", freshCoords.country);
+            }
           }
         }
 
@@ -628,22 +744,46 @@ const nextScale = useAnimatedStyle(() => ({
           throw new Error(msg);
         }
 
-        const serverList = Array.isArray(data?.users) ? data.users : [];
+           const serverList = Array.isArray(data?.users) ? data.users : [];
         const finalList = applyClientOnlyFilters(serverList, effective);
 
-        setUsers(finalList);
-        setReveal(0);
-      } catch (e: any) {
-        setUsers([]);
+        setUsers((prev) => {
+          const next = silent
+            ? keepVisibleCardStable(prev, finalList)
+            : finalList;
+
+          usersRef.current = next;
+          return next;
+        });
+
+        if (!silent) {
+          setReveal(0);
+          setPhotoIndex(0);
+        }
+
+        if (finalList.length > 0) {
+          saveCachedDiscoverDeck(requestCacheInput, finalList);
+          preloadDiscoverImages(finalList);
+        }
+        } catch (e: any) {
+        if (!hadUsableCache && !silent) {
+          setUsers([]);
+        }
 
         if (e?.message === "AUTH_MISSING" || e?.message === "AUTH_EXPIRED") {
           setMessage("Session expired. Please login again.");
           router.replace("/auth/login");
-        } else {
+        } else if (!hadUsableCache && !silent) {
           setMessage(e?.message || "Failed to load Discover");
         }
-      } finally {
-        setLoading(false);
+         } finally {
+        if (silent) {
+          setQuietRefreshing(false);
+        }
+
+        if (!silent) {
+          setLoading(false);
+        }
       }
     },
        [
@@ -652,15 +792,29 @@ const nextScale = useAnimatedStyle(() => ({
       expandedSearch,
       filterLookingFor,
       getFreshDeviceCoords,
+      hydrateCachedDiscoverDeck,
       phase,
+      preloadDiscoverImages,
       router,
+      saveCachedDiscoverDeck,
     ]
   );
 
 
 useFocusEffect(
   useCallback(() => {
-    fetchDiscover();
+    fetchDiscover({ withFreshCoords: false });
+
+    const gpsRefreshTimer = setTimeout(() => {
+      fetchDiscover({
+        withFreshCoords: true,
+        silent: true,
+      });
+    }, 900);
+
+    return () => {
+      clearTimeout(gpsRefreshTimer);
+    };
   }, [fetchDiscover])
 );
 
@@ -685,12 +839,19 @@ const handleExpandSearch = useCallback(async () => {
 
 
 const removeTopCard = useCallback(() => {
-  setUsers((prev) => prev.slice(1));
+  setUsers((prev) => {
+    const next = prev.slice(1);
+
+    if (next.length > 0) {
+      persistDiscoverDeck(next);
+    }
+
+    return next;
+  });
+
   setReveal(0);
   setPhotoIndex(0);
-}, []);
-
-
+}, [persistDiscoverDeck]);
 
   const openProfile = useCallback(() => {
     if (!current) return;
@@ -936,7 +1097,7 @@ const swipeGesture = Gesture.Pan()
 
   {/* Refresh */}
   <Pressable
-    onPress={() => fetchDiscover()}
+    onPress={() => fetchDiscover({ withFreshCoords: true })}
     style={styles.headerBtn}
     android_ripple={{ color: "rgba(255,255,255,0.2)" }}
   >
@@ -980,7 +1141,7 @@ const swipeGesture = Gesture.Pan()
 
          {/* Content */}
          <View style={styles.body}>
-        {loading ? (
+        {loading && !current ? (
           <View style={styles.center}>
             <ActivityIndicator color={RBZ.c3} />
             <Text style={styles.centerText}>Finding people near you…</Text>
@@ -1004,8 +1165,11 @@ const swipeGesture = Gesture.Pan()
               <Pressable onPress={handleExpandSearch} style={styles.primaryBtn}>
                 <Text style={styles.primaryBtnText}>Expand Search</Text>
               </Pressable>
-            ) : (
-              <Pressable onPress={() => fetchDiscover()} style={styles.primaryBtn}>
+                    ) : (
+              <Pressable
+                onPress={() => fetchDiscover({ withFreshCoords: true })}
+                style={styles.primaryBtn}
+              >
                 <Text style={styles.primaryBtnText}>Refresh</Text>
               </Pressable>
             )}
@@ -1023,14 +1187,22 @@ const swipeGesture = Gesture.Pan()
               </Pressable>
             ) : null}
           </View>
-       ) : (
+        ) : (
               <GestureHandlerRootView style={styles.deck}>
+                {quietRefreshing ? (
+                  <View pointerEvents="none" style={styles.refreshPill}>
+                    <ActivityIndicator size="small" color={RBZ.c3} />
+                    <Text style={styles.refreshPillText}>Refreshing nearby</Text>
+                  </View>
+                ) : null}
+
                 {/* Next card (peek) */}
-                {users[1] ? (
+                 {users[1] ? (
                   <Animated.View style={[styles.card, styles.cardBehind, nextScale]}>
                   <Image
                       source={{ uri: getImageUri(users[1]) }}
                       style={styles.cardImg}
+                      fadeDuration={0}
                     />
 
                     <LinearGradient colors={["transparent", "rgba(0,0,0,0.85)"]} style={styles.cardShade} />
@@ -1054,6 +1226,7 @@ const swipeGesture = Gesture.Pan()
         source={{ uri: getUserImages(current)[photoIndex] }}
         style={styles.cardImg}
         blurRadius={blurRadius}
+        fadeDuration={0}
       />
     </Pressable>
 
@@ -1258,11 +1431,36 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-   deck: {
+    deck: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
+  },
+
+  refreshPill: {
+    position: "absolute",
+    top: 4,
+    zIndex: 20,
+    elevation: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderWidth: 1,
+    borderColor: "rgba(177,18,60,0.12)",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  refreshPillText: {
+    color: RBZ.black,
+    fontSize: 12,
+    fontWeight: "800",
   },
 
   card: {

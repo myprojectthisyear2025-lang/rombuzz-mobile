@@ -16,12 +16,12 @@
 import { FontAwesome5, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Animated,
+  DeviceEventEmitter,
   Dimensions, FlatList, Image,
   Modal,
   PanResponder,
@@ -34,7 +34,8 @@ import {
 } from "react-native";
 
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
-import { API_BASE } from "@/src/config/api";
+import { useCachedSocialStats } from "@/src/features/performance/useCachedSocialStats";
+import { rbzApiJson } from "@/src/performance/api/rbzApiClient";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -56,34 +57,8 @@ const RBZ = {
 
 /* ===================== HELPERS ===================== */
 
-async function getToken() {
-  return (
-    (await SecureStore.getItemAsync("RBZ_TOKEN")) ||
-    (await SecureStore.getItemAsync("token")) ||
-    ""
-  );
-}
-
 async function apiFetch(path: string, options?: RequestInit) {
-  const token = await getToken();
-  if (!token) throw new Error("NO_TOKEN");
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || `HTTP ${response.status}`);
-  }
-
-  return response.json();
+  return rbzApiJson(path, options);
 }
 
 const safeNum = (n: any) =>
@@ -612,7 +587,9 @@ export default function SocialStatsScreen() {
     })
   ).current;
 
-  const [loading, setLoading] = useState(true);
+   // ✅ PERF: layout should render immediately.
+  // Cache appears first; backend refreshes quietly.
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [social, setSocial] = useState({
@@ -625,93 +602,80 @@ export default function SocialStatsScreen() {
 
   const [activeTab, setActiveTab] = useState<null | "liked" | "likedYou" | "matches">(null);
   const [list, setList] = useState<any[]>([]);
-  const [listLoading, setListLoading] = useState(false);
+   const [listLoading, setListLoading] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hydratedCacheRef = useRef(false);
+  const fetchInFlightRef = useRef(false);
+  const socialPerf = useCachedSocialStats();
+
   const headline = "Real-time connections • Live updates • Built for genuine matches";
 
   /* ===================== FETCHERS ===================== */
 
-  const fetchMe = useCallback(async () => {
-    try {
-      const data = await apiFetch("/users/me");
-      setSocial((prev) => ({
-        ...prev,
-        viewsToday: safeNum(data?.profileViews?.today),
-        viewsTotal: safeNum(data?.profileViews?.total),
-      }));
-    } catch (error) {
-      console.error("fetchMe error:", error);
+  const hydrateCachedSocial = useCallback(async () => {
+    if (hydratedCacheRef.current) return false;
+    hydratedCacheRef.current = true;
+
+    const cached = await socialPerf.readCachedSocialStats();
+
+    if (cached.hit) {
+      setSocial(cached.social);
+      setLoading(false);
+      return true;
     }
+
+    return false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchSocial = useCallback(async () => {
-    try {
-      // ✅ CORRECT BACKEND ENDPOINTS
-      const stats = await apiFetch("/social-stats");
-      const matchesData = await apiFetch("/matches");
-
-      // Handle different response formats for matches
-      const matchesArray = Array.isArray(matchesData)
-        ? matchesData
-        : Array.isArray(matchesData?.matches)
-        ? matchesData.matches
-        : Array.isArray(matchesData?.users)
-        ? matchesData.users
-        : [];
-
-      setSocial((prev) => ({
-        ...prev,
-        likedCount: safeNum(stats?.likedCount),
-        likedYouCount: safeNum(stats?.likedYouCount),
-        matchCount: matchesArray.length,
-      }));
-   } catch (error) {
-        const err = error as Error;
-        console.error("fetchSocial error:", err);
-        if (err.message === "NO_TOKEN") {
-        router.replace("/auth/login");
-      }
-    }
-  }, [router]);
-
-  const openList = useCallback(async (type: "liked" | "likedYou" | "matches") => {
+   const openList = useCallback(async (type: "liked" | "likedYou" | "matches") => {
     setActiveTab(type);
-    setList([]);
-    setListLoading(true);
+
+    const cached = await socialPerf.readCachedSocialList(type);
+
+    if (cached.hit) {
+      setList(cached.list);
+      setListLoading(false);
+    } else {
+      setList([]);
+      setListLoading(true);
+    }
 
     try {
-      let data;
-      
-      if (type === "matches") {
-        data = await apiFetch("/matches");
-      } else {
-        data = await apiFetch(`/social/${type}`);
-      }
-
-      // Handle all possible response formats
-      if (Array.isArray(data)) {
-        setList(data);
-      } else if (Array.isArray(data?.users)) {
-        setList(data.users);
-      } else if (Array.isArray(data?.matches)) {
-        setList(data.matches);
-      } else {
-        setList([]);
-      }
+      const freshList = await socialPerf.fetchSocialListFresh(type);
+      setList(freshList);
     } catch (error) {
       console.error("openList error", error);
-      setList([]);
+
+      if (!cached.hit) {
+        setList([]);
+      }
     } finally {
       setListLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchAll = useCallback(
+     const fetchAll = useCallback(
     async (showSpinner: boolean) => {
+      if (fetchInFlightRef.current) return;
+      fetchInFlightRef.current = true;
+
       try {
-        if (showSpinner) setLoading(true);
-        await Promise.all([fetchMe(), fetchSocial()]);
+        const hadCache = await hydrateCachedSocial();
+
+        // Only use full-screen loader on true first load with no cache.
+        if (showSpinner && !hadCache) setLoading(true);
+
+        const fresh = await socialPerf.fetchSocialStatsFresh();
+
+        setSocial((prev) => {
+          const prevKey = JSON.stringify(prev);
+          const freshKey = JSON.stringify(fresh);
+
+          return prevKey === freshKey ? prev : fresh;
+        });
       } catch (e: any) {
         if (e?.message === "NO_TOKEN") {
           router.replace("/auth/login");
@@ -719,10 +683,12 @@ export default function SocialStatsScreen() {
         }
         console.error("SocialStats error:", e);
       } finally {
+        fetchInFlightRef.current = false;
         setLoading(false);
       }
     },
-    [fetchMe, fetchSocial, router]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hydrateCachedSocial, router]
   );
 
   const onRefresh = useCallback(async () => {
@@ -741,25 +707,51 @@ export default function SocialStatsScreen() {
 
   /* ===================== EFFECTS ===================== */
 
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "rbz:social-stats:warmed",
+      (payload: any) => {
+        if (payload?.social) {
+          setSocial(payload.social);
+        }
+      }
+    );
+
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      fetchAll(true);
+      // ✅ PERF: cached stats first, quiet backend refresh after.
+      hydrateCachedSocial().finally(() => {
+        fetchAll(false);
+      });
 
-      // Poll every 15 seconds
+      // ✅ 15s polling is too aggressive for a tab screen.
+      // 60s keeps it fresh without making the app constantly busy.
       pollRef.current = setInterval(() => {
         fetchAll(false);
-      }, 15000);
+      }, 60_000);
 
       return () => {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
       };
-    }, [fetchAll])
+    }, [fetchAll, hydrateCachedSocial])
   );
 
   /* ===================== UI ===================== */
 
-  if (loading) {
+  const hasAnySocialData =
+    safeNum(social.likedCount) > 0 ||
+    safeNum(social.likedYouCount) > 0 ||
+    safeNum(social.matchCount) > 0 ||
+    safeNum(social.viewsToday) > 0 ||
+    safeNum(social.viewsTotal) > 0;
+
+  if (loading && !hasAnySocialData) {
     return (
       <LinearGradient
         colors={[RBZ.c1, RBZ.c4]}

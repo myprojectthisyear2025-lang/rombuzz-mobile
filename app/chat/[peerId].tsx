@@ -53,6 +53,7 @@ import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
 import { useChatMediaViewerController } from "@/src/features/chat/thread/ChatMediaViewerController";
 import { useChatMediaSender } from "@/src/features/chat/thread/useChatMediaSender";
+import { useChatThreadFastOpen } from "@/src/features/chat/thread/useChatThreadFastOpen";
 import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
 import SwipeReplyRow from "@/src/features/chat/thread/SwipeReplyRow";
 import {
@@ -615,6 +616,21 @@ const {
 });
 
 const {
+  loadOlderMessages,
+  canJumpToFirstMessage,
+} = useChatThreadFastOpen({
+  myId,
+  peerId,
+  roomId,
+  focusMsgId,
+  messages,
+  loading,
+  setMessages,
+  setLoading,
+  settleToLatest,
+});
+
+const {
   sendMediaPayload,
   sendGalleryMedia,
   sendCameraMedia,
@@ -827,30 +843,6 @@ useEffect(() => {
   };
 }, [protectedMediaAnim]);
 
-
-  // Load messages
-  useEffect(() => {
-    if (!myId || !peerId) return;
-
-    (async () => {
-      setLoading(true);
-      try {
-        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-        const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const data = await r.json();
-        const list = Array.isArray(data) ? data : [];
-
-        setMessages(dedupeById(list));
-      } catch {
-        setMessages([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [myId, peerId, roomId]);
 
     /* ============================================================
    ✅ CLEAR UNREAD FOR THIS PEER ON OPEN
@@ -2467,7 +2459,7 @@ const togglePinMessage = async (m: Msg) => {
               maintainVisibleContentPosition={{
                 minIndexForVisible: 0,
               }}
-              contentContainerStyle={{
+                     contentContainerStyle={{
                 paddingHorizontal: 12,
                 paddingTop: LIST_BOTTOM_PAD,
                 paddingBottom: 12,
@@ -2475,6 +2467,10 @@ const togglePinMessage = async (m: Msg) => {
               onContentSizeChange={handleContentSizeChange}
               onScroll={handleScroll}
               onScrollToIndexFailed={handleScrollToIndexFailed}
+              onEndReached={() => {
+                void loadOlderMessages();
+              }}
+              onEndReachedThreshold={0.25}
                       />
           </View>
         )}

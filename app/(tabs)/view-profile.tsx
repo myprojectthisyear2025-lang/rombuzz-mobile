@@ -40,6 +40,11 @@ import ViewProfileGallery from "@/src/components/profile/ViewProfileGallery";
 import ViewProfileMediaActions from "@/src/components/profile/ViewProfileMediaActions";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
+import {
+  fetchFreshViewProfile,
+  mergeStableViewProfile,
+  readCachedViewProfile,
+} from "@/src/features/performance/viewProfile/rbzViewProfileCache";
 
 const RBZ = {
   c1: "#b1123c",
@@ -443,7 +448,7 @@ export default function ViewProfile() {
     router.replace("/profile" as any);
   }, [router, returnTo]);
 
-   const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [matched, setMatched] = useState(false);
@@ -453,6 +458,11 @@ export default function ViewProfile() {
     lastBuzz: null,
     lastBuzzLabel: "No buzz yet",
   });
+
+  const profileRef = useRef<ProfileResponse | null>(null);
+  const requestSeqRef = useRef(0);
+  const hydratedCacheForRef = useRef("");
+
   const hasStory = stories.length > 0;
 
    // voice intro
@@ -482,6 +492,10 @@ export default function ViewProfile() {
   const [blockLoading, setBlockLoading] = useState(false);
   const [unmatchLoading, setUnmatchLoading] = useState(false);
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   // Calculate age from DOB
   const age = useMemo(() => {
@@ -641,89 +655,112 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   // ---------------------------------------------------------------------------
   // DATA LOADING
   // ---------------------------------------------------------------------------
-    const loadProfile = async () => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
+  const applyProfileBundle = useCallback(
+    (bundle: { profile: ProfileResponse; stories: any[] }) => {
+      const nextProfile = mergeStableViewProfile(
+        profileRef.current,
+        bundle.profile
+      ) as ProfileResponse;
 
-    try {
-      setLoading(true);
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      if (!token) throw new Error("Session expired");
+      profileRef.current = nextProfile;
 
-      // 1. Load profile with match check
-      const res = await fetch(`${API_BASE}/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      setProfile(nextProfile);
+      setUser(nextProfile.user);
+      setMatched(!!nextProfile.matched);
+      setStories(Array.isArray(bundle.stories) ? bundle.stories : []);
+      setVoiceDurationSec(Number(nextProfile?.user?.voiceDurationSec || 0));
+    },
+    []
+  );
 
-          const data: ProfileResponse = await res.json().catch(() => ({} as any));
-
-      // ✅ still fail if request itself failed or user payload missing
-      if (!res.ok || !data?.user) {
-        Alert.alert("Profile unavailable", "Failed to load this profile.", [
-          { text: "Go back", onPress: () => router.back() },
-        ]);
+  const loadProfile = useCallback(
+    async (mode: "initial" | "silent" | "refresh" = "initial") => {
+      if (!userId) {
+        setLoading(false);
         return;
       }
 
-         setProfile(data);
-      setUser(data.user);
-      setVoiceDurationSec(Number(data?.user?.voiceDurationSec || 0));
+      const requestId = ++requestSeqRef.current;
+      const visibleProfileId = String(profileRef.current?.user?.id || "");
+      const hasVisibleProfileForThisUser = visibleProfileId === userId;
+      const hasDifferentProfileVisible = !!visibleProfileId && visibleProfileId !== userId;
 
-      // ✅ Source of truth for matched state = likes/status endpoint
-      let resolvedMatched = !!data?.matched;
-      try {
-        const statusRes = await fetch(
-          `${API_BASE}/likes/status/${encodeURIComponent(String(userId))}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        const statusData = await statusRes.json().catch(() => ({}));
-        if (statusRes.ok) {
-          resolvedMatched = !!statusData?.matched;
-        }
-      } catch {
-        // keep fallback from profile response
-      }
+      const shouldShowBlockingLoader =
+        mode === "initial" && !hasVisibleProfileForThisUser;
 
-      setMatched(resolvedMatched);
-
-      // 2. Load stories
-      try {
-        const storiesRes = await fetch(`${API_BASE}/stories/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const storiesData = await storiesRes.json().catch(() => ({}));
-        setStories(Array.isArray(storiesData?.stories) ? storiesData.stories : []);
-      } catch {
+      if (hasDifferentProfileVisible) {
+        profileRef.current = null;
+        setProfile(null);
+        setUser(null);
+        setMatched(false);
         setStories([]);
+        setVoiceDurationSec(0);
       }
 
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Failed to load profile");
-      router.back();
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (shouldShowBlockingLoader) {
+        setLoading(true);
+      }
 
-  const refreshProfile = async () => {
-    setRefreshing(true);
-    await loadProfile();
-    setRefreshing(false);
-  };
+      if (mode === "refresh") {
+        setRefreshing(true);
+      }
 
-  useFocusEffect(
-    React.useCallback(() => {
-      loadProfile();
-    }, [userId])
+      try {
+        const shouldTryCache =
+          mode !== "refresh" &&
+          hydratedCacheForRef.current !== userId;
+
+        if (shouldTryCache) {
+          const cached = await readCachedViewProfile(userId);
+
+          if (cached?.profile?.user && requestId === requestSeqRef.current) {
+            hydratedCacheForRef.current = userId;
+
+            applyProfileBundle({
+              profile: cached.profile,
+              stories: cached.stories,
+            });
+
+            setLoading(false);
+          }
+        }
+
+        const fresh = await fetchFreshViewProfile(userId);
+
+        if (requestId !== requestSeqRef.current) return;
+
+        hydratedCacheForRef.current = userId;
+
+        applyProfileBundle({
+          profile: fresh.profile,
+          stories: fresh.stories,
+        });
+      } catch (e: any) {
+        const currentVisibleId = String(profileRef.current?.user?.id || "");
+
+        if (!profileRef.current?.user || currentVisibleId !== userId) {
+          Alert.alert("Error", e?.message || "Failed to load profile");
+          handleGoBack();
+        }
+      } finally {
+        if (requestId === requestSeqRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [applyProfileBundle, handleGoBack, userId]
   );
 
-  useEffect(() => {
-    loadProfile();
-  }, [userId]);
+  const refreshProfile = useCallback(async () => {
+    await loadProfile("refresh");
+  }, [loadProfile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile(profileRef.current?.user ? "silent" : "initial");
+    }, [loadProfile])
+  );
 
   useEffect(() => {
     return () => {
@@ -1024,19 +1061,24 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
     setVideoViewerOpen(false);
   }, []);
 
-  // ---------------------------------------------------------------------------
+   // ---------------------------------------------------------------------------
   // RENDER STATES
   // ---------------------------------------------------------------------------
-  if (loading) {
+  if (loading && !user) {
     return (
       <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={RBZ.c3} />
-        <Text style={styles.loadingText}>Loading profile…</Text>
+        <ActivityIndicator size="large" color={RBZ.c2} />
+        <Text style={[styles.unavailableText, { marginTop: 14 }]}>
+          Loading profile
+        </Text>
+        <Text style={styles.unavailableSubtext}>
+          Getting the latest profile details...
+        </Text>
       </View>
     );
   }
 
-     if (!user) {
+  if (!user) {
     return (
       <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
         <Text style={styles.unavailableText}>Profile unavailable</Text>

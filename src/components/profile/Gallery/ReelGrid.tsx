@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { AVPlaybackStatus, ResizeMode, Video } from "expo-av";
-import React, { useRef } from "react";
+import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -42,13 +41,9 @@ function isCloudflareStreamReel(item: any) {
 }
 
 export default function ReelGrid({ items, onOpen, size }: Props) {
-  // one ref per reel (indexed)
-  const videoRefs = useRef<(Video | null)[]>([]);
-
   return (
     <View style={styles.grid}>
       {items.map((m, i) => {
-        const playableUrl = getReelPlayableUrl(m);
         const thumbnailUrl = getReelThumbnailUrl(m);
         const isStream = isCloudflareStreamReel(m);
 
@@ -64,28 +59,13 @@ export default function ReelGrid({ items, onOpen, size }: Props) {
               },
             ]}
           >
-            {playableUrl ? (
-              <Video
-                ref={(ref) => {
-                  videoRefs.current[i] = ref;
-                }}
-                source={{ uri: playableUrl }}
+            {thumbnailUrl ? (
+              <Image
+                source={{ uri: thumbnailUrl }}
                 style={styles.img}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay
-                isMuted
-                isLooping={false}
-                onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
-                  if (!status.isLoaded) return;
-
-                  // 🔁 loop ONLY first 5 seconds forever
-                  if (status.positionMillis >= 5000) {
-                    videoRefs.current[i]?.setPositionAsync(0);
-                  }
-                }}
+                resizeMode="cover"
+                fadeDuration={0}
               />
-            ) : thumbnailUrl ? (
-              <Image source={{ uri: thumbnailUrl }} style={styles.img} resizeMode="cover" />
             ) : (
               <View style={styles.streamPlaceholder}>
                 <Ionicons name="videocam" size={24} color="#fff" />
