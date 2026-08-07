@@ -206,6 +206,17 @@ export async function hydrateDiscoverDeckCache(input: DiscoverDeckCacheInput) {
   return readDiscoverDeckKey(DISCOVER_LAST_DECK_CACHE_KEY);
 }
 
+/**
+ * Returns the most recently saved Discover deck without requiring
+ * the caller to know the active Discover filters.
+ *
+ * Intended for lightweight profile previews outside Discover,
+ * such as the premium homepage.
+ */
+export async function hydrateLatestDiscoverDeckCache() {
+  return readDiscoverDeckKey(DISCOVER_LAST_DECK_CACHE_KEY);
+}
+
 export async function saveDiscoverDeckCache(
   input: DiscoverDeckCacheInput,
   users: any[]
@@ -254,6 +265,10 @@ export function useCachedDiscoverDeck() {
     []
   );
 
+  const hydrateLatestCachedDiscoverDeck = useCallback(async () => {
+    return hydrateLatestDiscoverDeckCache();
+  }, []);
+
   const saveCachedDiscoverDeck = useCallback(
     async (input: DiscoverDeckCacheInput, users: any[]) => {
       await saveDiscoverDeckCache(input, users);
@@ -267,6 +282,7 @@ export function useCachedDiscoverDeck() {
 
   return {
     hydrateCachedDiscoverDeck,
+    hydrateLatestCachedDiscoverDeck,
     saveCachedDiscoverDeck,
     preloadDiscoverImages,
   };
