@@ -155,6 +155,9 @@ export default function RegisterFullScreen() {
     googleFirstName?: string;
     googleLastName?: string;
     googleAvatar?: string;
+    appleFirstName?: string;
+    appleLastName?: string;
+    appleSignupTicket?: string;
     authProvider?: string;
   }>();
 const { width, height } = useWindowDimensions(); // Get screen dimensions
@@ -164,11 +167,19 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
 
-   const [form, setForm] = useState<RegisterForm>({
-  firstName: String(params.googleFirstName || ""),
-  lastName: String(params.googleLastName || ""),
-  password: "",
-  confirm: "",
+  const [form, setForm] = useState<RegisterForm>({
+    firstName: String(
+      params.authProvider === "apple"
+        ? params.appleFirstName || ""
+        : params.googleFirstName || ""
+    ),
+    lastName: String(
+      params.authProvider === "apple"
+        ? params.appleLastName || ""
+        : params.googleLastName || ""
+    ),
+    password: "",
+    confirm: "",
 
   gender: "",
   dob: "",
@@ -332,12 +343,18 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   dislikes: form.dislikes,
 
   // Interests / media
-   interests: form.interests,
+  interests: form.interests,
   avatar: form.avatar,
   photos: form.photos,
   phone: form.phone || "",
   voiceUrl: form.voiceUrl || "",
   voiceDurationSec: Number(form.voiceDurationSec || 0),
+
+  // Auth provider proof.
+  // Existing email/Google signup remains unaffected.
+  authProvider: String(params.authProvider || ""),
+  appleSignupTicket:
+    String(params.appleSignupTicket || ""),
 };
 
         const res = await axios.post(`${API_BASE}/auth/register-full`, payload);

@@ -16,11 +16,11 @@
  * ============================================================================
  */
 
-import axios from "axios";
 import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import axios from "axios";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -40,6 +40,8 @@ import {
 } from "react-native";
 
 import { API_BASE } from "../../src/config/api";
+import AppleSignupButton from "../../src/features/auth/signup/AppleSignupButton";
+import { signupWithApple } from "../../src/features/auth/signup/appleSignup";
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -56,8 +58,9 @@ export default function SignupScreen() {
   // UI flags
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [error, setError] = useState("");
-    const [success, setSuccess] = useState("");
+  const [success, setSuccess] = useState("");
 
   const codeRef = useRef<TextInput | null>(null);
 
@@ -299,6 +302,70 @@ export default function SignupScreen() {
 
   /**
    * --------------------------------------------------------------------------
+   * 🍎 Apple Signup
+   * Native iOS Apple auth → verified backend signup ticket
+   * → continue through the existing register-full onboarding.
+   * --------------------------------------------------------------------------
+   */
+  const handleAppleSignup = async () => {
+    setLoading(true);
+    setAppleLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const result = await signupWithApple();
+
+      if (result.kind === "cancelled") {
+        return;
+      }
+
+      if (result.kind === "account_exists") {
+        setError(result.message);
+
+        setTimeout(() => {
+          router.replace("/auth/login");
+        }, 900);
+
+        return;
+      }
+
+      if (result.kind === "error") {
+        setError(result.message);
+        return;
+      }
+
+      router.replace({
+        pathname: "/auth/register-full",
+        params: {
+          verifiedEmail: result.profile.email,
+          appleFirstName:
+            result.profile.firstName || "",
+          appleLastName:
+            result.profile.lastName || "",
+          authProvider: "apple",
+          appleSignupTicket:
+            result.appleSignupTicket,
+        },
+      });
+    } catch (err: any) {
+      console.error(
+        "Unexpected Apple signup error:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Apple signup failed. Please try again."
+      );
+    } finally {
+      setLoading(false);
+      setAppleLoading(false);
+    }
+  };
+
+  /**
+   * --------------------------------------------------------------------------
    * ⏱️ OTP resend timer
    * --------------------------------------------------------------------------
    */
@@ -309,7 +376,8 @@ export default function SignupScreen() {
     }
   }, [countdown]);
 
-  const isBusy = loading || googleLoading;
+  const isBusy =
+    loading || googleLoading || appleLoading;
 
   // ------------------------------- UI ----------------------------------------
 
@@ -406,7 +474,9 @@ export default function SignupScreen() {
                   disabled={loading || countdown > 0}
                   activeOpacity={0.86}
                 >
-                  {loading && !googleLoading ? (
+                  {loading &&
+                  !googleLoading &&
+                  !appleLoading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <Text style={styles.buttonText}>
@@ -449,6 +519,11 @@ export default function SignupScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
+
+                <AppleSignupButton
+                  disabled={isBusy}
+                  onPress={handleAppleSignup}
+                />
 
                 <TouchableOpacity
                   onPress={() => router.push("/auth/login")}

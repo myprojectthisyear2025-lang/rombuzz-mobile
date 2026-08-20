@@ -3,37 +3,36 @@
     "version": ">= 16.28.0",
     "appVersionSource": "remote"
   },
-
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "env": {
+        "APP_VARIANT": "development",
         "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
     },
-
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       },
       "env": {
+        "APP_VARIANT": "preview",
         "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
     },
-
     "production": {
       "autoIncrement": true,
       "env": {
+        "APP_VARIANT": "production",
         "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
     }
   },
-
   "submit": {
     "production": {}
   }
