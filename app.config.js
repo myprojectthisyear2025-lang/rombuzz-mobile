@@ -16,8 +16,6 @@
  * ============================================================
  */
 
-const baseConfig = require("./app.json").expo;
-
 const VARIANTS = {
   development: {
     name: "RomBuzz Dev",
@@ -33,13 +31,23 @@ const VARIANTS = {
   },
 };
 
-module.exports = () => {
+module.exports = ({ config }) => {
+  const baseConfig = config;
+
   const variantName = process.env.APP_VARIANT || "development";
   const variant = VARIANTS[variantName] || VARIANTS.development;
 
   const plugins = [
     ...(baseConfig.plugins || []),
     "expo-apple-authentication",
+    [
+      "@sentry/react-native/expo",
+      {
+        organization: process.env.SENTRY_ORG || "rombuzz",
+        project: process.env.SENTRY_PROJECT || "rombuzz-mobile",
+        url: "https://sentry.io/",
+      },
+    ],
   ];
 
   return {

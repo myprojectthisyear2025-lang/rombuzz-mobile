@@ -1,3 +1,5 @@
+import { Sentry } from "@/src/monitoring/sentry";
+
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { API_BASE } from "@/src/config/api";
 import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
@@ -132,7 +134,7 @@ async function removePushTokenFromBackend(authToken: string, pushToken: string) 
   }
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const segments = useSegments() as string[];
@@ -406,3 +408,5 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);
