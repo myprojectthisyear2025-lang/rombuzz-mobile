@@ -108,7 +108,18 @@ const verifyRes = await fetch(`${API_BASE}/auth/verify-code`, {
       return;
     }
 
-    // ✅ STEP 2: REGISTER USER (NO CODE HERE)
+    const signupVerificationTicket = String(
+      verifyData?.emailSignupTicket || ""
+    );
+
+    if (!signupVerificationTicket) {
+      setError(
+        "Signup verification proof was not returned by the server."
+      );
+      return;
+    }
+
+    // ✅ STEP 2: REGISTER USER WITH VERIFIED SIGNUP PROOF
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: "POST",
       headers: {
@@ -119,6 +130,7 @@ const verifyRes = await fetch(`${API_BASE}/auth/verify-code`, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         password: password,
+        signupVerificationTicket,
       }),
     });
 

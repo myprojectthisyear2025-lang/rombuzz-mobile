@@ -157,6 +157,7 @@ export default function RegisterFullScreen() {
     googleAvatar?: string;
     appleFirstName?: string;
     appleLastName?: string;
+    signupVerificationTicket?: string;
     appleSignupTicket?: string;
     authProvider?: string;
   }>();
@@ -351,8 +352,11 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   voiceDurationSec: Number(form.voiceDurationSec || 0),
 
   // Auth provider proof.
-  // Existing email/Google signup remains unaffected.
+  // Email + Google use the shared verified-signup ticket.
+  // Apple keeps its existing dedicated Apple signup ticket.
   authProvider: String(params.authProvider || ""),
+  signupVerificationTicket:
+    String(params.signupVerificationTicket || ""),
   appleSignupTicket:
     String(params.appleSignupTicket || ""),
 };

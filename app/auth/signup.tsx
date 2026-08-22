@@ -171,11 +171,19 @@ export default function SignupScreen() {
         throw new Error("Invalid verification code.");
       }
 
+      const emailSignupTicket = String(
+        res.data?.emailSignupTicket || ""
+      );
+
       setSuccess("Email verified! Redirecting...");
       setTimeout(() => {
         router.replace({
           pathname: "/auth/register-full",
-          params: { verifiedEmail: trimmedEmail },
+          params: {
+            verifiedEmail: trimmedEmail,
+            authProvider: "email",
+            signupVerificationTicket: emailSignupTicket,
+          },
         });
       }, 600);
     } catch (e: any) {
@@ -244,7 +252,12 @@ export default function SignupScreen() {
         }
       );
 
-      const { status, googleProfile, error: serverError } = res.data || {};
+      const {
+        status,
+        googleProfile,
+        googleSignupTicket,
+        error: serverError,
+      } = res.data || {};
 
       if (status === "account_exists" || res.status === 409) {
         setError("An account already exists with this Gmail. Try logging in.");
@@ -274,6 +287,9 @@ export default function SignupScreen() {
           googleLastName: googleProfile.lastName || "",
           googleAvatar: googleProfile.avatar || "",
           authProvider: "google",
+          signupVerificationTicket: String(
+            googleSignupTicket || ""
+          ),
         },
       });
     } catch (err: any) {
