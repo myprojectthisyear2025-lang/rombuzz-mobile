@@ -83,6 +83,9 @@ const RBZ = {
   success: "#16a34a",
 } as const;
 
+// v1 release: keep Stories implemented, but hide them from users.
+const STORIES_V1_ENABLED = false;
+
 type Audience = "public" | "matches" | "hidden";
 function buildGuidanceList(user: any) {
   if (!user) return [];
@@ -910,6 +913,13 @@ const [storyOpen, setStoryOpen] = useState(false);
 
 // loads story state for avatar ring + future viewer
 const loadMyStories = useCallback(async () => {
+  if (!STORIES_V1_ENABLED) {
+    setMyStories([]);
+    setHasStory(false);
+    setStoryOwner(null);
+    return;
+  }
+
   try {
     const data = await apiFetch("/stories/me");
     const list = Array.isArray(data?.stories) ? data.stories : [];
@@ -1198,6 +1208,11 @@ if (
   // ---------- Avatar tap handler
 const handleAvatarPress = () => {
   if (!avatarUri) return;
+
+  if (!STORIES_V1_ENABLED) {
+    setAvatarViewerOpen(true);
+    return;
+  }
 
   // If user has a story, ask what to do
   if (hasStory) {
@@ -1656,8 +1671,8 @@ setStoryOpen(true);
   {/* Avatar (animated ring when story exists) */}
  <StoryAvatar
   uri={avatarUri}
-  hasStory={hasStory}
-  seen={myStories.every((s) => s.viewed === true)}
+  hasStory={STORIES_V1_ENABLED && hasStory}
+  seen={STORIES_V1_ENABLED ? myStories.every((s) => s.viewed === true) : true}
   size={86}
   onPress={handleAvatarPress}
 />
@@ -1682,13 +1697,15 @@ setStoryOpen(true);
 )}
 
 <View style={styles.actionRow}>
- <Pressable
-  onPress={() => setAddStoryOpen(true)}
-  style={[styles.actionBtn, { backgroundColor: RBZ.c3 }]}
->
-  <Ionicons name="add-circle-outline" size={16} color={RBZ.white} />
-  <Text style={styles.actionBtnText}>Add Story</Text>
-</Pressable>
+ {STORIES_V1_ENABLED && (
+   <Pressable
+    onPress={() => setAddStoryOpen(true)}
+    style={[styles.actionBtn, { backgroundColor: RBZ.c3 }]}
+   >
+    <Ionicons name="add-circle-outline" size={16} color={RBZ.white} />
+    <Text style={styles.actionBtnText}>Add Story</Text>
+   </Pressable>
+ )}
 
 
  <Pressable
@@ -2084,7 +2101,7 @@ setStoryOpen(true);
       </Modal>
 {/* ADD STORY MODAL (REAL) */}
 <AddStoryModal
-  visible={addStoryOpen}
+  visible={STORIES_V1_ENABLED && addStoryOpen}
   onClose={() => setAddStoryOpen(false)}
   onPosted={(story) => {
     // ✅ Instant ring update (NO refresh required)
@@ -2110,7 +2127,7 @@ setStoryOpen(true);
   }}
 />
 {/* STORY VIEWER (MUST BE ROOT LEVEL) */}
-{storyOpen && myStories.length > 0 && (
+{STORIES_V1_ENABLED && storyOpen && myStories.length > 0 && (
   <StoryViewer
     stories={myStories}
     owner={storyOwner}

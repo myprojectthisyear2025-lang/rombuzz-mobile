@@ -66,6 +66,9 @@ const RBZ = {
   warning: "#f59e0b",
 };
 
+// v1 release: Stories stay implemented, but are hidden from users.
+const STORIES_V1_ENABLED = false;
+
 type MediaItem = {
   id: string;
   url: string;
@@ -463,7 +466,7 @@ export default function ViewProfile() {
   const requestSeqRef = useRef(0);
   const hydratedCacheForRef = useRef("");
 
-  const hasStory = stories.length > 0;
+  const hasStory = STORIES_V1_ENABLED && stories.length > 0;
 
    // voice intro
    const soundRef = useRef<Audio.Sound | null>(null);
