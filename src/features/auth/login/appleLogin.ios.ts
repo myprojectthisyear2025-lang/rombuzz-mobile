@@ -48,10 +48,23 @@ export async function loginWithApple(): Promise<LoginResult> {
       };
     }
 
+    if (!credential.authorizationCode) {
+      return {
+        kind: "error",
+        message:
+          "Apple login failed. No authorization code received.",
+      };
+    }
+
     const res = await axios.post(
       `${API_BASE}/auth/apple`,
       {
-        token: credential.identityToken,
+        token:
+          credential.identityToken,
+
+        authorizationCode:
+          credential.authorizationCode,
+
         mode: "login",
       },
       {

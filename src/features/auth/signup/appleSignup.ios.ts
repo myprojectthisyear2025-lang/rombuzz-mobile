@@ -79,6 +79,14 @@ export async function signupWithApple(): Promise<AppleSignupResult> {
       };
     }
 
+    if (!credential.authorizationCode) {
+      return {
+        kind: "error",
+        message:
+          "Apple signup failed. No authorization code received.",
+      };
+    }
+
     const firstName =
       credential.fullName?.givenName?.trim() || "";
 
@@ -88,7 +96,12 @@ export async function signupWithApple(): Promise<AppleSignupResult> {
     const res = await axios.post(
       `${API_BASE}/auth/apple`,
       {
-        token: credential.identityToken,
+        token:
+          credential.identityToken,
+
+        authorizationCode:
+          credential.authorizationCode,
+
         mode: "signup",
       },
       {

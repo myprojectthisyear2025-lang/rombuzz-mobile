@@ -41,6 +41,15 @@ import {
   rbzFetch,
 } from "../../../src/lib/_rbzApi";
 
+type DeleteResult = {
+  cleanup?: {
+    apple?: {
+      revoked?: boolean;
+      manualRevocationRequired?: boolean;
+    };
+  };
+};
+
 type DeletePreview = {
   success?: boolean;
   holdDays?: number;
@@ -177,23 +186,39 @@ export default function ManageAccount() {
     setBusy(true);
 
     try {
-      await rbzFetch(
-        "/account/delete",
-        {
-          method: "DELETE",
+      const result =
+        await rbzFetch<DeleteResult>(
+          "/account/delete",
+          {
+            method: "DELETE",
 
-          body: confirmForfeit
-            ? {
-                confirmForfeit: true,
-              }
-            : {},
-        },
-      );
+            body: confirmForfeit
+              ? {
+                  confirmForfeit:
+                    true,
+                }
+              : {},
+          },
+        );
+
+      const manualAppleRevocation =
+        result?.cleanup?.apple
+          ?.manualRevocationRequired ===
+        true;
+
+      const deletionMessage =
+        manualAppleRevocation
+          ? [
+              "Your RomBuzz profile is no longer available to other users. Your email remains on a 7-day deletion hold while final cleanup completes.",
+              "",
+              "This account used an older Sign in with Apple authorization. Please also remove RomBuzz from Sign in with Apple in your Apple Account settings.",
+            ].join("\n")
+          : "Your RomBuzz profile is no longer available to other users. Your email remains on a 7-day deletion hold while final cleanup completes.";
 
       Alert.alert(
         "Deletion started",
 
-        "Your RomBuzz profile is no longer available to other users. Your email remains on a 7-day deletion hold while final cleanup completes.",
+        deletionMessage,
 
         [
           {
@@ -248,8 +273,7 @@ export default function ManageAccount() {
         "Your profile will be removed from normal RomBuzz experiences immediately.",
         "",
 
-        "RomBuzz uses a 7-day deletion hold. Final cleanup may complete after that hold if an external storage deletion must be retried.",
-        "",
+        "RomBuzz uses a 7-day deletion hold. Final cleanup may complete after that hold if an external service cleanup must be retried.",        "",
 
         "Limited safety, fraud, support, financial, or legal records may be retained where necessary.",
       ].join("\n"),

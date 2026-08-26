@@ -1,32 +1,30 @@
-/* add these features
-disable gift receiving
-*/
-
-
 /**
  * ============================================================================
  * 📁 File: app/(tabs)/settings/privacy.tsx
- * 🎯 Purpose: Privacy settings (UI-first; backend wiring can be added as needed)
+ * 🎯 Purpose: Privacy settings screen for RomBuzz.
+ *
+ * V1:
+ * - Visibility privacy toggles are intentionally hidden until backend support
+ *   is implemented so the app does not present non-functional controls.
  * ============================================================================
  */
-import React, { useState } from "react";
-import { Card, ScreenShell, SectionTitle, SmallText, ToggleRow } from "../../../src/components/settings/_ui";
+
+import React from "react";
+import {
+  Card,
+  ScreenShell,
+  SectionTitle,
+  SmallText,
+} from "../../../src/components/settings/_ui";
 
 export default function PrivacySettings() {
-  const [incognito, setIncognito] = useState(false);
-  const [showOnline, setShowOnline] = useState(true);
-  const [showDistance, setShowDistance] = useState(true);
-
   return (
     <ScreenShell title="Privacy">
-      <SectionTitle>Visibility</SectionTitle>
-      <Card>
-        <ToggleRow icon="eye-off-outline" label="Incognito mode" value={incognito} onChange={setIncognito} />
-        <ToggleRow icon="radio-outline" label="Show online status" value={showOnline} onChange={setShowOnline} />
-        <ToggleRow icon="navigate-outline" label="Show distance" value={showDistance} onChange={setShowDistance} />
+      <SectionTitle>Privacy</SectionTitle>
 
+      <Card>
         <SmallText>
-          This page is safe UI-first. If you want these to persist, tell me which backend fields you want to store them in.
+          Additional privacy controls will be available in a future update.
         </SmallText>
       </Card>
     </ScreenShell>
