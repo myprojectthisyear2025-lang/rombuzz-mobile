@@ -4,27 +4,22 @@
  * 🪙 Purpose: RomBuzz BuzzCoin Wallet screen.
  *
  * Used by:
- *  - Mobile app tab route: /wallet
- * 
- * What this screen shows:
- *  - Spendable BuzzCoin balance
- *  - Creator earnings from paid/gifted media unlocks
- *  - Future pending payout balance
- *  - Wallet ledger/history
- *  - Withdraw button that shows "Withdrawals coming soon"
+ *  - Mobile app route: /wallet
  *
- * Wallet meaning:
- *  - balanceBC = spendable in-app BuzzCoin
- *  - earnedBC = creator/media earnings
- *  - pendingBC = future payout/withdrawal holding balance
+ * V1 behavior:
+ *  - Shows spendable BuzzCoin balance.
+ *  - Shows normal wallet transaction history.
+ *  - Hides creator earnings, pending payout, withdrawal UI,
+ *    and creator/payout ledger entries.
  *
- * Important:
- *  - This screen does NOT process real withdrawals.
- *  - Withdraw button is intentionally disabled for launch.
+ * Future creator-wallet functionality remains in this file
+ * behind a V1 visibility flag so it can be restored later
+ * without rebuilding the wallet.
  * ============================================================
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -39,7 +34,6 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   FadeInDown,
   FadeInUp,
@@ -52,6 +46,13 @@ import { useBuzzCoinWallet } from "@/src/hooks/gifts/useBuzzCoinWallet";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const isTablet = SCREEN_WIDTH >= 768;
+
+/**
+ * V1 launch:
+ * Creator earnings, pending payouts and withdrawal UI remain
+ * implemented but hidden until RomBuzz enables that system.
+ */
+const SHOW_CREATOR_WALLET_V1 = false;
 
 const COLORS = {
   primary: "#b1123c",
@@ -119,6 +120,33 @@ function isDebit(row: LedgerRow) {
 function isCredit(row: LedgerRow) {
   const amount = Number(row?.amountBC || 0);
   return amount > 0 && !isDebit(row);
+}
+
+function isCreatorWalletRow(row: LedgerRow) {
+  const bucket = String(
+    row?.metadata?.walletBucket || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const type = String(row?.type || "")
+    .trim()
+    .toLowerCase();
+
+  const source = String(row?.source || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    bucket === "earned" ||
+    bucket === "pending" ||
+    type === "withdrawal_request" ||
+    type.includes("creator_earning") ||
+    (
+      source === "chat_media_unlock" &&
+      type === "gift_receive"
+    )
+  );
 }
 
 function getBucketLabel(row: LedgerRow) {
@@ -329,23 +357,57 @@ export default function WalletScreen() {
     }
   }, [loadLedger, reload]);
 
+  const visibleLedger = useMemo(() => {
+    if (SHOW_CREATOR_WALLET_V1) {
+      return ledger;
+    }
+
+    return ledger.filter(
+      (row) => !isCreatorWalletRow(row)
+    );
+  }, [ledger]);
+
   const filteredLedger = useMemo(() => {
-    if (tab === "spending") return ledger.filter((row) => isDebit(row));
-    if (tab === "earning") return ledger.filter((row) => !isDebit(row));
-    return ledger;
-  }, [ledger, tab]);
+    if (tab === "spending") {
+      return visibleLedger.filter(
+        (row) => isDebit(row)
+      );
+    }
+
+    if (tab === "earning") {
+      return visibleLedger.filter(
+        (row) => !isDebit(row)
+      );
+    }
+
+    return visibleLedger;
+  }, [visibleLedger, tab]);
 
   const totalSpent = useMemo(() => {
-    return ledger
+    return visibleLedger
       .filter((row) => isDebit(row))
-      .reduce((sum, row) => sum + Math.abs(Number(row?.amountBC || 0)), 0);
-  }, [ledger]);
+      .reduce(
+        (sum, row) =>
+          sum +
+          Math.abs(
+            Number(row?.amountBC || 0)
+          ),
+        0
+      );
+  }, [visibleLedger]);
 
   const totalEarnedInHistory = useMemo(() => {
-    return ledger
+    return visibleLedger
       .filter((row) => !isDebit(row))
-      .reduce((sum, row) => sum + Math.abs(Number(row?.amountBC || 0)), 0);
-  }, [ledger]);
+      .reduce(
+        (sum, row) =>
+          sum +
+          Math.abs(
+            Number(row?.amountBC || 0)
+          ),
+        0
+      );
+  }, [visibleLedger]);
 
   const openWithdrawComingSoon = () => {
     Alert.alert(
@@ -457,15 +519,50 @@ export default function WalletScreen() {
               />
             </View>
 
-            {/* Stats Row */}
-            <Animated.View entering={FadeInDown.delay(250).springify()} style={styles.statsRow}>
+            {/* V1 wallet stats */}
+            <Animated.View
+              entering={
+                FadeInDown
+                  .delay(250)
+                  .springify()
+              }
+              style={styles.statsRow}
+            >
+              {SHOW_CREATOR_WALLET_V1 && (
+                <View style={styles.statCard}>
+                  <Text
+                    style={
+                      styles.statLabel
+                    }
+                  >
+                    Total Earned
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.statValue
+                    }
+                  >
+                    {formatBC(
+                      totalEarnedInHistory
+                    )}{" "}
+                    BC
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Total Earned</Text>
-                <Text style={styles.statValue}>{formatBC(totalEarnedInHistory)} BC</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Total Spent</Text>
-                <Text style={styles.statValue}>{formatBC(totalSpent)} BC</Text>
+                <Text
+                  style={styles.statLabel}
+                >
+                  Total Spent
+                </Text>
+
+                <Text
+                  style={styles.statValue}
+                >
+                  {formatBC(totalSpent)} BC
+                </Text>
               </View>
             </Animated.View>
           </>
@@ -478,16 +575,48 @@ export default function WalletScreen() {
             {ledgerLoading && <ActivityIndicator size="small" color={COLORS.primary} />}
           </View>
 
-          {/* Tabs */}
+          {/* V1 history tabs */}
           <View style={styles.tabs}>
-            {(["all", "spending", "earning"] as WalletTab[]).map((t) => (
+            {(
+              SHOW_CREATOR_WALLET_V1
+                ? (
+                    [
+                      "all",
+                      "spending",
+                      "earning",
+                    ] as WalletTab[]
+                  )
+                : (
+                    [
+                      "all",
+                      "spending",
+                    ] as WalletTab[]
+                  )
+            ).map((t) => (
               <Pressable
                 key={t}
-                onPress={() => setTab(t)}
-                style={[styles.tabBtn, tab === t && styles.tabActive]}
+                onPress={() =>
+                  setTab(t)
+                }
+                style={[
+                  styles.tabBtn,
+                  tab === t &&
+                    styles.tabActive,
+                ]}
               >
-                <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                  {t === "all" ? "All" : t === "spending" ? "Spending" : "Earnings"}
+                <Text
+                  style={[
+                    styles.tabText,
+                    tab === t &&
+                      styles.tabTextActive,
+                  ]}
+                >
+                  {t === "all"
+                    ? "All"
+                    : t ===
+                        "spending"
+                      ? "Spending"
+                      : "Earnings"}
                 </Text>
               </Pressable>
             ))}
@@ -516,12 +645,17 @@ export default function WalletScreen() {
             </View>
           )}
 
-          {/* Note Box */}
+          {/* V1 wallet note */}
           <View style={styles.noteBox}>
-            <Ionicons name="shield-checkmark" size={18} color={COLORS.primary} />
+            <Ionicons
+              name="shield-checkmark"
+              size={18}
+              color={COLORS.primary}
+            />
+
             <Text style={styles.noteText}>
-              Creator earnings are tracked now, but withdrawals are disabled for launch until KYC,
-              payout, refund, tax, and safety rules are finalized.
+              BuzzCoin is an in-app virtual balance
+              for supported RomBuzz features.
             </Text>
           </View>
 
@@ -644,7 +778,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   premiumCardWrapper: {
-    width: "48.2%",
+    width: SHOW_CREATOR_WALLET_V1
+      ? "48.2%"
+      : "100%",
     marginBottom: 12,
   },
   premiumBalanceCard: {
