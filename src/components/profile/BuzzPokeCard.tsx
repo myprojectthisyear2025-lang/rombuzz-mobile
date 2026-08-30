@@ -34,7 +34,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -101,7 +101,6 @@ export default function BuzzPokeCard({
 }: Props) {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(false);
   const [buzzing, setBuzzing] = useState(false);
   const [paidBuzzing, setPaidBuzzing] = useState(false);
   const [retryLeft, setRetryLeft] = useState(0);
@@ -109,6 +108,10 @@ export default function BuzzPokeCard({
     count: 0,
     lastBuzz: null,
   });
+
+  // Prevent a slow initial streak request from overwriting a Buzz
+  // that the user sends while that request is still in flight.
+  const buzzActionVersionRef = useRef(0);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -171,9 +174,9 @@ export default function BuzzPokeCard({
       return;
     }
 
-    try {
-      setLoading(true);
+    const actionVersionAtStart = buzzActionVersionRef.current;
 
+    try {
       const token = await getToken();
       if (!token) {
         setStreak({ count: 0, lastBuzz: null });
@@ -189,6 +192,12 @@ export default function BuzzPokeCard({
       );
 
       const data = await res.json().catch(() => ({}));
+
+      // User sent a Buzz while this older request was loading.
+      // Ignore this stale response instead of overwriting newer state.
+      if (actionVersionAtStart !== buzzActionVersionRef.current) {
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(data?.error || "Failed to load buzz streak");
@@ -208,10 +217,12 @@ export default function BuzzPokeCard({
 
       emitMeta(nextCount, nextLastBuzz);
     } catch {
+      if (actionVersionAtStart !== buzzActionVersionRef.current) {
+        return;
+      }
+
       setStreak({ count: 0, lastBuzz: null });
       emitMeta(0, null);
-    } finally {
-      setLoading(false);
     }
   }, [emitMeta, getToken, matched, userId]);
 
@@ -231,6 +242,9 @@ export default function BuzzPokeCard({
     if (!matched || !userId) return;
     if (buzzing) return;
     if (retryLeft > 0) return;
+
+    // The user's action is newer than any streak request already in flight.
+    buzzActionVersionRef.current += 1;
 
     try {
       setBuzzing(true);
@@ -304,6 +318,9 @@ export default function BuzzPokeCard({
 
       if (paidBuzzing) return;
       if (retryLeft > 0) return;
+
+      // The user's action is newer than any streak request already in flight.
+      buzzActionVersionRef.current += 1;
 
       try {
         setPaidBuzzing(true);
@@ -444,14 +461,12 @@ export default function BuzzPokeCard({
   if (!matched) return null;
 
   const buttonDisabled =
-    buzzing || paidBuzzing || retryLeft > 0 || loading;
+    buzzing || paidBuzzing || retryLeft > 0;
 
   const buttonText = buzzing
     ? "Buzzing..."
     : paidBuzzing
     ? "Sending..."
-    : loading
-    ? "Loading..."
     : retryLeft > 0
     ? `Retry ${retryLeft}s`
     : selectedBuzzType.isPaid
@@ -482,7 +497,7 @@ export default function BuzzPokeCard({
           end={{ x: 1, y: 1 }}
           style={styles.button}
         >
-          {buzzing || paidBuzzing || loading ? (
+          {buzzing || paidBuzzing ? (
             <ActivityIndicator size="small" color={RBZ.white} />
           ) : selectedBuzzType.isPaid ? (
             <Text style={styles.buttonEmoji}>{selectedBuzzType.emoji}</Text>

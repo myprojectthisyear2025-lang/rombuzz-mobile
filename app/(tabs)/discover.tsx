@@ -571,9 +571,28 @@ const nextScale = useAnimatedStyle(() => ({
         return null;
       }
 
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      // Do not let a slow GPS lock Discover on refresh.
+      // Prefer fresh coordinates, but fall back to a recent cached device location.
+      const freshPosition = await Promise.race<any>([
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), 3500);
+        }),
+      ]);
+
+      const position =
+        freshPosition ||
+        (await Location.getLastKnownPositionAsync({
+          maxAge: 10 * 60 * 1000,
+          requiredAccuracy: 10000,
+        }));
+
+      if (!position) {
+        console.warn("📍 Discover GPS timed out with no last known location");
+        return null;
+      }
 
       const lat = Number(position?.coords?.latitude);
       const lng = Number(position?.coords?.longitude);
@@ -586,10 +605,15 @@ const nextScale = useAnimatedStyle(() => ({
       let isoCountryCode = "";
 
       try {
-        const places = await Location.reverseGeocodeAsync({
-          latitude: lat,
-          longitude: lng,
-        });
+        const places = await Promise.race<any>([
+          Location.reverseGeocodeAsync({
+            latitude: lat,
+            longitude: lng,
+          }),
+          new Promise<any[]>((resolve) => {
+            setTimeout(() => resolve([]), 1500);
+          }),
+        ]);
 
         const place = Array.isArray(places) ? places[0] : null;
         country = String(place?.country || "").trim();
@@ -616,7 +640,11 @@ const nextScale = useAnimatedStyle(() => ({
       let hadUsableCache = false;
       const silent = !!override?.silent;
 
-      if (silent) {
+      // Once cached users are available, the remaining network work
+      // becomes a quiet background refresh instead of blocking the deck.
+      let backgroundRefresh = silent;
+
+      if (backgroundRefresh) {
         setQuietRefreshing(true);
       }
 
@@ -659,10 +687,14 @@ const nextScale = useAnimatedStyle(() => ({
 
         if (cached.hit) {
           hadUsableCache = true;
+          backgroundRefresh = true;
+
+          // Show the small cached deck immediately.
           setUsers(cached.users);
           setReveal(0);
           setPhotoIndex(0);
           setLoading(false);
+          setQuietRefreshing(true);
           preloadDiscoverImages(cached.users);
         } else if (!silent) {
           setLoading(true);
@@ -748,7 +780,7 @@ const nextScale = useAnimatedStyle(() => ({
         const finalList = applyClientOnlyFilters(serverList, effective);
 
         setUsers((prev) => {
-          const next = silent
+          const next = backgroundRefresh
             ? keepVisibleCardStable(prev, finalList)
             : finalList;
 
@@ -756,7 +788,7 @@ const nextScale = useAnimatedStyle(() => ({
           return next;
         });
 
-        if (!silent) {
+        if (!backgroundRefresh) {
           setReveal(0);
           setPhotoIndex(0);
         }
@@ -777,11 +809,11 @@ const nextScale = useAnimatedStyle(() => ({
           setMessage(e?.message || "Failed to load Discover");
         }
          } finally {
-        if (silent) {
+        if (backgroundRefresh) {
           setQuietRefreshing(false);
         }
 
-        if (!silent) {
+        if (!backgroundRefresh) {
           setLoading(false);
         }
       }

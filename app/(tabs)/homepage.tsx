@@ -146,24 +146,14 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Right: Premium Button */}
-          <Pressable
-            onPress={() => router.push("/upgrade")}
-            style={({ pressed }) => [
-              styles.headerButton,
-              styles.premiumButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <LinearGradient
-              colors={['#FFD700', '#FFA500']}
-              style={styles.headerButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="sparkles" size={22} color="#8B4513" />
-            </LinearGradient>
-          </Pressable>
+          {/* Right: Invisible spacer keeps the brand centered.
+              No button, background, border, elevation, or shadow. */}
+          <View
+            style={styles.headerSpacer}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
         </View>
 
         {/* WELCOME SECTION WITH ANIMATION */}
@@ -488,6 +478,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+
+  headerSpacer: {
+    width: 52,
+    height: 52,
   },
   
   headerButtonGradient: {

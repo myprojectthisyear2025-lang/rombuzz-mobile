@@ -16,12 +16,53 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useState } from "react";
 
+import {
+  clearOnboardingDraft,
+  saveOnboardingDraft,
+} from "../onboarding/rbzOnboardingDraft";
 import { loginWithApple } from "./appleLogin";
 import {
-    loginWithEmail,
-    loginWithGoogle,
+  loginWithEmail,
+  loginWithGoogle,
 } from "./loginApi";
 import type { LoginResult } from "./loginTypes";
+
+function profileLooksComplete(user: any) {
+  if (!user) return false;
+
+  const required = [
+    user.firstName,
+    user.lastName,
+    user.gender,
+    user.dob,
+    user.avatar,
+  ];
+
+  const hasPhotos =
+    Array.isArray(user.photos) && user.photos.length > 0;
+
+  const hasInterests =
+    Array.isArray(user.interests) && user.interests.length > 0;
+
+  return (
+    required.every(Boolean) &&
+    hasPhotos &&
+    hasInterests &&
+    Boolean(user.lookingFor)
+  );
+}
+
+function dateOnly(value: any) {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
+}
 
 export function useLoginController() {
   const router = useRouter();
@@ -45,13 +86,81 @@ export function useLoginController() {
 
   const completeLogin = async (
     result: LoginResult,
-    checkProfile: boolean,
+    provider: "email" | "google" | "apple",
   ) => {
     if (result.kind === "cancelled") return;
 
     if (result.kind === "error") {
       setError(result.message);
       return;
+    }
+
+    const user = result.user || {};
+
+    const incomplete =
+      result.status === "incomplete_profile" ||
+      !profileLooksComplete(user);
+
+    if (incomplete) {
+      const resumeEmail = String(
+        user.email || email || "",
+      )
+        .trim()
+        .toLowerCase();
+
+      if (!resumeEmail) {
+        setError(
+          "This profile is incomplete, but its email could not be restored.",
+        );
+        return;
+      }
+
+      // This is an authenticated existing account, not a brand-new
+      // signup-verification flow. Seed a recovery draft so _layout
+      // keeps the user inside onboarding until the profile is complete.
+      await saveOnboardingDraft({
+        step: 1,
+        email: resumeEmail,
+        authProvider: "",
+        form: {
+          firstName: String(user.firstName || ""),
+          lastName: String(user.lastName || ""),
+          password: provider === "email" ? password : "",
+          confirm: provider === "email" ? password : "",
+          gender: String(user.gender || ""),
+          dob: dateOnly(user.dob),
+          lookingFor: String(user.lookingFor || ""),
+          city: String(user.city || ""),
+          height: String(user.height || ""),
+          interestedIn: Array.isArray(user.interestedIn)
+            ? user.interestedIn
+            : [],
+          ageMin: Number(user.preferences?.ageMin || 18),
+          ageMax: Number(user.preferences?.ageMax || 35),
+          distance: Number(user.preferences?.distance || 25),
+          visibilityMode: String(
+            user.visibilityMode || "auto",
+          ),
+          likes: String(user.likes || ""),
+          dislikes: String(user.dislikes || ""),
+          interests: Array.isArray(user.interests)
+            ? user.interests
+            : [],
+          phone: String(user.phone || ""),
+          voiceUrl: String(user.voiceUrl || ""),
+          voiceDurationSec: Number(
+            user.voiceDurationSec || 0,
+          ),
+          photos: Array.isArray(user.photos)
+            ? user.photos
+            : [],
+          avatar: String(user.avatar || ""),
+        },
+      });
+    } else {
+      // A completed account must not inherit an abandoned signup
+      // draft that happens to remain on this device.
+      await clearOnboardingDraft().catch(() => {});
     }
 
     await SecureStore.setItemAsync(
@@ -64,13 +173,7 @@ export function useLoginController() {
       JSON.stringify(result.user),
     );
 
-    if (
-      checkProfile &&
-      (
-        result.status === "incomplete_profile" ||
-        !result.user.profileComplete
-      )
-    ) {
+    if (incomplete) {
       router.replace("/auth/register-full");
       return;
     }
@@ -93,7 +196,7 @@ export function useLoginController() {
     try {
       await completeLogin(
         await loginWithEmail(email, password),
-        false,
+        "email",
       );
     } finally {
       setLoading(false);
@@ -107,7 +210,7 @@ export function useLoginController() {
     try {
       await completeLogin(
         await loginWithGoogle(googleWebClientId),
-        true,
+        "google",
       );
     } finally {
       setGoogleLoading(false);
@@ -121,7 +224,7 @@ export function useLoginController() {
     try {
       await completeLogin(
         await loginWithApple(),
-        true,
+        "apple",
       );
     } finally {
       setAppleLoading(false);

@@ -40,7 +40,7 @@ import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image, // ADD THIS
@@ -53,6 +53,11 @@ import {
 } from "react-native";
 
 import { API_BASE } from "../../../src/config/api";
+import {
+  clearOnboardingDraft,
+  loadOnboardingDraft,
+  saveOnboardingDraft,
+} from "../../../src/features/auth/onboarding/rbzOnboardingDraft";
 
 // Step components
 import Step1Basic from "./steps/Step1Basic";
@@ -163,10 +168,23 @@ export default function RegisterFullScreen() {
   }>();
 const { width, height } = useWindowDimensions(); // Get screen dimensions
   const isSmallScreen = height < 700; // Detect small screens
-  const [email] = useState<string>(params.verifiedEmail || "");
+
+  const [email, setEmail] = useState<string>(
+    String(params.verifiedEmail || "").trim().toLowerCase()
+  );
+  const [authProvider, setAuthProvider] = useState<string>(
+    String(params.authProvider || "")
+  );
+  const [signupVerificationTicket, setSignupVerificationTicket] =
+    useState<string>(String(params.signupVerificationTicket || ""));
+  const [appleSignupTicket, setAppleSignupTicket] = useState<string>(
+    String(params.appleSignupTicket || "")
+  );
+
   const [step, setStep] = useState<number>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
+  const [draftReady, setDraftReady] = useState(false);
 
   const [form, setForm] = useState<RegisterForm>({
     firstName: String(
@@ -242,6 +260,130 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
     });
 
   const setAvatar = (url: string) => setField("avatar", url);
+
+  // Restore an unfinished signup after the app was killed/restarted.
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const draft = await loadOnboardingDraft<RegisterForm>();
+        if (!alive) return;
+
+        const incomingEmail = String(params.verifiedEmail || "")
+          .trim()
+          .toLowerCase();
+
+        if (
+          draft &&
+          (!incomingEmail || incomingEmail === draft.email)
+        ) {
+          setEmail(draft.email);
+
+          setAuthProvider(
+            String(params.authProvider || draft.authProvider || "")
+          );
+
+          setSignupVerificationTicket(
+            String(
+              params.signupVerificationTicket ||
+                draft.signupVerificationTicket ||
+                ""
+            )
+          );
+
+          setAppleSignupTicket(
+            String(
+              params.appleSignupTicket ||
+                draft.appleSignupTicket ||
+                ""
+            )
+          );
+
+          setForm((current) => ({
+            ...current,
+            ...draft.form,
+            interestedIn: Array.isArray(draft.form?.interestedIn)
+              ? draft.form.interestedIn
+              : current.interestedIn,
+            interests: Array.isArray(draft.form?.interests)
+              ? draft.form.interests
+              : current.interests,
+            photos: Array.isArray(draft.form?.photos)
+              ? draft.form.photos
+              : current.photos,
+          }));
+
+          setStep(draft.step);
+        } else if (
+          draft &&
+          incomingEmail &&
+          incomingEmail !== draft.email
+        ) {
+          // A different verified account started signup on this device.
+          // Never restore another account's old onboarding information.
+          await clearOnboardingDraft();
+        }
+      } catch (err) {
+        console.log("❌ Could not restore onboarding draft:", err);
+      } finally {
+        if (alive) {
+          setDraftReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Save field changes shortly after they happen.
+  useEffect(() => {
+    if (!draftReady || !email.trim()) return;
+
+    const timer = setTimeout(() => {
+      saveOnboardingDraft({
+        step,
+        form,
+        email,
+        authProvider,
+        signupVerificationTicket,
+        appleSignupTicket,
+      }).catch((err) => {
+        console.log("❌ Could not save onboarding draft:", err);
+      });
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [
+    draftReady,
+    step,
+    form,
+    email,
+    authProvider,
+    signupVerificationTicket,
+    appleSignupTicket,
+  ]);
+
+  const goToStep = (nextStep: number) => {
+    setStep(nextStep);
+
+    if (!draftReady || !email.trim()) return;
+
+    // Step transitions are saved immediately so killing the app after
+    // pressing Next/Back still returns to the correct onboarding page.
+    saveOnboardingDraft({
+      step: nextStep,
+      form,
+      email,
+      authProvider,
+      signupVerificationTicket,
+      appleSignupTicket,
+    }).catch((err) => {
+      console.log("❌ Could not save onboarding step:", err);
+    });
+  };
 
   const dobInvalid =
     !!form.dob && (!isValidDate(form.dob) || !isAdult(form.dob));
@@ -351,14 +493,14 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   voiceUrl: form.voiceUrl || "",
   voiceDurationSec: Number(form.voiceDurationSec || 0),
 
-  // Auth provider proof.
+  // Auth provider proof survives an app restart through the secure draft.
   // Email + Google use the shared verified-signup ticket.
   // Apple keeps its existing dedicated Apple signup ticket.
-  authProvider: String(params.authProvider || ""),
+  authProvider: String(authProvider || ""),
   signupVerificationTicket:
-    String(params.signupVerificationTicket || ""),
+    String(signupVerificationTicket || ""),
   appleSignupTicket:
-    String(params.appleSignupTicket || ""),
+    String(appleSignupTicket || ""),
 };
 
         const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
@@ -374,6 +516,12 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
 
          await SecureStore.setItemAsync("RBZ_TOKEN", token);
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
+
+      // ✅ Registration is fully successful.
+      // Only now is it safe to remove the recovery draft.
+      await clearOnboardingDraft().catch((err) => {
+        console.log("❌ Could not clear completed onboarding draft:", err);
+      });
 
       // ✅ Account is created. Send user directly to the Tabs homepage.
       router.replace("/(tabs)/homepage");
@@ -398,7 +546,7 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
             setField={setField}
             dobInvalid={dobInvalid}
             canNext={!!canNext1}
-            onNext={() => setStep(2)}
+            onNext={() => goToStep(2)}
           />
         );
             case 2:
@@ -407,8 +555,8 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
             form={form}
             setField={setField}
             canNext={!!canNext2}
-            onNext={() => setStep(3)}
-            onBack={() => setStep(1)}
+            onNext={() => goToStep(3)}
+            onBack={() => goToStep(1)}
           />
         );
 
@@ -418,8 +566,8 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
             form={form}
             setField={setField}
             canNext={!!canNext4}
-            onNext={() => setStep(4)}
-            onBack={() => setStep(2)}
+            onNext={() => goToStep(4)}
+            onBack={() => goToStep(2)}
           />
         );
 
@@ -430,7 +578,7 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
             email={email}
             form={form}
             error={error}
-            onBack={() => setStep(4)}
+            onBack={() => goToStep(4)}
             onFinish={finish}
             busy={busy}
           />
@@ -438,6 +586,25 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
 
     }
   };
+
+  if (!draftReady) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View
+          style={[
+            styles.container,
+            {
+              alignItems: "center",
+              justifyContent: "center",
+            },
+          ]}
+        >
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
 return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>

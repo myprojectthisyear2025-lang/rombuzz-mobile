@@ -1156,19 +1156,19 @@ if (
       const storedValue = uploaded.r2Key || uploaded.url;
       const displayUrl = uploaded.signedUrl || uploaded.url;
 
-      if (!storedValue) throw new Error("Upload did not return media key");
+       if (!storedValue) throw new Error("Upload did not return media key");
 
       // 1) Update avatar field with permanent R2 key, not temporary signed URL
       const updated = await apiJson("/users/me", "PUT", { avatar: storedValue });
 
-      // 2) Save into gallery as FaceBuzz
+      // 2) Save profile picture into gallery without a default visible caption.
+      // A caption should exist only when the user explicitly provides one.
       try {
         await apiJson("/upload-media", "POST", {
           fileKey: uploaded.r2Key || "",
           r2Key: uploaded.r2Key || "",
           fileUrl: uploaded.r2Key ? "" : uploaded.url,
           type: "image",
-          caption: "facebuzz",
         });
       } catch {
         // don't block avatar success if gallery endpoint errors

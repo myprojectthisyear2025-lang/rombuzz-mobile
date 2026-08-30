@@ -65,6 +65,11 @@ module.exports = ({ config }) => {
       package: variant.appId,
     },
 
+    extra: {
+      ...(baseConfig.extra || {}),
+      appVariant: variantName,
+    },
+
     plugins,
   };
 };

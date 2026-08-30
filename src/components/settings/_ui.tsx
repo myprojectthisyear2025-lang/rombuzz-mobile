@@ -45,6 +45,11 @@ export function ScreenShell({
   const insets = useSafeAreaInsets();
 
   const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
     router.replace("/(tabs)/profile");
   };
 

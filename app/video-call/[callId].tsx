@@ -52,22 +52,23 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  acceptVideoCall,
-  endVideoCall,
-  getVideoCall,
-  getVideoCallToken,
-} from "@/src/features/videoCall/videoCallApi";
-import {
   hideActiveVideoCallMini,
   setActiveVideoCallDetachedCleanup,
   showActiveVideoCallMini,
 } from "@/src/features/videoCall/ActiveVideoCallMiniStore";
+import { useVideoCallSocket } from "@/src/features/videoCall/useVideoCallSocket";
+import {
+  acceptVideoCall,
+  endVideoCall,
+  getVideoCall,
+  getVideoCallToken,
+  startVideoCall,
+} from "@/src/features/videoCall/videoCallApi";
+import { useVideoCall } from "@/src/features/videoCall/VideoCallProvider";
 import type {
   AgoraJoinToken,
   VideoCallSession,
 } from "@/src/features/videoCall/videoCallTypes";
-import { useVideoCallSocket } from "@/src/features/videoCall/useVideoCallSocket";
-import { useVideoCall } from "@/src/features/videoCall/VideoCallProvider";
 import VideoCallGiftOverlay from "@/src/features/videoCallGifts/VideoCallGiftOverlay";
 const RBZ = {
   c1: "#b1123c",
@@ -161,15 +162,33 @@ export default function RomBuzzVideoCallScreen() {
     token?: string;
     uid?: string;
     role?: string;
+    peerId?: string;
+    pending?: string;
     startedAtMs?: string;
   }>();
 
-  const callId = cleanParam(params.callId);
+  const routeCallId = cleanParam(params.callId);
   const routeChannelName = cleanParam(params.channelName);
   const routeAppId = cleanParam(params.appId);
   const routeToken = cleanParam(params.token);
   const routeUid = cleanParam(params.uid);
+  const routeRole = cleanParam(params.role);
+  const routePeerId = cleanParam(params.peerId);
+
+  const pendingCallerLaunch =
+    cleanParam(params.pending) === "1" &&
+    routeRole === "caller" &&
+    !!routePeerId;
+
   const routeStartedAtMs = Number(cleanParam(params.startedAtMs) || 0);
+
+  const [resolvedCallId, setResolvedCallId] = useState(
+    pendingCallerLaunch ? "" : routeCallId
+  );
+  const [startAttempt, setStartAttempt] = useState(0);
+
+  const callId =
+    resolvedCallId || (pendingCallerLaunch ? "" : routeCallId);
 
     const engineRef = useRef<IRtcEngine | null>(null);
   const mountedRef = useRef(true);
@@ -310,6 +329,20 @@ export default function RomBuzzVideoCallScreen() {
   };
 
     const minimizeCall = () => {
+    // During an instant caller launch, /start may still be returning.
+    // Until there is a real call id there is nothing valid to minimize.
+    if (!callId) {
+      leavingRef.current = true;
+
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)/chat");
+      }
+
+      return;
+    }
+
     minimizedToGlobalRef.current = true;
     minimizeCallUi();
 
@@ -506,6 +539,7 @@ export default function RomBuzzVideoCallScreen() {
   }, [screenWidth, screenHeight, insets.top, insets.bottom]);
 
   const callTitle = useMemo(() => {
+    if (pendingCallerLaunch && !call) return "Calling...";
     if (!call) return "RomBuzz Video";
     if (call.status === "ringing") return "Calling...";
     if (call.status === "accepted") return "RomBuzz Video";
@@ -513,7 +547,7 @@ export default function RomBuzzVideoCallScreen() {
     if (call.status === "declined") return "Call declined";
     if (call.status === "missed") return "Missed call";
     return "RomBuzz Video";
-  }, [call]);
+  }, [call, pendingCallerLaunch]);
 
   const cleanupAgora = async () => {
     const engine = engineRef.current;
@@ -538,28 +572,31 @@ export default function RomBuzzVideoCallScreen() {
     } catch {}
   };
 
-  const leaveScreen = async (reason = "left_screen") => {
+  const leaveScreen = (reason = "left_screen", notifyBackend = true) => {
     if (leavingRef.current) return;
     leavingRef.current = true;
 
-    // Red hang-up is the real call ending path.
+    // Leave the call UI immediately. Backend persistence should never
+    // hold the user on the video-call screen after pressing hang up.
     minimizedToGlobalRef.current = false;
     hideActiveVideoCallMini();
     setActiveVideoCallDetachedCleanup(null);
     clearActiveCall();
 
-    try {
-      if (callId) {
-        await endVideoCall(callId, reason).catch(() => null);
-      }
-    } finally {
-      await cleanupAgora();
+    const activeCallId = callId;
 
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)/chat");
-      }
+    cleanupAgora().catch(() => null);
+
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/chat");
+    }
+
+    if (notifyBackend && activeCallId) {
+      endVideoCall(activeCallId, reason).catch((err) => {
+        console.log("❌ Video call end sync failed", err);
+      });
     }
   };
 
@@ -598,22 +635,22 @@ export default function RomBuzzVideoCallScreen() {
     onEnded: (payload) => {
       if (String(payload?.call?.id) !== String(callId)) return;
       Alert.alert("Call ended", "The call was ended.");
-      leaveScreen("remote_ended");
+      leaveScreen("remote_ended", false);
     },
     onDeclined: (payload) => {
       if (String(payload?.call?.id) !== String(callId)) return;
       Alert.alert("Call declined", "The call was declined.");
-      leaveScreen("remote_declined");
+      leaveScreen("remote_declined", false);
     },
     onCanceled: (payload) => {
       if (String(payload?.call?.id) !== String(callId)) return;
       Alert.alert("Call canceled", "The call was canceled.");
-      leaveScreen("remote_canceled");
+      leaveScreen("remote_canceled", false);
     },
     onMissed: (payload) => {
       if (String(payload?.call?.id) !== String(callId)) return;
       Alert.alert("Missed call", "The call expired.");
-      leaveScreen("missed");
+      leaveScreen("missed", false);
     },
   });
 
@@ -654,6 +691,56 @@ export default function RomBuzzVideoCallScreen() {
   ]);
 
    useEffect(() => {
+    if (!pendingCallerLaunch || !routePeerId || callId) return;
+
+    let alive = true;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const started = await startVideoCall(routePeerId);
+        const startedCallId = String(started?.call?.id || "").trim();
+
+        if (!startedCallId) {
+          throw new Error("Call was not created");
+        }
+
+        // The user can hang up while /start is still in flight.
+        // If that happens, close the server call as soon as its id arrives.
+        if (!alive || leavingRef.current || !mountedRef.current) {
+          endVideoCall(
+            startedCallId,
+            "caller_left_while_starting"
+          ).catch(() => null);
+
+          return;
+        }
+
+        setResolvedCallId(startedCallId);
+        setCall(started.call);
+        setJoinToken(started.token || null);
+      } catch (err: any) {
+        if (!alive || leavingRef.current) return;
+        setError(err?.message || "Could not start video call.");
+      } finally {
+        if (alive && !leavingRef.current) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [pendingCallerLaunch, routePeerId, startAttempt]);
+
+  useEffect(() => {
+    // Caller-created calls already return the call + Agora token.
+    // Do not immediately download the exact same call again.
+    if (pendingCallerLaunch) return;
+
     if (!callId) {
       setError("Missing call id");
       setLoading(false);
@@ -694,6 +781,7 @@ export default function RomBuzzVideoCallScreen() {
           const result = await getVideoCallToken(callId);
 
           if (!alive) return;
+
           setCall(result.call);
           setJoinToken(result.token || null);
         }
@@ -701,14 +789,16 @@ export default function RomBuzzVideoCallScreen() {
         if (!alive) return;
         setError(err?.message || "Could not load video call.");
       } finally {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [callId]);
+  }, [callId, pendingCallerLaunch]);
 
   useEffect(() => {
     if (!joinToken?.appId || !joinToken?.token || !joinToken?.channelName || !joinToken?.uid) {
@@ -891,6 +981,13 @@ export default function RomBuzzVideoCallScreen() {
   };
 
    const retry = () => {
+    if (pendingCallerLaunch && !callId) {
+      setError("");
+      setLoading(true);
+      setStartAttempt((value) => value + 1);
+      return;
+    }
+
     router.replace({
       pathname: "../video-call/[callId]",
       params: {

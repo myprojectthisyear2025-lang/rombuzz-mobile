@@ -49,20 +49,15 @@ import ChatGiftedMediaBubble from "@/src/components/chat/ChatGiftedMediaBubble";
 import ChatGiftMessageBubble from "@/src/components/chat/ChatGiftMessageBubble";
 import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
 import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
-import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
+import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { useChatMediaViewerController } from "@/src/features/chat/thread/ChatMediaViewerController";
-import { useChatMediaSender } from "@/src/features/chat/thread/useChatMediaSender";
-import { useChatThreadFastOpen } from "@/src/features/chat/thread/useChatThreadFastOpen";
-import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
-import SwipeReplyRow from "@/src/features/chat/thread/SwipeReplyRow";
 import {
   RBZ_TAG,
   decodeCached,
   dedupeById,
-  encodePayload,
   maybeDecode,
-  mergeReplySnapshot,
+  mergeReplySnapshot
 } from "@/src/features/chat/thread/chatPayload";
 import {
   buildReplySnapshot,
@@ -73,7 +68,10 @@ import type { Msg, ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
 import MeetMiddleChatBubble, {
   getMeetMiddleBubblePayload,
 } from "@/src/features/chat/thread/MeetMiddleChatBubble";
-import { startVideoCall } from "@/src/features/videoCall/videoCallApi";
+import SwipeReplyRow from "@/src/features/chat/thread/SwipeReplyRow";
+import { useChatMediaSender } from "@/src/features/chat/thread/useChatMediaSender";
+import { useChatThreadFastOpen } from "@/src/features/chat/thread/useChatThreadFastOpen";
+import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
 import VideoCallHistoryBubble, {
   isVideoCallHistoryMessage,
 } from "@/src/features/videoCall/VideoCallHistoryBubble";
@@ -165,7 +163,7 @@ const peerAvatar =
   routePeerAvatar ||
   "https://i.pravatar.cc/200?img=12";
 
-const [startingVideoCall, setStartingVideoCall] = useState(false);
+const videoCallLaunchRef = useRef(false);
 
 const handleOpenMeetMiddle = () => {
   if (!peerId) return;
@@ -181,33 +179,26 @@ const handleOpenMeetMiddle = () => {
   });
 };
 
-const handleStartVideoCall = async () => {
-  if (!peerId || startingVideoCall) return;
+const handleStartVideoCall = () => {
+  if (!peerId || videoCallLaunchRef.current) return;
 
-  setStartingVideoCall(true);
+  // Prevent rapid double taps without making the button feel blocked.
+  videoCallLaunchRef.current = true;
 
-  try {
-    const result = await startVideoCall(peerId);
+  router.push({
+    pathname: "../video-call/[callId]",
+    params: {
+      callId: "pending",
+      peerId,
+      role: "caller",
+      pending: "1",
+      startedAtMs: String(Date.now()),
+    },
+  });
 
-    router.push({
-      pathname: "../video-call/[callId]",
-      params: {
-        callId: result.call.id,
-        channelName: result.call.channelName,
-        appId: result.token?.appId || "",
-        token: result.token?.token || "",
-        uid: result.token?.uid || "",
-        role: "caller",
-      },
-    });
-  } catch (err: any) {
-    Alert.alert(
-      "Video call",
-      err?.message || "Could not start the video call."
-    );
-  } finally {
-    setStartingVideoCall(false);
-  }
+  setTimeout(() => {
+    videoCallLaunchRef.current = false;
+  }, 800);
 };
 
 /* ============================================================
@@ -2419,11 +2410,10 @@ const togglePinMessage = async (m: Msg) => {
 
           <Pressable
             onPress={handleStartVideoCall}
-            disabled={startingVideoCall}
-            style={[styles.topBtn, startingVideoCall ? { opacity: 0.55 } : null]}
+            style={styles.topBtn}
           >
             <Ionicons
-              name={startingVideoCall ? "hourglass-outline" : "videocam-outline"}
+              name="videocam-outline"
               size={22}
               color={RBZ.white}
             />

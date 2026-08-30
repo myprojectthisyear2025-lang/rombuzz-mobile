@@ -1,7 +1,20 @@
+/**
+ * ============================================================
+ * 📁 File: app/_layout.tsx
+ * 🎯 Purpose: Global RomBuzz navigation and startup providers.
+ *
+ * Usage:
+ *   Controls auth routing, notifications, calling, overlays,
+ *   and the global application-version update gate.
+ * ============================================================
+ */
+
 import { Sentry } from "@/src/monitoring/sentry";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { API_BASE } from "@/src/config/api";
+import AppUpdateGate from "@/src/features/appUpdate/AppUpdateGate";
+import { hasOnboardingDraft } from "@/src/features/auth/onboarding/rbzOnboardingDraft";
 import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
 import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallMiniStore";
 import { VideoCallProvider } from "@/src/features/videoCall/VideoCallProvider";
@@ -141,6 +154,8 @@ function RootLayout() {
 
   const [ready, setReady] = useState(false);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  const [onboardingPending, setOnboardingPending] =
+    useState<boolean | null>(null);
   const [splashDone, setSplashDone] = useState(false);
   const [authToken, setAuthToken] = useState("");
   const [authUserId, setAuthUserId] = useState("");
@@ -154,16 +169,23 @@ function RootLayout() {
   const loggedInRef = useRef<boolean>(false);
 
   useEffect(() => {
-    loggedInRef.current = loggedIn === true;
-  }, [loggedIn]);
+    // Incomplete onboarding is not considered navigable logged-in state.
+    loggedInRef.current =
+      loggedIn === true && onboardingPending === false;
+  }, [loggedIn, onboardingPending]);
 
   useEffect(() => {
     let mounted = true;
 
     const syncAuth = async () => {
       try {
-        const token = (await SecureStore.getItemAsync("RBZ_TOKEN")) || "";
-        const rawUser = await SecureStore.getItemAsync("RBZ_USER");
+        const [tokenValue, rawUser, pendingDraft] = await Promise.all([
+          SecureStore.getItemAsync("RBZ_TOKEN"),
+          SecureStore.getItemAsync("RBZ_USER"),
+          hasOnboardingDraft(),
+        ]);
+
+        const token = tokenValue || "";
         let userId = "";
 
         if (rawUser) {
@@ -178,6 +200,7 @@ function RootLayout() {
         setAuthToken(token);
         setAuthUserId(userId);
         setLoggedIn(!!token);
+        setOnboardingPending(pendingDraft);
 
         if (token) {
           lastSessionRef.current = { token, userId };
@@ -187,6 +210,7 @@ function RootLayout() {
         setAuthToken("");
         setAuthUserId("");
         setLoggedIn(false);
+        setOnboardingPending(false);
       } finally {
         if (mounted) setReady(true);
       }
@@ -202,10 +226,19 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!ready || loggedIn === null || !splashDone) return;
+    if (
+      !ready ||
+      loggedIn === null ||
+      onboardingPending === null ||
+      !splashDone
+    ) {
+      return;
+    }
 
     const timer = setTimeout(() => {
-      if (loggedIn) {
+      if (onboardingPending) {
+        router.replace("/auth/register-full");
+      } else if (loggedIn) {
         router.replace("/(tabs)/homepage");
       } else {
         router.replace("/auth/login");
@@ -213,13 +246,35 @@ function RootLayout() {
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [ready, loggedIn, splashDone, router]);
+  }, [
+    ready,
+    loggedIn,
+    onboardingPending,
+    splashDone,
+    router,
+  ]);
 
   useEffect(() => {
-    if (!ready || loggedIn === null || !splashDone) return;
+    if (
+      !ready ||
+      loggedIn === null ||
+      onboardingPending === null ||
+      !splashDone
+    ) {
+      return;
+    }
 
     const current = segments.join("/");
     if (current === "index") return;
+
+    // An unfinished signup always wins over normal auth routing.
+    // This prevents killing/reopening the app from bypassing onboarding.
+    if (onboardingPending) {
+      if (current !== "auth/register-full") {
+        router.replace("/auth/register-full");
+      }
+      return;
+    }
 
     if (loggedIn === false) {
       if (current !== "start" && !current.startsWith("auth")) {
@@ -233,7 +288,14 @@ function RootLayout() {
         router.replace("/(tabs)/homepage");
       }
     }
-  }, [ready, loggedIn, segments, splashDone, router]);
+  }, [
+    ready,
+    loggedIn,
+    onboardingPending,
+    segments,
+    splashDone,
+    router,
+  ]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -244,7 +306,17 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!ready || !splashDone || loggedIn !== true || !authToken || !authUserId) return;
+    if (
+      !ready ||
+      !splashDone ||
+      loggedIn !== true ||
+      onboardingPending !== false ||
+      !authToken ||
+      !authUserId
+    ) {
+      return;
+    }
+
     if (pushSyncInFlightRef.current) return;
 
     let cancelled = false;
@@ -281,7 +353,14 @@ function RootLayout() {
     return () => {
       cancelled = true;
     };
-  }, [ready, splashDone, loggedIn, authToken, authUserId]);
+  }, [
+    ready,
+    splashDone,
+    loggedIn,
+    onboardingPending,
+    authToken,
+    authUserId,
+  ]);
 
   useEffect(() => {
     if (loggedIn !== false) return;
@@ -343,7 +422,15 @@ function RootLayout() {
 
   useEffect(() => {
     if (!Notifications) return;
-    if (!ready || !splashDone || loggedIn !== true) return;
+
+    if (
+      !ready ||
+      !splashDone ||
+      loggedIn !== true ||
+      onboardingPending !== false
+    ) {
+      return;
+    }
 
     Notifications.getLastNotificationResponseAsync()
       .then((response: any) => {
@@ -364,9 +451,20 @@ function RootLayout() {
         }
       })
       .catch(() => {});
-  }, [ready, splashDone, loggedIn, router]);
+  }, [
+    ready,
+    splashDone,
+    loggedIn,
+    onboardingPending,
+    router,
+  ]);
 
-  if (!ready || loggedIn === null || !splashDone) {
+  if (
+    !ready ||
+    loggedIn === null ||
+    onboardingPending === null ||
+    !splashDone
+  ) {
     return (
       <ThemeProvider
         value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
@@ -401,7 +499,7 @@ function RootLayout() {
 
           <IncomingMeetMiddleOverlay />
           <ActiveVideoCallMiniBubble />
-        </VideoCallProvider>
+               </VideoCallProvider>
 
         <StatusBar style="auto" />
       </ThemeProvider>
@@ -409,4 +507,12 @@ function RootLayout() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+function AppRoot() {
+  return (
+    <AppUpdateGate>
+      <RootLayout />
+    </AppUpdateGate>
+  );
+}
+
+export default Sentry.wrap(AppRoot);
