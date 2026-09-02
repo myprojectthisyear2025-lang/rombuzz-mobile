@@ -33,6 +33,13 @@ import type { LoginResult } from "./loginTypes";
 function profileLooksComplete(user: any) {
   if (!user) return false;
 
+  if (
+    user.hasOnboarded === true ||
+    user.profileComplete === true
+  ) {
+    return true;
+  }
+
   const required = [
     user.firstName,
     user.lastName,
@@ -42,7 +49,12 @@ function profileLooksComplete(user: any) {
   ];
 
   const hasPhotos =
-    Array.isArray(user.photos) && user.photos.length > 0;
+    (Array.isArray(user.photos) && user.photos.length > 0) ||
+    (Array.isArray(user.media) &&
+      user.media.some(
+        (item: any) =>
+          String(item?.type || "").toLowerCase() === "image"
+      ));
 
   const hasInterests =
     Array.isArray(user.interests) && user.interests.length > 0;

@@ -185,7 +185,7 @@ export default function Step1Basic({
       }}
     >
       <View style={styles.container}>
-        <Text style={styles.sectionTitle}>Basic info</Text>
+        <Text style={styles.sectionTitle}>Basic Info</Text>
 
         {/* First / Last Name */}
         <View style={styles.row}>
@@ -271,7 +271,7 @@ export default function Step1Basic({
 
           {/* DOB calendar trigger */}
           <View style={[styles.col, styles.half]}>
-            <Text style={styles.label}>Date of birth</Text>
+            <Text style={styles.label}>Date of Birth</Text>
 
             <TouchableOpacity
               onPress={openDobCalendar}
@@ -332,7 +332,7 @@ export default function Step1Basic({
 
         {/* Interested In chips */}
         <View style={styles.block}>
-          <Text style={styles.label}>Interested in</Text>
+          <Text style={styles.label}>Interested In</Text>
           <View style={styles.chipRow}>
             {["male", "female", "other"].map((key) => {
               const active = form.interestedIn.includes(key);

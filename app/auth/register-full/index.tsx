@@ -58,6 +58,7 @@ import {
   loadOnboardingDraft,
   saveOnboardingDraft,
 } from "../../../src/features/auth/onboarding/rbzOnboardingDraft";
+import { uploadSignupProfilePhotos } from "../../../src/features/auth/onboarding/uploadSignupProfilePhotos";
 import {
   markFirstSignupTourPending,
 } from "../../../src/features/onboarding/firstSignupTourStorage";
@@ -489,9 +490,12 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   dislikes: form.dislikes,
 
   // Interests / media
+  // Signup images are still local at this point.
+  // They are uploaded through the authenticated R2 profile flow
+  // immediately after register-full returns the account token.
   interests: form.interests,
-  avatar: form.avatar,
-  photos: form.photos,
+  avatar: "",
+  photos: [],
   phone: form.phone || "",
   voiceUrl: form.voiceUrl || "",
   voiceDurationSec: Number(form.voiceDurationSec || 0),
@@ -506,19 +510,34 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
     String(appleSignupTicket || ""),
 };
 
-        const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
+      const res = await axios.post(`${API_BASE}/auth/register-full`, payload);
+
       const { token, user } = res.data || {};
+
       if (!token || !user) {
         throw new Error("Registration failed. Invalid response.");
       }
 
-      // ✅ Save signup photos into gallery media so they appear in:
-      //    - Gallery → Photos
-      //    - LetsBuzz → Posts
-      await saveSignupPhotosToGallery(token, form.photos);
-
+      // uploadRomBuzzMedia uses the normal authenticated Profile/R2
+      // upload route, so save the newly created session first.
       await SecureStore.setItemAsync("RBZ_TOKEN", token);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
+
+      const uploadedProfile = await uploadSignupProfilePhotos(
+        token,
+        form.photos,
+        form.avatar
+      );
+
+      const finalUser = uploadedProfile.user || {
+        ...user,
+        avatar: uploadedProfile.avatar,
+        photos: uploadedProfile.photos,
+      };
+
+      await SecureStore.setItemAsync(
+        "RBZ_USER",
+        JSON.stringify(finalUser)
+      );
 
       // ✅ Only genuine new email / Google / Apple signups get
       // the first-time RomBuzz feature tour.
@@ -539,7 +558,7 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
         hasNewSignupProof;
 
       if (isBrandNewSignup) {
-        await markFirstSignupTourPending(user).catch(() => {});
+        await markFirstSignupTourPending(finalUser).catch(() => {});
       }
 
       // ✅ Registration is fully successful.

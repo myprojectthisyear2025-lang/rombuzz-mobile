@@ -19,6 +19,7 @@
  * ============================================================================
  */
 
+import * as ImagePicker from "expo-image-picker";
 import React, { useState } from "react";
 import {
   Alert,
@@ -31,7 +32,6 @@ import {
   useWindowDimensions,
 } from "react-native";
 
-import CloudinaryUploader from "../../../components/CloudinaryUploader";
 import { RegisterForm } from "../index";
 
 const MIN_PHOTOS = 2;
@@ -56,9 +56,6 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
   const [photos, setPhotos] = useState<string[]>(
     form.photos && form.photos.length > 0 ? form.photos : ["", ""]
   );
-
-  const [uploaderVisible, setUploaderVisible] = useState(false);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const sanitizePhotoUrls = (items: string[]) =>
     items
@@ -118,21 +115,25 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
     );
   };
 
-  const openUploaderForIndex = (index: number) => {
-    setActiveIndex(index);
-    setUploaderVisible(true);
-  };
+  const choosePhotoForIndex = async (index: number) => {
+    try {
+      const pick = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+      });
 
-  const handleUploaded = (url: string) => {
-    if (activeIndex == null) return;
-    updatePhotoAt(activeIndex, url);
-    setActiveIndex(null);
-    setUploaderVisible(false);
-  };
+      if (pick.canceled) return;
 
-  const handleCloseUploader = () => {
-    setActiveIndex(null);
-    setUploaderVisible(false);
+      const asset = pick.assets?.[0];
+      if (!asset?.uri) return;
+
+      updatePhotoAt(index, asset.uri);
+    } catch (err: any) {
+      Alert.alert(
+        "Photos",
+        err?.message || "Could not open your photo gallery."
+      );
+    }
   };
 
   const handleNext = () => {
@@ -186,7 +187,7 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
                   styles.imageBox,
                   isAvatar && styles.imageBoxAvatar,
                 ]}
-                onPress={() => openUploaderForIndex(index)}
+                onPress={() => choosePhotoForIndex(index)}
               >
                 {url ? (
                   <Image source={{ uri: url }} style={styles.imagePreview} />
@@ -250,11 +251,7 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
         </View>
       </ScrollView>
 
-      <CloudinaryUploader
-        visible={uploaderVisible}
-        onUploaded={handleUploaded}
-        onClose={handleCloseUploader}
-      />
+      
     </>
   );
 }
