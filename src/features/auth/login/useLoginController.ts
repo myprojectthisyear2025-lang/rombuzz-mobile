@@ -17,6 +17,9 @@ import * as SecureStore from "expo-secure-store";
 import { useState } from "react";
 
 import {
+  clearFirstSignupTourPending,
+} from "../../onboarding/firstSignupTourStorage";
+import {
   clearOnboardingDraft,
   saveOnboardingDraft,
 } from "../onboarding/rbzOnboardingDraft";
@@ -96,6 +99,10 @@ export function useLoginController() {
     }
 
     const user = result.user || {};
+
+    // ✅ Any successful login is an existing-account flow.
+    // Never carry a pending "new signup" tour into a normal login.
+    await clearFirstSignupTourPending().catch(() => {});
 
     const incomplete =
       result.status === "incomplete_profile" ||

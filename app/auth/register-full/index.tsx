@@ -58,6 +58,9 @@ import {
   loadOnboardingDraft,
   saveOnboardingDraft,
 } from "../../../src/features/auth/onboarding/rbzOnboardingDraft";
+import {
+  markFirstSignupTourPending,
+} from "../../../src/features/onboarding/firstSignupTourStorage";
 
 // Step components
 import Step1Basic from "./steps/Step1Basic";
@@ -514,8 +517,30 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
       //    - LetsBuzz → Posts
       await saveSignupPhotosToGallery(token, form.photos);
 
-         await SecureStore.setItemAsync("RBZ_TOKEN", token);
+      await SecureStore.setItemAsync("RBZ_TOKEN", token);
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
+
+      // ✅ Only genuine new email / Google / Apple signups get
+      // the first-time RomBuzz feature tour.
+      //
+      // Existing users who log in with an incomplete profile can also
+      // finish through register-full, so they must NOT be marked here.
+      const normalizedProvider = String(authProvider || "")
+        .trim()
+        .toLowerCase();
+
+      const hasNewSignupProof = Boolean(
+        String(signupVerificationTicket || "").trim() ||
+          String(appleSignupTicket || "").trim()
+      );
+
+      const isBrandNewSignup =
+        ["email", "google", "apple"].includes(normalizedProvider) &&
+        hasNewSignupProof;
+
+      if (isBrandNewSignup) {
+        await markFirstSignupTourPending(user).catch(() => {});
+      }
 
       // ✅ Registration is fully successful.
       // Only now is it safe to remove the recovery draft.

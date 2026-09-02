@@ -19,6 +19,7 @@ import PremiumBuzzReceiverOverlay, {
   type PremiumBuzzOverlayPayload,
 } from "@/src/components/buzz/PremiumBuzzReceiverOverlay";
 import { API_BASE } from "@/src/config/api";
+import FirstSignupTour from "@/src/features/onboarding/FirstSignupTour";
 import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
 import { getSocket, onNotification } from "@/src/lib/socket";
 import { rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
@@ -987,6 +988,7 @@ export default function TabLayout() {
         {TabsContent}
         {PremiumBuzzOverlayNode}
         <IncomingCallOverlay />
+        <FirstSignupTour />
       </View>
     );
   }
@@ -1002,6 +1004,7 @@ export default function TabLayout() {
         {TabsContent}
         {PremiumBuzzOverlayNode}
         <IncomingCallOverlay />
+        <FirstSignupTour />
       </View>
     </PanGestureHandler>
   );
