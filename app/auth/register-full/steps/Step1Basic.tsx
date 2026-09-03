@@ -174,6 +174,12 @@ export default function Step1Basic({
     setField("interestedIn", Array.from(set));
   };
 
+  // Live password confirmation validation.
+  // As soon as the user types in the confirmation field,
+  // show an error whenever the two passwords are different.
+  const passwordsMismatch =
+    form.confirm.length > 0 && form.password !== form.confirm;
+
   return (
     <TouchableWithoutFeedback
       onPress={() => {
@@ -221,7 +227,12 @@ export default function Step1Basic({
         </View>
 
         {/* Confirm Password */}
-        <View style={styles.inputWithIcon}>
+        <View
+          style={[
+            styles.inputWithIcon,
+            passwordsMismatch && styles.inputWithIconError,
+          ]}
+        >
           <TextInput
             style={styles.inputFlex}
             placeholder="Confirm password"
@@ -234,6 +245,16 @@ export default function Step1Basic({
             <Text style={styles.eye}>{showConfirmPass ? "👁" : "👁‍🗨"}</Text>
           </TouchableOpacity>
         </View>
+
+        {passwordsMismatch && (
+          <Text
+            style={styles.passwordMismatchText}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            Passwords do not match.
+          </Text>
+        )}
 
         {/* Gender + DOB row */}
         <View style={styles.row}>
@@ -650,6 +671,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
+    marginBottom: 8,
+  },
+  inputWithIconError: {
+    borderWidth: 1,
+    borderColor: "#d10000",
+  },
+  passwordMismatchText: {
+    color: "#d10000",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: -4,
     marginBottom: 8,
   },
   inputFlex: {

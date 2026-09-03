@@ -23,7 +23,6 @@ import MultiSlider from "@ptomasroos/react-native-multi-slider";
 import { Audio } from "expo-av";
 import React from "react";
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -43,37 +42,6 @@ type Props = {
   onBack: () => void;
 };
 
-// ✅ Match the working Profile voice recorder Cloudinary config.
-const CLOUD_NAME = "drhx99m5f";
-const UPLOAD_PRESET = "rombuzz_unsigned";
-
-const getVoiceUploadFile = (uri: string) => {
-  const cleanUri = String(uri || "").trim();
-  const lower = cleanUri.toLowerCase();
-
-  if (lower.endsWith(".aac")) {
-    return {
-      uri: cleanUri,
-      type: "audio/aac",
-      name: "voice-intro.aac",
-    };
-  }
-
-  if (lower.endsWith(".mp3")) {
-    return {
-      uri: cleanUri,
-      type: "audio/mpeg",
-      name: "voice-intro.mp3",
-    };
-  }
-
-  return {
-    uri: cleanUri,
-    type: "audio/mp4",
-    name: "voice-intro.m4a",
-  };
-};
-
 export default function Step2Prefs({
   form,
   setField,
@@ -84,18 +52,18 @@ export default function Step2Prefs({
   const [showAdd, setShowAdd] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
-    // ===== Voice intro state =====
+  // ===== Voice intro state =====
   const [isRecording, setIsRecording] = React.useState(false);
-  const [recording, setRecording] = React.useState<Audio.Recording | null>(null);
   const [recordedUri, setRecordedUri] = React.useState<string | null>(null);
   const [recordSeconds, setRecordSeconds] = React.useState(0);
-  const [uploadingVoice, setUploadingVoice] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState<string | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = React.useState(false);
   const [previewDurationSec, setPreviewDurationSec] = React.useState<number>(
     Number(form.voiceDurationSec || 0)
   );
+
   const timerRef = React.useRef<any>(null);
+  const recordingRef = React.useRef<Audio.Recording | null>(null);
   const previewSoundRef = React.useRef<Audio.Sound | null>(null);
 
 
@@ -164,25 +132,36 @@ export default function Step2Prefs({
         playsInSilentModeIOS: true,
       });
 
-      if (recording) {
-        try {
-          await recording.stopAndUnloadAsync();
-        } catch {}
-      }
+      if (recordingRef.current) return;
 
       setRecordedUri(null);
       setRecordSeconds(0);
+      setPreviewDurationSec(0);
 
-      const { recording: nextRecording } = await Audio.Recording.createAsync(
+      // Starting another recording invalidates any previously
+      // accepted voice intro.
+      setField("voiceUrl", "");
+      setField("voiceDurationSec", 0);
+
+      const nextRecording = new Audio.Recording();
+
+      await nextRecording.prepareToRecordAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
 
-      setRecording(nextRecording);
+      await nextRecording.startAsync();
+
+      recordingRef.current = nextRecording;
       setIsRecording(true);
 
       const startedAt = Date.now();
+
       timerRef.current = setInterval(async () => {
-        const elapsed = Math.min(60, Math.floor((Date.now() - startedAt) / 1000));
+        const elapsed = Math.min(
+          60,
+          Math.floor((Date.now() - startedAt) / 1000)
+        );
+
         setRecordSeconds(elapsed);
 
         if (elapsed >= 60) {
@@ -197,31 +176,40 @@ export default function Step2Prefs({
       console.error("startRecording error", err);
       setVoiceError("Could not start recording. Please try again.");
       setIsRecording(false);
-      setRecording(null);
+      recordingRef.current = null;
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    const currentRecording = recordingRef.current;
+    if (!currentRecording) return;
 
     try {
-      const status = await recording.getStatusAsync();
+      const status = await currentRecording.getStatusAsync();
+
       const nextDurationSec = Math.max(
         1,
         Math.min(60, Math.round((status?.durationMillis || 0) / 1000))
       );
 
       resetTimer();
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
 
-      setIsRecording(false);
-      setRecording(null);
+      await currentRecording.stopAndUnloadAsync();
+
+      const uri = currentRecording.getURI();
+
+      recordingRef.current = null;
 
       if (uri) {
+        // Keep the finished recording LOCAL first.
+        // The user must be able to listen before accepting it.
         setRecordedUri(uri);
         setPreviewDurationSec(nextDurationSec);
-        setField("voiceDurationSec", nextDurationSec);
+
+        // Do NOT set form.voiceUrl yet.
+        // That happens only after the user taps "Use & Upload".
+        setField("voiceUrl", "");
+        setField("voiceDurationSec", 0);
       } else {
         setVoiceError("Recording failed, please try again.");
       }
@@ -230,11 +218,11 @@ export default function Step2Prefs({
       setVoiceError("Could not stop recording. Please try again.");
     } finally {
       setIsRecording(false);
-      setRecording(null);
+      recordingRef.current = null;
     }
   };
 
-   const playPreview = async () => {
+  const playPreview = async () => {
     try {
       const uri = recordedUri || form.voiceUrl;
       if (!uri) return;
@@ -266,8 +254,10 @@ export default function Step2Prefs({
             await previewSoundRef.current.setPositionAsync(0);
           }
 
+          await previewSoundRef.current.setIsMutedAsync(false);
           await previewSoundRef.current.setVolumeAsync(1);
           await previewSoundRef.current.playAsync();
+
           setIsPlayingPreview(true);
           return;
         }
@@ -276,13 +266,22 @@ export default function Step2Prefs({
       const { sound, status } = await Audio.Sound.createAsync(
         { uri },
         {
-          shouldPlay: true,
+          shouldPlay: false,
+          isMuted: false,
           volume: 1,
           progressUpdateIntervalMillis: 250,
         }
       );
 
       previewSoundRef.current = sound;
+
+      // Explicitly start playback only after the local recording
+      // has successfully loaded.
+      await sound.setIsMutedAsync(false);
+      await sound.setVolumeAsync(1);
+      await sound.setPositionAsync(0);
+      await sound.playAsync();
+
       setIsPlayingPreview(true);
 
       if (status?.isLoaded && status.durationMillis && !previewDurationSec) {
@@ -307,66 +306,39 @@ export default function Step2Prefs({
     }
   };
 
-     const uploadVoice = async () => {
+  const useVoiceForUpload = async () => {
     if (!recordedUri) {
-      setVoiceError("No recording to upload.");
+      setVoiceError("Record your voice intro first.");
       return;
     }
 
-    try {
-      setVoiceError(null);
-      setUploadingVoice(true);
+    const duration = Math.max(
+      1,
+      Math.min(
+        60,
+        Number(previewDurationSec || recordSeconds || 0)
+      )
+    );
 
-      const voiceFile = getVoiceUploadFile(recordedUri);
+    // Confirm this LOCAL recording for signup.
+    // register-full/index.tsx will upload this URI through the
+    // authenticated R2 voice-intro flow after account creation.
+    setField("voiceUrl", recordedUri);
+    setField("voiceDurationSec", duration);
 
-      const formData = new FormData();
-      formData.append("file", voiceFile as any);
-      formData.append("upload_preset", UPLOAD_PRESET);
-
-      const res = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok || !json?.secure_url) {
-        console.log("Cloudinary voice upload failed:", {
-          status: res.status,
-          response: json,
-        });
-
-        const cloudinaryMessage =
-          json?.error?.message ||
-          json?.message ||
-          "Voice upload failed. Please try again.";
-
-        throw new Error(cloudinaryMessage);
-      }
-
-      setField("voiceUrl", json.secure_url);
-      setField("voiceDurationSec", Number(previewDurationSec || recordSeconds || 0));
-      setRecordedUri(null);
-      setVoiceError(null);
-    } catch (err: any) {
-      console.error("uploadVoice error", err);
-      setVoiceError(err.message || "Upload failed. Please try again.");
-    } finally {
-      setUploadingVoice(false);
-    }
+    setVoiceError(null);
   };
 
   const deleteVoice = async () => {
     await cleanupPreviewSound();
     resetTimer();
+
     setRecordedUri(null);
-    setRecording(null);
+    recordingRef.current = null;
     setIsRecording(false);
     setVoiceError(null);
     setPreviewDurationSec(0);
+
     setField("voiceUrl", "");
     setField("voiceDurationSec", 0);
   };
@@ -386,6 +358,12 @@ export default function Step2Prefs({
     return () => {
       resetTimer();
       cleanupPreviewSound();
+
+      recordingRef.current
+        ?.stopAndUnloadAsync()
+        .catch(() => {});
+
+      recordingRef.current = null;
     };
   }, []);
 
@@ -575,7 +553,6 @@ onChangeText={(v: string) => setSearch(v)}
               styles.voiceMicOuter,
               isRecording && styles.voiceMicOuterActive,
             ]}
-            disabled={uploadingVoice}
             onPress={isRecording ? stopRecording : startRecording}
           >
             <View style={styles.voiceMicInner}>
@@ -588,70 +565,76 @@ onChangeText={(v: string) => setSearch(v)}
           <Text style={styles.voiceStateText}>
             {isRecording
               ? "Recording..."
+              : recordedUri && form.voiceUrl === recordedUri
+              ? "Voice intro selected"
               : recordedUri
-              ? "Recording ready"
-              : form.voiceUrl
-              ? "Voice intro saved"
+              ? "Listen before uploading"
               : "Tap to record your voice"}
           </Text>
 
           <Text style={styles.voiceTimer}>
             {isRecording
               ? `${formatSeconds(recordSeconds)} / 01:00`
-              : `${formatSeconds(previewDurationSec || form.voiceDurationSec || 0)} / 01:00`}
+              : `${formatSeconds(
+                  previewDurationSec || form.voiceDurationSec || 0
+                )} / 01:00`}
           </Text>
         </View>
 
         <View style={styles.voiceActionsRow}>
-          {(recordedUri || form.voiceUrl) ? (
+          {recordedUri ? (
             <TouchableOpacity
               style={styles.voiceSecondaryBtn}
-              disabled={uploadingVoice || isRecording}
+              disabled={isRecording}
               onPress={playPreview}
             >
               <Text style={styles.voiceSecondaryText}>
-                {isPlayingPreview ? "Pause" : "Play"}
+                {isPlayingPreview ? "Pause" : "▶ Play"}
               </Text>
             </TouchableOpacity>
           ) : null}
 
-          {(recordedUri || form.voiceUrl) ? (
+          {recordedUri ? (
             <TouchableOpacity
               style={styles.voiceSecondaryBtn}
-              disabled={uploadingVoice || isRecording}
-              onPress={deleteVoice}
-            >
-              <Text style={styles.voiceSecondaryText}>Delete</Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {(recordedUri || form.voiceUrl) ? (
-            <TouchableOpacity
-              style={styles.voiceSecondaryBtn}
-              disabled={uploadingVoice || isRecording}
+              disabled={isRecording}
               onPress={rerecordVoice}
             >
-              <Text style={styles.voiceSecondaryText}>Retry</Text>
+              <Text style={styles.voiceSecondaryText}>
+                ↻ Retry
+              </Text>
             </TouchableOpacity>
           ) : null}
 
-          {recordedUri && !form.voiceUrl ? (
+          {recordedUri ? (
+            <TouchableOpacity
+              style={styles.voiceSecondaryBtn}
+              disabled={isRecording}
+              onPress={deleteVoice}
+            >
+              <Text style={styles.voiceSecondaryText}>
+                Delete
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {recordedUri && form.voiceUrl !== recordedUri ? (
             <TouchableOpacity
               style={styles.voicePrimaryBtn}
-              disabled={uploadingVoice || isRecording}
-              onPress={uploadVoice}
+              disabled={isRecording}
+              onPress={useVoiceForUpload}
             >
-              {uploadingVoice ? (
-                <ActivityIndicator size="small" />
-              ) : (
-                <Text style={styles.voicePrimaryText}>Save & Upload</Text>
-              )}
+              <Text style={styles.voicePrimaryText}>
+                Use & Upload
+              </Text>
             </TouchableOpacity>
           ) : null}
 
-          {form.voiceUrl ? (
+          {recordedUri && form.voiceUrl === recordedUri ? (
             <View style={styles.voiceSavedPill}>
-              <Text style={styles.voiceSavedText}>Saved to profile ✓</Text>
+              <Text style={styles.voiceSavedText}>
+                Ready to upload ✓
+              </Text>
             </View>
           ) : null}
         </View>

@@ -59,6 +59,7 @@ import {
   saveOnboardingDraft,
 } from "../../../src/features/auth/onboarding/rbzOnboardingDraft";
 import { uploadSignupProfilePhotos } from "../../../src/features/auth/onboarding/uploadSignupProfilePhotos";
+import { uploadSignupVoiceIntro } from "../../../src/features/auth/onboarding/uploadSignupVoiceIntro";
 import {
   markFirstSignupTourPending,
 } from "../../../src/features/onboarding/firstSignupTourStorage";
@@ -170,8 +171,14 @@ export default function RegisterFullScreen() {
     appleSignupTicket?: string;
     authProvider?: string;
   }>();
-const { width, height } = useWindowDimensions(); // Get screen dimensions
-  const isSmallScreen = height < 700; // Detect small screens
+
+  const { width, height } = useWindowDimensions();
+
+  // Responsive onboarding shell for iOS + Android.
+  // Small screens receive tighter internal spacing, while taller
+  // screens are capped so the card never becomes unnecessarily huge.
+  const isSmallScreen = height < 700 || width < 360;
+  const cardMaxHeight = Math.min(height * 0.9, 720);
 
   const [email, setEmail] = useState<string>(
     String(params.verifiedEmail || "").trim().toLowerCase()
@@ -497,8 +504,12 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
   avatar: "",
   photos: [],
   phone: form.phone || "",
-  voiceUrl: form.voiceUrl || "",
-  voiceDurationSec: Number(form.voiceDurationSec || 0),
+
+  // Voice is still a local recording URI during onboarding.
+  // Upload it through the normal authenticated R2 flow after
+  // register-full creates the account and returns its token.
+  voiceUrl: "",
+  voiceDurationSec: 0,
 
   // Auth provider proof survives an app restart through the secure draft.
   // Email + Google use the shared verified-signup ticket.
@@ -528,10 +539,35 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
         form.avatar
       );
 
-      const finalUser = uploadedProfile.user || {
+      // Voice is optional. If the user recorded one during Step 2,
+      // upload it now through the exact same R2 flow used by Profile.
+      const uploadedVoice = form.voiceUrl
+        ? await uploadSignupVoiceIntro(
+            token,
+            form.voiceUrl,
+            form.voiceDurationSec,
+            uploadedProfile.user?.favorites ||
+              user?.favorites ||
+              []
+          )
+        : null;
+
+      const finalUser = {
         ...user,
+        ...(uploadedProfile.user || {}),
+        ...(uploadedVoice?.user || {}),
+
         avatar: uploadedProfile.avatar,
         photos: uploadedProfile.photos,
+
+        ...(uploadedVoice
+          ? {
+              voiceUrl: uploadedVoice.voiceUrl,
+              voiceDurationSec:
+                uploadedVoice.voiceDurationSec,
+              favorites: uploadedVoice.favorites,
+            }
+          : {}),
       };
 
       await SecureStore.setItemAsync(
@@ -652,33 +688,47 @@ const { width, height } = useWindowDimensions(); // Get screen dimensions
 return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={[
-          styles.card,
-          isSmallScreen && styles.cardSmall, // Adjust for small screens
-        ]}>
-     {/* Header */}
-<View style={{ alignItems: "center", marginBottom: 10 }}>
-  <Image
-    source={require("../../../assets/images/logo.png")}
-    style={{ width: 70, height: 70, marginBottom: 6 }}
-    resizeMode="contain"
-  />
+        <View
+          style={[
+            styles.card,
+            { maxHeight: cardMaxHeight },
+            isSmallScreen && styles.cardSmall,
+          ]}
+        >
+          {/* Header */}
+          <View
+            style={[
+              styles.header,
+              isSmallScreen && styles.headerSmall,
+            ]}
+          >
+            <Image
+              source={require("../../../assets/images/logo.png")}
+              style={[
+                styles.logo,
+                isSmallScreen && styles.logoSmall,
+              ]}
+              resizeMode="contain"
+            />
 
-  <Text style={[
-    styles.title,
-    isSmallScreen && styles.titleSmall
-  ]}>
-    Create your RomBuzz
-  </Text>
+            <Text
+              style={[
+                styles.title,
+                isSmallScreen && styles.titleSmall,
+              ]}
+            >
+              Create your RomBuzz
+            </Text>
 
-  <Text style={[
-    styles.subtitle,
-    isSmallScreen && styles.subtitleSmall
-  ]}>
-    Step {step} of 4
-  </Text>
-</View>
-
+            <Text
+              style={[
+                styles.subtitle,
+                isSmallScreen && styles.subtitleSmall,
+              ]}
+            >
+              Step {step} of 4
+            </Text>
+          </View>
 
           {/* Progress bar */}
           <View style={styles.progressTrack}>
@@ -723,18 +773,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#ff2f6e",
-    paddingHorizontal: 16,
-    // REMOVED: justifyContent: "center" - Was causing issues
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: "center",
+    alignItems: "center",
   },
   card: {
-  backgroundColor: "#fff",
-  borderRadius: 18,
-  paddingVertical: 10,        // ↓ reduced from 20
-  paddingHorizontal: 20,
-  width: "100%",
-  flex: 1,
-  marginTop: 4,               // ↓ reduced from 10
-  marginBottom: 4,            // ↓ reduced from 10
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    width: "100%",
+    maxWidth: 500,
+    flex: 1,
+    alignSelf: "center",
+    overflow: "hidden",
 
     // Shadow for better visual separation
     shadowColor: "#000",
@@ -744,38 +797,53 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cardSmall: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  header: {
+    alignItems: "center",
     marginBottom: 8,
   },
+  headerSmall: {
+    marginBottom: 6,
+  },
+  logo: {
+    width: 58,
+    height: 58,
+    marginBottom: 4,
+  },
+  logoSmall: {
+    width: 48,
+    height: 48,
+    marginBottom: 2,
+  },
   title: {
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: "800",
     color: "#ff2f6e",
     textAlign: "center",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   titleSmall: {
     fontSize: 20,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#777",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 0,
   },
   subtitleSmall: {
     fontSize: 12,
-    marginBottom: 12,
+    marginBottom: 0,
   },
   progressTrack: {
-    height: 8,
+    height: 7,
     backgroundColor: "#ffe2ee",
     borderRadius: 999,
     overflow: "hidden",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   progressFill: {
     height: "100%",
