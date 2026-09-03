@@ -15,7 +15,7 @@
  *  - Does not remove Cloudinary fallback.
  * ============================================================
  */
-
+import { dedupeProfileGalleryMedia } from "./profileGalleryIdentity";
 export type ProfileGalleryMediaItem = {
   id: string;
   url: string;
@@ -170,27 +170,9 @@ function normalizeProfileMediaItem(m: any): ProfileGalleryMediaItem | null {
   };
 }
 
-function dedupeGalleryMedia(items: ProfileGalleryMediaItem[]) {
-  return items.filter((item, index, arr) => {
-    const key =
-      String(item.streamUid || item.cloudflareStream?.uid || "").trim() ||
-      String(item.url || item.mediaUrl || item.videoUrl || item.id || "").trim();
-
-    return (
-      arr.findIndex((x) => {
-        const otherKey =
-          String(x.streamUid || x.cloudflareStream?.uid || "").trim() ||
-          String(x.url || x.mediaUrl || x.videoUrl || x.id || "").trim();
-
-        return otherKey === key;
-      }) === index
-    );
-  });
-}
-
 export function buildProfileGalleryMedia(user: any): ProfileGalleryMediaItem[] {
   const signupPhotos = uniqueImageUrls(user?.photos).map((url: string, index: number) => ({
-    id: `signup-photo-${index}-${url}`,
+    id: `signup-photo-${index}`,
     url,
     mediaUrl: url,
     fileUrl: url,
@@ -207,5 +189,5 @@ export function buildProfileGalleryMedia(user: any): ProfileGalleryMediaItem[] {
         item !== null
     );
 
-  return dedupeGalleryMedia([...signupPhotos, ...profileMedia]);
+  return dedupeProfileGalleryMedia([...profileMedia, ...signupPhotos]);
 }

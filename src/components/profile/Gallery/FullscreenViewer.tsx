@@ -34,6 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GalleryInsightsSheet from "./GalleryInsightsSheet";
 import GalleryPhotoViewer from "./GalleryPhotoViewer";
 import GalleryVideoViewer from "./GalleryVideoViewer";
+import { deleteProfileGalleryMedia } from "./deleteProfileGalleryMedia";
 
 const RBZ = {
   c1: "#b1123c",
@@ -199,9 +200,9 @@ export default function FullscreenViewer({
   async function deleteCurrent() {
     if (!current?.id) return;
 
-    onLocalDelete?.(String(current.id));
-    await apiJson(`/media/${current.id}`, "DELETE", {});
+    await deleteProfileGalleryMedia(apiJson, current);
 
+    onLocalDelete?.(String(current.id));
     setOptionsOpen(false);
 
     if ((safeItems?.length || 0) <= 1) {
@@ -305,7 +306,9 @@ export default function FullscreenViewer({
                       text: "Delete",
                       style: "destructive",
                       onPress: () => {
-                        deleteCurrent().catch(() => {});
+                        deleteCurrent().catch((e: any) => {
+                          Alert.alert("Gallery", e?.message || "Delete failed");
+                        });
                       },
                     },
                   ]);

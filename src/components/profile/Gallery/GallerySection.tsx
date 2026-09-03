@@ -575,6 +575,7 @@ const closePublish = () => {
   }}
   onLocalDelete={(deletedId: string) => {
     setLocalMedia((prev) => prev.filter((m) => m.id !== deletedId));
+    void Promise.resolve(onRefresh?.()).catch(() => {});
   }}
 />
 
