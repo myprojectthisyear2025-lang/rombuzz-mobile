@@ -22,6 +22,9 @@ import {
   SectionTitle,
   SmallText,
 } from "../../../src/components/settings/_ui";
+import {
+  requestFirstSignupTourReplay,
+} from "../../../src/features/onboarding/firstSignupTourReplay";
 
 const PRIVACY_POLICY_URL = "https://rombuzz.com/privacy";
 const TERMS_URL = "https://rombuzz.com/terms";
@@ -109,6 +112,12 @@ export default function SettingsHome() {
       <SectionTitle>Support</SectionTitle>
 
       <Card>
+        <NavRow
+          icon="sparkles-outline"
+          label="Tour"
+          onPress={requestFirstSignupTourReplay}
+        />
+
         <NavRow
           icon="help-circle-outline"
           label="Help"

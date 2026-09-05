@@ -1,11 +1,10 @@
 /**
- * ============================================================================
- * 📁 File: app/(tabs)/settings/_ui.tsx
- * 🎯 Purpose: Shared UI shell + row components for Settings pages
- * ============================================================================
+ * ==========================================================================
+ * 📁 File: src/components/settings/_ui.tsx
+ * 🎯 Purpose: Shared modern shell and row components for RomBuzz Settings.
+ * ==========================================================================
  */
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
@@ -19,19 +18,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-
-  // ✅ WHITE BACKGROUND SYSTEM (RomBuzz-safe)
-  bg: "#ffffff",
-  card: "rgba(233,72,106,0.08)",     // soft pink-tinted white
-  line: "rgba(216,52,95,0.22)",      // RomBuzz border line
-
-  text: "#2b0a16",                   // deep RomBuzz maroon (derived from c1)
-  muted: "rgba(43,10,22,0.65)",
-  soft: "rgba(43,10,22,0.45)",
+  c1: "#B1123C",
+  c2: "#D8345F",
+  c3: "#E9486A",
+  c4: "#B5179E",
+  bg: "#F7F7F8",
+  card: "#FFFFFF",
+  line: "#ECE9EC",
+  text: "#1F1B1E",
+  muted: "#736C71",
+  soft: "#AAA4A8",
+  danger: "#D92D4F",
 } as const;
 
 export function ScreenShell({
@@ -55,20 +52,39 @@ export function ScreenShell({
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.header}>
-        <Pressable onPress={handleBack} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={RBZ.text} />
+      <View style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={handleBack}
+          style={({ pressed }) => [
+            styles.backBtn,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={27}
+            color={RBZ.text}
+          />
         </Pressable>
-        <Text style={styles.headerTitle}>{title}</Text>
-        <View style={{ width: 44 }} />
-      </LinearGradient>
+
+        <Text style={styles.headerTitle}>
+          {title}
+        </Text>
+
+        <View style={styles.headerSpacer} />
+      </View>
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          padding: 16,
-          paddingBottom: 24 + insets.bottom,
-        }}
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom:
+              28 + insets.bottom,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {children}
@@ -77,8 +93,48 @@ export function ScreenShell({
   );
 }
 
-export function Card({ children }: { children: React.ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+export function Card({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const items =
+    React.Children.toArray(children);
+
+  const isRow = (
+    child: React.ReactNode,
+  ) =>
+    React.isValidElement(child) &&
+    (
+      child.type === NavRow ||
+      child.type === ToggleRow
+    );
+
+  const rowGroup =
+    items.length > 0 &&
+    items.every(isRow);
+
+  return (
+    <View
+      style={[
+        styles.card,
+        rowGroup
+          ? styles.rowCard
+          : styles.contentCard,
+      ]}
+    >
+      {items.map((child, index) => (
+        <React.Fragment key={index}>
+          {child}
+
+          {rowGroup &&
+          index < items.length - 1 ? (
+            <View style={styles.divider} />
+          ) : null}
+        </React.Fragment>
+      ))}
+    </View>
+  );
 }
 
 export function NavRow({
@@ -87,24 +143,50 @@ export function NavRow({
   onPress,
   danger,
 }: {
-  icon: any;
+  icon: React.ComponentProps<
+    typeof Ionicons
+  >["name"];
   label: string;
   onPress: () => void;
   danger?: boolean;
 }) {
+  const color =
+    danger ? RBZ.danger : RBZ.text;
+
   return (
-    <Pressable onPress={onPress} style={styles.row}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        pressed && styles.rowPressed,
+      ]}
+    >
       <View style={styles.rowLeft}>
         <Ionicons
           name={icon}
-          size={20}
-          color={danger ? RBZ.c1 : RBZ.c3}
+          size={21}
+          color={
+            danger
+              ? RBZ.danger
+              : RBZ.c1
+          }
         />
-        <Text style={[styles.rowText, danger && { color: "#ff9aa7" }]}>
+
+        <Text
+          style={[
+            styles.rowText,
+            { color },
+          ]}
+        >
           {label}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={RBZ.soft} />
+
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={RBZ.soft}
+      />
     </Pressable>
   );
 }
@@ -115,7 +197,9 @@ export function ToggleRow({
   value,
   onChange,
 }: {
-  icon: any;
+  icon: React.ComponentProps<
+    typeof Ionicons
+  >["name"];
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
@@ -123,67 +207,163 @@ export function ToggleRow({
   return (
     <View style={styles.row}>
       <View style={styles.rowLeft}>
-        <Ionicons name={icon} size={20} color={RBZ.c3} />
-        <Text style={styles.rowText}>{label}</Text>
+        <Ionicons
+          name={icon}
+          size={21}
+          color={RBZ.c1}
+        />
+
+        <Text style={styles.rowText}>
+          {label}
+        </Text>
       </View>
-      <Switch value={value} onValueChange={onChange} />
+
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{
+          false: "#DDD9DC",
+          true: RBZ.c1,
+        }}
+      />
     </View>
   );
 }
 
-export function SectionTitle({ children }: { children: string }) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+export function SectionTitle({
+  children,
+}: {
+  children: string;
+}) {
+  return (
+    <Text style={styles.sectionTitle}>
+      {children}
+    </Text>
+  );
 }
 
-export function SmallText({ children }: { children: string }) {
-  return <Text style={styles.small}>{children}</Text>;
+export function SmallText({
+  children,
+}: {
+  children: string;
+}) {
+  return (
+    <Text style={styles.small}>
+      {children}
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: RBZ.bg },
+  root: {
+    flex: 1,
+    backgroundColor: RBZ.bg,
+  },
+
   header: {
-    height: 58,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.12)",
+    height: 62,
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
+
   backBtn: {
     width: 44,
     height: 44,
-    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.20)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
   },
-  headerTitle: { color: RBZ.text, fontSize: 18, fontWeight: "900" },
+
+  pressed: {
+    opacity: 0.55,
+  },
+
+  headerTitle: {
+    color: RBZ.text,
+    fontSize: 22,
+    fontWeight: "800",
+  },
+
+  headerSpacer: {
+    width: 44,
+  },
+
+  scroll: {
+    flex: 1,
+  },
+
+  scrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 4,
+  },
+
   card: {
     backgroundColor: RBZ.card,
-    borderWidth: 1,
+    borderRadius: 20,
+    borderWidth:
+      StyleSheet.hairlineWidth,
     borderColor: RBZ.line,
-    borderRadius: 18,
-    padding: 12,
-    marginTop: 10,
+    overflow: "hidden",
+    marginTop: 8,
   },
+
+  rowCard: {
+    paddingVertical: 2,
+  },
+
+  contentCard: {
+    padding: 16,
+  },
+
+  divider: {
+    height:
+      StyleSheet.hairlineWidth,
+    backgroundColor: RBZ.line,
+    marginLeft: 52,
+  },
+
   row: {
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    minHeight: 58,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  rowLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  rowText: { color: RBZ.text, fontSize: 15, fontWeight: "700" },
-  sectionTitle: {
-    color: RBZ.text,
-    fontSize: 14,
-    fontWeight: "900",
-    marginTop: 10,
+
+  rowPressed: {
+    backgroundColor: "#F6F4F5",
   },
-  small: { color: RBZ.muted, fontSize: 12, marginTop: 6, lineHeight: 16 },
+
+  rowLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+  },
+
+  rowText: {
+    color: RBZ.text,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  sectionTitle: {
+    color: RBZ.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginTop: 22,
+    marginLeft: 4,
+  },
+
+  small: {
+    color: RBZ.muted,
+    fontSize: 12,
+    marginTop: 10,
+    lineHeight: 17,
+    paddingHorizontal: 4,
+  },
 });

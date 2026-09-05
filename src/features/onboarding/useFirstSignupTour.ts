@@ -9,45 +9,50 @@
  */
 
 import {
-    rbzGetCurrentUser,
+  rbzGetCurrentUser,
 } from "@/src/performance/api/rbzApiClient";
 import {
-    useCallback,
-    useEffect,
-    useState,
+  useCallback,
+  useEffect,
+  useState,
 } from "react";
 import {
-    clearFirstSignupTourPending,
-    shouldShowFirstSignupTour,
+  subscribeToFirstSignupTourReplay,
+} from "./firstSignupTourReplay";
+import {
+  clearFirstSignupTourPending,
+  shouldShowFirstSignupTour,
 } from "./firstSignupTourStorage";
 
 export function useFirstSignupTour() {
-  const [visible, setVisible] =
-    useState(false);
-
-  const [ready, setReady] =
-    useState(false);
+  const [visible, setVisible] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    let replayRequested = false;
+
+    const replaySubscription =
+      subscribeToFirstSignupTourReplay(() => {
+        replayRequested = true;
+        setReady(true);
+        setVisible(true);
+      });
 
     (async () => {
       try {
         // Force current SecureStore user instead of using
         // a possibly stale in-memory account.
-        const user =
-          await rbzGetCurrentUser(true);
+        const user = await rbzGetCurrentUser(true);
 
         const shouldShow =
-          await shouldShowFirstSignupTour(
-            user
-          );
+          await shouldShowFirstSignupTour(user);
 
-        if (alive) {
+        if (alive && !replayRequested) {
           setVisible(shouldShow);
         }
       } catch {
-        if (alive) {
+        if (alive && !replayRequested) {
           setVisible(false);
         }
       } finally {
@@ -59,6 +64,7 @@ export function useFirstSignupTour() {
 
     return () => {
       alive = false;
+      replaySubscription.remove();
     };
   }, []);
 

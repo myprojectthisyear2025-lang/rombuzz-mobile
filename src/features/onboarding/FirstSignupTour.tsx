@@ -10,38 +10,38 @@
  */
 
 import {
-    Ionicons,
+  Ionicons,
 } from "@expo/vector-icons";
 import {
-    LinearGradient,
+  LinearGradient,
 } from "expo-linear-gradient";
 import {
-    StatusBar,
+  StatusBar,
 } from "expo-status-bar";
 import React, {
-    useEffect,
-    useRef,
-    useState,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import {
-    Animated,
-    Image,
-    Modal,
-    Pressable,
-    Text,
-    View,
+  Animated,
+  Image,
+  Modal,
+  Pressable,
+  Text,
+  View,
 } from "react-native";
 import {
-    SafeAreaView,
+  SafeAreaView,
 } from "react-native-safe-area-context";
 import {
-    firstSignupTourStyles as styles,
+  firstSignupTourStyles as styles,
 } from "./FirstSignupTour.styles";
 import {
-    FIRST_SIGNUP_TOUR_STEPS,
+  FIRST_SIGNUP_TOUR_STEPS,
 } from "./firstSignupTourSteps";
 import {
-    useFirstSignupTour,
+  useFirstSignupTour,
 } from "./useFirstSignupTour";
 
 const logo =
@@ -70,6 +70,12 @@ export default function FirstSignupTour() {
   const isLast =
     index ===
     FIRST_SIGNUP_TOUR_STEPS.length - 1;
+
+  useEffect(() => {
+    if (visible) {
+      setIndex(0);
+    }
+  }, [visible]);
 
   useEffect(() => {
     fade.setValue(0);
