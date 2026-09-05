@@ -601,9 +601,10 @@ type ProfileForm = {
   travelStyle: string;
   petsPreference: string;
 
-  // Legacy / misc
-  likes: string;
-  dislikes: string;
+  // Multi-value profile preferences.
+  // Backend may still return legacy CSV strings, but mobile keeps arrays.
+  likes: string[];
+  dislikes: string[];
   favorites: any[];
   visibilityMode: Audience;
   fieldVisibility: Record<string, Audience>;
@@ -829,9 +830,9 @@ const [form, setForm] = useState<ProfileForm>({
   travelStyle: "",
   petsPreference: "",
 
-  // Legacy
-  likes: "",
-  dislikes: "",
+  // Multi-value preferences
+  likes: [],
+  dislikes: [],
   favorites: [],
   visibilityMode: "public",
   fieldVisibility: {},
@@ -994,9 +995,10 @@ useEffect(() => {
     travelStyle: u?.travelStyle || "",
     petsPreference: u?.petsPreference || "",
 
-    // Legacy
-    likes: normalizeCsvField(u?.likes),
-    dislikes: normalizeCsvField(u?.dislikes),
+    // Backend supports legacy CSV strings.
+    // Mobile always hydrates these as arrays for chip rendering.
+    likes: normalizeStringArray(u?.likes).slice(0, 10),
+    dislikes: normalizeStringArray(u?.dislikes).slice(0, 10),
     favorites: normalizeStringArray(u?.favorites),
     visibilityMode: u?.visibilityMode || "public",
     fieldVisibility: u?.fieldVisibility || {},
@@ -1575,8 +1577,12 @@ setStoryOpen(true);
           height: form.height,
           orientation: form.orientation,
           lookingFor: form.lookingFor,
-          likes: normalizeCsvField(form.likes),
-          dislikes: normalizeCsvField(form.dislikes),
+          likes: Array.isArray(form.likes)
+            ? form.likes.slice(0, 10)
+            : [],
+          dislikes: Array.isArray(form.dislikes)
+            ? form.dislikes.slice(0, 10)
+            : [],
           interests: Array.isArray(form.interests) ? form.interests : [],
           hobbies: Array.isArray(form.hobbies) ? form.hobbies : [],
           favorites: normalizeStringArray(form.favorites),
@@ -2045,9 +2051,14 @@ setStoryOpen(true);
 
           <Text style={styles.formLabel}>Likes</Text>
           <TextInput
-            value={form.likes}
-            editable={showAll}  // keep likes/dislikes for full edit only (optional)
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, likes: v }))}
+            value={normalizeCsvField(form.likes)}
+            editable={showAll}
+            onChangeText={(v) =>
+              setForm((p: ProfileForm) => ({
+                ...p,
+                likes: normalizeStringArray(v).slice(0, 10),
+              }))
+            }
             placeholder="What you like"
             placeholderTextColor={RBZ.muted}
             style={[styles.input, !showAll && { opacity: 0.5 }]}
@@ -2055,9 +2066,14 @@ setStoryOpen(true);
 
           <Text style={styles.formLabel}>Dislikes</Text>
           <TextInput
-            value={form.dislikes}
-            editable={showAll} // optional
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, dislikes: v }))}
+            value={normalizeCsvField(form.dislikes)}
+            editable={showAll}
+            onChangeText={(v) =>
+              setForm((p: ProfileForm) => ({
+                ...p,
+                dislikes: normalizeStringArray(v).slice(0, 10),
+              }))
+            }
             placeholder="What you dislike"
             placeholderTextColor={RBZ.muted}
             style={[styles.input, !showAll && { opacity: 0.5 }]}

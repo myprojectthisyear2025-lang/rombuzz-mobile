@@ -149,6 +149,32 @@ function toText(v: any) {
   return String(v);
 }
 
+function toChipItems(value: any, max?: number): string[] {
+  const rawItems = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+    ? value.split(",")
+    : [];
+
+  const seen = new Set<string>();
+
+  const cleaned = rawItems
+    .map((item) => String(item || "").trim())
+    .filter((item) => {
+      if (!item) return false;
+
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    });
+
+  return typeof max === "number"
+    ? cleaned.slice(0, max)
+    : cleaned;
+}
+
 function showField(u: any, field: string, value: any) {
   if (!hasValue(value)) return false;
 
@@ -1210,14 +1236,12 @@ if (loading && !user) {
               {showField(user, "company", user.company) && (
                 <Info label="Company" value={toText(user.company)} />
               )}
+
               {showField(user, "languages", user.languages) && (
-                <Info
+                <LabeledChips
                   label="Languages"
-                  value={toText(
-                    Array.isArray(user.languages)
-                      ? user.languages.slice(0, 5)
-                      : user.languages
-                  )}
+                  value={user.languages}
+                  max={5}
                 />
               )}
             </View>
@@ -1244,7 +1268,7 @@ if (loading && !user) {
             </View>
           )}
 
-          {(showField(user, "favoriteMusic", user.favoriteMusic) ||
+                  {(showField(user, "favoriteMusic", user.favoriteMusic) ||
             showField(user, "favoriteMovies", user.favoriteMovies) ||
             showField(user, "petsPreference", user.petsPreference) ||
             showField(user, "likes", user.likes) ||
@@ -1253,20 +1277,40 @@ if (loading && !user) {
               <Text style={styles.cardTitle}>Interests & Preferences</Text>
 
               {showField(user, "favoriteMusic", user.favoriteMusic) && (
-                <Info label="Fav music" value={toText(user.favoriteMusic)} />
+                <LabeledChips
+                  label="Favorite music"
+                  value={user.favoriteMusic}
+                />
               )}
+
               {showField(user, "favoriteMovies", user.favoriteMovies) && (
-                <Info label="Fav movies" value={toText(user.favoriteMovies)} />
+                <LabeledChips
+                  label="Favorite movies/shows"
+                  value={user.favoriteMovies}
+                />
               )}
-           
+
               {showField(user, "petsPreference", user.petsPreference) && (
-                <Info label="Pet preference" value={toText(user.petsPreference)} />
+                <Info
+                  label="Pet preference"
+                  value={toText(user.petsPreference)}
+                />
               )}
+
               {showField(user, "likes", user.likes) && (
-                <Info label="Likes" value={toText(user.likes)} />
+                <LabeledChips
+                  label="Likes"
+                  value={user.likes}
+                  max={10}
+                />
               )}
+
               {showField(user, "dislikes", user.dislikes) && (
-                <Info label="Dislikes" value={toText(user.dislikes)} />
+                <LabeledChips
+                  label="Dislikes"
+                  value={user.dislikes}
+                  max={10}
+                />
               )}
             </View>
           )}
@@ -1302,6 +1346,49 @@ function Info({ label, value }: { label: string; value?: string }) {
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
       <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
+
+function LabeledChips({
+  label,
+  value,
+  max,
+}: {
+  label: string;
+  value: any;
+  max?: number;
+}) {
+  const items = toChipItems(value, max);
+
+  if (!items.length) return null;
+
+  return (
+    <View style={{ marginTop: 14 }}>
+      <Text
+        style={[
+          styles.infoLabel,
+          {
+            marginBottom: 8,
+            fontWeight: "700",
+          },
+        ]}
+      >
+        {label}
+      </Text>
+
+      <View style={styles.chips}>
+        {items.map((item, index) => (
+          <View
+            key={`${label}-${item}-${index}`}
+            style={styles.chip}
+          >
+            <Text style={styles.chipText}>
+              {item}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }

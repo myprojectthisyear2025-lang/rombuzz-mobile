@@ -189,6 +189,20 @@ const safeArray = (v: any): string[] =>
 const commaToArray = (v: string) =>
   v.split(",").map((s) => s.trim()).filter(Boolean);
 
+const profileMultiArray = (v: any): string[] => {
+  if (Array.isArray(v)) {
+    return v
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  if (typeof v === "string") {
+    return commaToArray(v);
+  }
+
+  return [];
+};
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -346,13 +360,15 @@ React.useEffect(() => {
 
     // vibe
     likes:
-      Array.isArray(p.likes) && p.likes.length
-        ? p.likes
-        : user.likes || [],
+      profileMultiArray(p.likes).length
+        ? profileMultiArray(p.likes).slice(0, 10)
+        : profileMultiArray(user.likes).slice(0, 10),
+
     dislikes:
-      Array.isArray(p.dislikes) && p.dislikes.length
-        ? p.dislikes
-        : user.dislikes || [],
+      profileMultiArray(p.dislikes).length
+        ? profileMultiArray(p.dislikes).slice(0, 10)
+        : profileMultiArray(user.dislikes).slice(0, 10),
+
     vibeTags:
       Array.isArray(p.vibeTags) && p.vibeTags.length
         ? p.vibeTags
@@ -547,40 +563,172 @@ React.useEffect(() => {
   }, [countryQuery]);
 
   // Render Info Row
-  const renderInfoRow = (label: string, value: string, onPress: () => void, options?: any) => {
+  const renderInfoRow = (
+    label: string,
+    value: string,
+    onPress: () => void,
+    options?: any
+  ) => {
     const isPlaceholder = !value || value === "Select" || value === "Add";
-    
+
     return (
       <TouchableOpacity
         onPress={onPress}
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
           paddingVertical: 16,
           borderBottomWidth: 1,
           borderBottomColor: RBZ.border,
         }}
       >
-        <Text style={{
-          fontSize: 16,
-          color: RBZ.text,
-          fontWeight: '500',
-        }}>
+        <Text
+          style={{
+            fontSize: 16,
+            color: RBZ.text,
+            fontWeight: "500",
+          }}
+        >
           {label}
         </Text>
-        
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{
-            fontSize: 16,
-            color: isPlaceholder ? RBZ.muted : RBZ.text,
-            maxWidth: 200,
-            textAlign: 'right',
-          }}>
-            {isPlaceholder ? (value || "Select") : value}
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text
+            style={{
+              fontSize: 16,
+              color: isPlaceholder ? RBZ.muted : RBZ.text,
+              maxWidth: 200,
+              textAlign: "right",
+            }}
+          >
+            {isPlaceholder ? value || "Select" : value}
           </Text>
-          <Ionicons name="chevron-forward" size={16} color={RBZ.muted} />
+
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={RBZ.muted}
+          />
         </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderChipField = (
+    label: string,
+    values: any,
+    onPress: () => void,
+    options?: {
+      max?: number;
+      placeholder?: string;
+    }
+  ) => {
+    const items = safeArray(values).slice(
+      0,
+      options?.max ?? Number.MAX_SAFE_INTEGER
+    );
+
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.75}
+        style={{
+          paddingVertical: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: RBZ.border,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: items.length ? 10 : 0,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 16,
+              color: RBZ.text,
+              fontWeight: "500",
+            }}
+          >
+            {label}
+          </Text>
+
+          {!items.length && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  color: RBZ.muted,
+                }}
+              >
+                {options?.placeholder || "Select"}
+              </Text>
+
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={RBZ.muted}
+              />
+            </View>
+          )}
+        </View>
+
+        {!!items.length && (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            {items.map((item: string, index: number) => (
+              <View
+                key={`${label}-${item}-${index}`}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                  borderRadius: 999,
+                  backgroundColor: RBZ.primary + "12",
+                  borderWidth: 1,
+                  borderColor: RBZ.primary + "30",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: RBZ.primary,
+                    fontWeight: "600",
+                  }}
+                >
+                  {item}
+                </Text>
+              </View>
+            ))}
+
+            <View
+              style={{
+                justifyContent: "center",
+                paddingHorizontal: 4,
+              }}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={RBZ.muted}
+              />
+            </View>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -877,13 +1025,14 @@ React.useEffect(() => {
               });
             })}
             
-            {renderInfoRow(
+            {renderChipField(
               "Travel Vibe",
-              Array.isArray((form as any)?.travelVibes) &&
-                (form as any).travelVibes.length
-                ? (form as any).travelVibes.join(", ")
-                : "Add your travel vibe",
-              () => setTravelVibeOpen(true)
+              (form as any)?.travelVibes,
+              () => setTravelVibeOpen(true),
+              {
+                max: 5,
+                placeholder: "Add your travel vibe",
+              }
             )}
           </>
         ))}
@@ -892,7 +1041,7 @@ React.useEffect(() => {
         {renderSection("Dating", (
           <>
            {renderInfoRow(
-              "Relationship style",
+              "Relationship",
               relationshipStyleLabelFromValue(
                 (form as any)?.relationshipStyle
               ),
@@ -900,7 +1049,7 @@ React.useEffect(() => {
                 setEditingField("relationshipStyle");
                 setSelectOpen({
                   field: "relationshipStyle",
-                  title: "Relationship style",
+                  title: "Relationship",
                   options: RELATIONSHIP_STYLE_OPTIONS.map(
                     (option) => option.label
                   ),
@@ -961,7 +1110,7 @@ React.useEffect(() => {
               });
             })}
             
-            {renderInfoRow("Workout frequency", toTitle((form as any)?.workoutFrequency), () => {
+            {renderInfoRow("Workout", toTitle((form as any)?.workoutFrequency), () => {
               setEditingField("workoutFrequency");
               setSelectOpen({
                 field: "workoutFrequency",
@@ -996,7 +1145,7 @@ React.useEffect(() => {
         {/* BACKGROUND */}
         {renderSection("Background", (
           <>
-            {renderInfoRow("Education level", toTitle((form as any)?.educationLevel), () => {
+            {renderInfoRow("Education", toTitle((form as any)?.educationLevel), () => {
               setEditingField("educationLevel");
               setSelectOpen({
                 field: "educationLevel",
@@ -1033,10 +1182,14 @@ React.useEffect(() => {
               });
             })}
             
-            {renderInfoRow(
+            {renderChipField(
               "Languages",
-              asCommaText((form as any)?.languages),
-              () => setLanguagePickerOpen(true)
+              (form as any)?.languages,
+              () => setLanguagePickerOpen(true),
+              {
+                max: 5,
+                placeholder: "Add languages",
+              }
             )}
           </>
         ))}
@@ -1067,27 +1220,41 @@ React.useEffect(() => {
         {/* FAVORITES */}
         {renderSection("Favorites", (
           <>
-            {renderInfoRow("Favorite music", asCommaText((form as any)?.favoriteMusic), () => {
-              setTextOpen({
-                field: "favoriteMusic",
-                title: "Favorite music genres",
-                value: asCommaText((form as any)?.favoriteMusic),
-                placeholder: "e.g., Hip-hop, Pop",
-                asArray: true,
-              });
-            })}
+            {renderChipField(
+              "Music",
+              (form as any)?.favoriteMusic,
+              () => {
+                setTextOpen({
+                  field: "favoriteMusic",
+                  title: "Favorite music genres",
+                  value: asCommaText((form as any)?.favoriteMusic),
+                  placeholder: "e.g., Hip-hop, Pop",
+                  asArray: true,
+                });
+              },
+              {
+                placeholder: "Add",
+              }
+            )}
             
-            {renderInfoRow("Favorite movies/shows", asCommaText((form as any)?.favoriteMovies), () => {
-              setTextOpen({
-                field: "favoriteMovies",
-                title: "Favorite movies/shows",
-                value: asCommaText((form as any)?.favoriteMovies),
-                placeholder: "e.g., Breaking Bad, Interstellar",
-                asArray: true,
-              });
-            })}
+            {renderChipField(
+              "Movies/Shows",
+              (form as any)?.favoriteMovies,
+              () => {
+                setTextOpen({
+                  field: "favoriteMovies",
+                  title: "Favorite movies/shows",
+                  value: asCommaText((form as any)?.favoriteMovies),
+                  placeholder: "e.g., Breaking Bad, Interstellar",
+                  asArray: true,
+                });
+              },
+              {
+                placeholder: "Add",
+              }
+            )}
             
-            {renderInfoRow("Pets preference", toTitle((form as any)?.petsPreference), () => {
+            {renderInfoRow("Pets", toTitle((form as any)?.petsPreference), () => {
               setEditingField("petsPreference");
               setSelectOpen({
                 field: "petsPreference",
@@ -1193,20 +1360,31 @@ React.useEffect(() => {
   </View>
   )}
 
-        {renderInfoRow(
+        {renderChipField(
           "Vibe tags",
-          safeVibeTags.length ? safeVibeTags.join(", ") : "Add",
+          safeVibeTags,
           () => {
             setSelectOpen({
               field: "vibeTags",
               title: "Vibe tags",
               options: [
-                "Chill", "Romantic", "Funny", "Introvert", "Ambivert", "Extrovert",
-                "Deep thinker", "Spontaneous", "Calm", "Chaotic good"
+                "Chill",
+                "Romantic",
+                "Funny",
+                "Introvert",
+                "Ambivert",
+                "Extrovert",
+                "Deep thinker",
+                "Spontaneous",
+                "Calm",
+                "Chaotic good",
               ],
               value: safeVibeTags,
               multi: true,
             });
+          },
+          {
+            placeholder: "Add",
           }
         )}
 
@@ -1643,7 +1821,7 @@ React.useEffect(() => {
                   }}
                 >
                   {cityQuery.trim().length < 2
-                    ? "Type at least 2 letters. Search covers cities and towns worldwide."
+                    ? "Search cities and towns worldwide."
                     : cityLoading
                     ? "Searching worldwide…"
                     : cityResults.length
@@ -1670,21 +1848,57 @@ React.useEffect(() => {
                   ? cityResults
                   : (selectOpen?.options || [])
               ).map((opt: string) => {
-                const active = opt === selectOpen?.value;
+                const isMulti = !!selectOpen?.multi;
+
+                const active = isMulti
+                  ? Array.isArray(selectOpen?.value) &&
+                    selectOpen.value.includes(opt)
+                  : opt === selectOpen?.value;
 
                 return (
                   <TouchableOpacity
                     key={opt}
                     onPress={() =>
-                      setSelectOpen((p: any) =>
-                        p ? { ...p, value: opt } : p
-                      )
+                      setSelectOpen((p: any) => {
+                        if (!p) return p;
+
+                        // Normal fields remain single-select.
+                        if (!p.multi) {
+                          return {
+                            ...p,
+                            value: opt,
+                          };
+                        }
+
+                        // Multi-select fields toggle individual values.
+                        const current = Array.isArray(p.value)
+                          ? p.value
+                          : p.value
+                          ? [String(p.value)]
+                          : [];
+
+                        const selected = current.includes(opt);
+
+                        const next = selected
+                          ? current.filter(
+                              (item: string) => item !== opt
+                            )
+                          : [...current, opt];
+
+                        return {
+                          ...p,
+                          value: next,
+                        };
+                      })
                     }
                     style={{
                       paddingVertical: 16,
                       paddingHorizontal: 4,
                       borderBottomWidth: 1,
                       borderBottomColor: RBZ.border,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                     }}
                   >
                     <Text
@@ -1696,6 +1910,14 @@ React.useEffect(() => {
                     >
                       {opt}
                     </Text>
+
+                    {active && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color={RBZ.primary}
+                      />
+                    )}
                   </TouchableOpacity>
                 );
               })}
