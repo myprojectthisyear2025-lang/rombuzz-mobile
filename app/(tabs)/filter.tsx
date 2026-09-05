@@ -8,7 +8,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -18,6 +18,16 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { LOOKING_FOR_FILTER_OPTIONS } from "@/src/constants/lookingFor";
+import {
+  RELATIONSHIP_STYLE_FILTER_OPTIONS,
+  relationshipStyleKeyFromValue,
+} from "@/src/constants/relationshipStyles";
+import {
+  loadSavedDiscoverFilters,
+  saveDiscoverFilters,
+} from "@/src/features/discover/discoverFilterStorage";
 
 /* 🎨 RomBuzz Palette */
 const COLORS = {
@@ -59,7 +69,7 @@ type DiscoverFilters = {
 const DEFAULT_FILTERS: DiscoverFilters = {
   rangeMiles: 25,
   ageMin: 21,
-  ageMax: 35,
+  ageMax: 55,
   gender: "",
   lookingFor: [],
   vibe: [],
@@ -82,19 +92,6 @@ const DEFAULT_FILTERS: DiscoverFilters = {
   photosOnly: true,
 };
 
-const LOOKING_FOR_OPTIONS = [
-  { label: "Serious", value: "serious" },
-  { label: "Casual", value: "casual" },
-  { label: "Friends", value: "friends" },
-  { label: "GymBuddy", value: "gymbuddy" },
-  { label: "Flirty", value: "flirty" },
-  { label: "Chill", value: "chill" },
-  { label: "Timepass", value: "timepass" },
-  { label: "ONS", value: "ons" },
-  { label: "Threesome", value: "threesome" },
-  { label: "OnlyFans", value: "onlyfans" },
-];
-
 const VIBE_OPTIONS = [
   { label: "Romantic", value: "romantic" },
   { label: "Flirty", value: "flirty" },
@@ -102,13 +99,6 @@ const VIBE_OPTIONS = [
   { label: "Adventurous", value: "adventurous" },
   { label: "Funny", value: "funny" },
   { label: "Serious", value: "serious" },
-];
-
-const RELATIONSHIP_STYLE_OPTIONS = [
-  { label: "Monogamy", value: "monogamy" },
-  { label: "Long-term", value: "long-term" },
-  { label: "Short-term", value: "short-term" },
-  { label: "Open", value: "open" },
 ];
 
 const BODY_TYPE_OPTIONS = [
@@ -166,12 +156,6 @@ const EDUCATION_OPTIONS = [
   { label: "PhD", value: "phd" },
 ];
 
-const TRAVEL_OPTIONS = [
-  { label: "Homebody", value: "homebody" },
-  { label: "Weekend Trips", value: "weekend trips" },
-  { label: "Frequent Traveler", value: "frequent traveler" },
-];
-
 const PET_OPTIONS = [
   { label: "Love Dogs", value: "love dogs" },
   { label: "Love Cats", value: "love cats" },
@@ -211,18 +195,46 @@ const INTEREST_OPTIONS = [
   { label: "Gaming", value: "gaming" },
 ];
 
+function normalizeFilterState(
+  value: Partial<DiscoverFilters> | null | undefined
+): DiscoverFilters {
+  const merged: DiscoverFilters = {
+    ...DEFAULT_FILTERS,
+    ...(value || {}),
+  };
+
+  const relationshipStyle = relationshipStyleKeyFromValue(
+    Array.isArray(merged.relationshipStyle)
+      ? merged.relationshipStyle[0]
+      : ""
+  );
+
+  return {
+    ...merged,
+    relationshipStyle: relationshipStyle
+      ? [relationshipStyle]
+      : [],
+    // Travel Style is legacy/web-only now.
+    travelStyle: [],
+  };
+}
+
 function parseIncoming(raw: unknown): DiscoverFilters {
-  if (typeof raw !== "string" || !raw.trim()) return DEFAULT_FILTERS;
+  if (typeof raw !== "string" || !raw.trim()) {
+    return normalizeFilterState(DEFAULT_FILTERS);
+  }
 
   try {
     const decoded = decodeURIComponent(raw);
     const parsed = JSON.parse(decoded);
-    return {
-      ...DEFAULT_FILTERS,
-      ...parsed,
-    };
+
+    return normalizeFilterState(
+      parsed && typeof parsed === "object"
+        ? parsed
+        : {}
+    );
   } catch {
-    return DEFAULT_FILTERS;
+    return normalizeFilterState(DEFAULT_FILTERS);
   }
 }
 
@@ -244,15 +256,48 @@ export default function FilterScreen() {
 
   const [filters, setFilters] = useState<DiscoverFilters>(incoming);
 
+  useEffect(() => {
+    let alive = true;
+
+    const restoreSavedFilters = async () => {
+      // Explicit Discover route state always wins.
+      if (
+        typeof params.discoverFilters === "string" &&
+        params.discoverFilters.trim()
+      ) {
+        setFilters(incoming);
+        return;
+      }
+
+      const saved = normalizeFilterState(
+        await loadSavedDiscoverFilters(DEFAULT_FILTERS)
+      );
+
+      if (alive) {
+        setFilters(saved);
+      }
+    };
+
+    restoreSavedFilters();
+
+    return () => {
+      alive = false;
+    };
+  }, [incoming, params.discoverFilters]);
+
   const resetAll = () => {
-    setFilters(DEFAULT_FILTERS);
+    setFilters({ ...DEFAULT_FILTERS });
   };
 
-  const applyFilters = () => {
+  const applyFilters = async () => {
+    await saveDiscoverFilters(filters);
+
     router.replace({
       pathname: "/(tabs)/discover",
       params: {
-        discoverFilters: encodeURIComponent(JSON.stringify(filters)),
+        discoverFilters: encodeURIComponent(
+          JSON.stringify(filters)
+        ),
       },
     } as any);
   };
@@ -353,12 +398,15 @@ export default function FilterScreen() {
 
         <Section title="Looking For">
           <MultiTagRow
-            options={LOOKING_FOR_OPTIONS}
+            options={LOOKING_FOR_FILTER_OPTIONS}
             selected={filters.lookingFor}
             onToggle={(value) =>
               setFilters((prev) => ({
                 ...prev,
-                lookingFor: toggleInArray(prev.lookingFor, value),
+                lookingFor: toggleInArray(
+                  prev.lookingFor,
+                  value
+                ),
               }))
             }
           />
@@ -378,17 +426,22 @@ export default function FilterScreen() {
         </Section>
 
         <Section title="Relationship Style">
-          <MultiTagRow
-            options={RELATIONSHIP_STYLE_OPTIONS}
-            selected={filters.relationshipStyle}
-            onToggle={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                relationshipStyle: toggleInArray(prev.relationshipStyle, value),
-              }))
-            }
-          />
-        </Section>
+            <SingleTagRow
+              options={[
+                { label: "All", value: "" },
+                ...RELATIONSHIP_STYLE_FILTER_OPTIONS,
+              ]}
+              selected={relationshipStyleKeyFromValue(
+                filters.relationshipStyle[0] || ""
+              )}
+              onSelect={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  relationshipStyle: value ? [value] : [],
+                }))
+              }
+            />
+          </Section>
 
         <Section title="Body Type">
           <MultiTagRow
@@ -494,18 +547,6 @@ export default function FilterScreen() {
           />
         </Section>
 
-        <Section title="Travel Style">
-          <MultiTagRow
-            options={TRAVEL_OPTIONS}
-            selected={filters.travelStyle}
-            onToggle={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                travelStyle: toggleInArray(prev.travelStyle, value),
-              }))
-            }
-          />
-        </Section>
 
         <Section title="Pets Preference">
           <MultiTagRow

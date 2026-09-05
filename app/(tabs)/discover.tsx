@@ -15,6 +15,14 @@
  */
 
 import { API_BASE } from "@/src/config/api";
+import { LOOKING_FOR_WITH_ALL } from "@/src/constants/lookingFor";
+import {
+  relationshipStyleKeyFromValue,
+} from "@/src/constants/relationshipStyles";
+import {
+  loadSavedDiscoverFilters,
+  saveDiscoverFilters,
+} from "@/src/features/discover/discoverFilterStorage";
 import { useCachedDiscoverDeck } from "@/src/features/performance/useCachedDiscoverDeck";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -60,24 +68,6 @@ const RBZ = {
   soft: "#f7f7fb",
   gray: "#6b7280",
 } as const;
-
-// "Looking for" (intent). Adult intents are hidden unless Premium Mode is enabled.
-const LOOKING_FOR = [
-  { key: "", label: "All", kind: "public" as const },
-
-  { key: "serious", label: "Serious", kind: "public" as const },
-  { key: "casual", label: "Casual", kind: "public" as const },
-  { key: "friends", label: "Friends", kind: "public" as const },
-  { key: "gymbuddy", label: "GymBuddy", kind: "public" as const },
-  { key: "flirty", label: "Flirty", kind: "private" as const },
-  { key: "chill", label: "Chill", kind: "private" as const },
-  { key: "timepass", label: "Timepass", kind: "private" as const },
-
-  // 🔒 Premium-only (hidden unless Premium Mode ON)
-  { key: "ons", label: "ONS", kind: "restricted" as const },
-  { key: "threesome", label: "Threesome", kind: "restricted" as const },
-  { key: "onlyfans", label: "OnlyFans", kind: "restricted" as const },
-];
 
 
 function clamp(n: number, a: number, b: number) {
@@ -285,18 +275,50 @@ const DEFAULT_DISCOVER_FILTERS: DiscoverFilters = {
   photosOnly: true,
 };
 
+function normalizeDiscoverFilterState(
+  value: Partial<DiscoverFilters> | null | undefined
+): DiscoverFilters {
+  const merged: DiscoverFilters = {
+    ...DEFAULT_DISCOVER_FILTERS,
+    ...(value || {}),
+  };
+
+  const relationshipStyle = relationshipStyleKeyFromValue(
+    Array.isArray(merged.relationshipStyle)
+      ? merged.relationshipStyle[0]
+      : ""
+  );
+
+  return {
+    ...merged,
+    relationshipStyle: relationshipStyle
+      ? [relationshipStyle]
+      : [],
+    // Travel Style is legacy/web-only now.
+    travelStyle: [],
+  };
+}
+
 function parseDiscoverFilters(raw: unknown): DiscoverFilters {
-  if (typeof raw !== "string" || !raw.trim()) return DEFAULT_DISCOVER_FILTERS;
+  if (typeof raw !== "string" || !raw.trim()) {
+    return normalizeDiscoverFilterState(
+      DEFAULT_DISCOVER_FILTERS
+    );
+  }
 
   try {
     const decoded = decodeURIComponent(raw);
     const parsed = JSON.parse(decoded);
-    return {
-      ...DEFAULT_DISCOVER_FILTERS,
-      ...parsed,
-    };
+
+    return normalizeDiscoverFilterState(
+      parsed && typeof parsed === "object"
+        ? parsed
+        : {}
+    );
   } catch {
-    return DEFAULT_DISCOVER_FILTERS;
+    return normalizeDiscoverFilterState(
+      DEFAULT_DISCOVER_FILTERS
+    );
   }
 }
 
@@ -405,6 +427,10 @@ export default function DiscoverSwipeScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ discoverFilters?: string }>();
 
+  const hasIncomingFilters =
+    typeof params.discoverFilters === "string" &&
+    params.discoverFilters.trim().length > 0;
+
   const headerTopPadding =
     Platform.OS === "ios" ? 8 : Math.max(insets.top, 8) + 6;
 
@@ -473,10 +499,11 @@ const nextScale = useAnimatedStyle(() => ({
   const [appliedFilters, setAppliedFilters] =
     useState<DiscoverFilters>(parsedFilters);
 
-  // 🔒 hides adult intents; later you’ll gate with real premium/verification
-  const [premiumMode, setPremiumMode] = useState(false);
+  // Prevent Discover from loading default profiles before saved filters restore.
+  const [filtersReady, setFiltersReady] =
+    useState<boolean>(hasIncomingFilters);
 
-    // ✅ strict = exact filters. fallback = user manually expanded soft filters.
+  // ✅ strict = exact filters. fallback = user manually expanded soft filters.
   const [phase, setPhase] = useState<"strict" | "fallback">("strict");
   const [expandedSearch, setExpandedSearch] = useState(false);
   const [message, setMessage] = useState<string>("");
@@ -515,20 +542,58 @@ const nextScale = useAnimatedStyle(() => ({
     usersRef.current = users;
   }, [users]);
 
-   useEffect(() => {
-    setAppliedFilters(parsedFilters);
+  useEffect(() => {
+    let alive = true;
 
-    if (parsedFilters.lookingFor.length > 0) {
-      setFilterLookingFor(parsedFilters.lookingFor[0]);
-    } else {
-      setFilterLookingFor("");
-    }
+    const restoreFilters = async () => {
+      setFiltersReady(false);
 
-       setPhase("strict");
-    setExpandedSearch(false);
-  }, [parsedFilters]);
+      // Filters just applied from the Filter screen always win.
+      if (hasIncomingFilters) {
+        setAppliedFilters(parsedFilters);
+        setFilterLookingFor(
+          parsedFilters.lookingFor.length > 0
+            ? parsedFilters.lookingFor[0]
+            : ""
+        );
+        setPhase("strict");
+        setExpandedSearch(false);
+        setFiltersReady(true);
+        return;
+      }
+
+      // App restart / fresh Discover visit:
+      // restore this user's latest saved filters.
+      const saved = normalizeDiscoverFilterState(
+        await loadSavedDiscoverFilters<DiscoverFilters>(
+          DEFAULT_DISCOVER_FILTERS
+        )
+      );
+
+      if (!alive) return;
+
+      setAppliedFilters(saved);
+      setFilterLookingFor(
+        Array.isArray(saved.lookingFor) &&
+        saved.lookingFor.length > 0
+          ? saved.lookingFor[0]
+          : ""
+      );
+      setPhase("strict");
+      setExpandedSearch(false);
+      setFiltersReady(true);
+    };
+
+    restoreFilters();
+
+    return () => {
+      alive = false;
+    };
+  }, [hasIncomingFilters, parsedFilters]);
 
   useEffect(() => {
+    if (!filtersReady) return;
+
     let alive = true;
 
     const hydrateDeckBeforeNetwork = async () => {
@@ -548,7 +613,12 @@ const nextScale = useAnimatedStyle(() => ({
     return () => {
       alive = false;
     };
-  }, [discoverCacheInput, hydrateCachedDiscoverDeck, preloadDiscoverImages]);
+  }, [
+    discoverCacheInput,
+    filtersReady,
+    hydrateCachedDiscoverDeck,
+    preloadDiscoverImages,
+  ]);
 
   const authHeaders = useCallback(async () => {
     const token = await SecureStore.getItemAsync("RBZ_TOKEN");
@@ -737,9 +807,6 @@ const nextScale = useAnimatedStyle(() => ({
         if (effective.educationLevel[0]) {
           qs.set("educationLevel", effective.educationLevel[0]);
         }
-          if (effective.travelStyle[0]) {
-          qs.set("travelStyle", effective.travelStyle[0]);
-        }
         if (effective.petsPreference[0]) {
           qs.set("petsPreference", effective.petsPreference[0]);
         }
@@ -835,6 +902,8 @@ const nextScale = useAnimatedStyle(() => ({
 
 useFocusEffect(
   useCallback(() => {
+    if (!filtersReady) return undefined;
+
     fetchDiscover({ withFreshCoords: false });
 
     const gpsRefreshTimer = setTimeout(() => {
@@ -847,7 +916,7 @@ useFocusEffect(
     return () => {
       clearTimeout(gpsRefreshTimer);
     };
-  }, [fetchDiscover])
+  }, [fetchDiscover, filtersReady])
 );
 
 const canExpandSearch =
@@ -898,21 +967,29 @@ const removeTopCard = useCallback(() => {
       ? (current as any).photos.filter((p: any) => isDiscoverSafeMediaEntry(p))
       : [];
 
-    const preview = {
-      id: current.id,
-      firstName: current.firstName,
-      lastName: current.lastName,
-      avatar: normalizeImageUrl(current.avatar),
-      media: safePreviewMedia,
-      photos: safePreviewPhotos,
-      dob: current.dob,
+   const preview = {
+  id: current.id,
+  firstName: current.firstName,
+  lastName: current.lastName,
+  avatar: normalizeImageUrl(current.avatar),
+  media: safePreviewMedia,
+  photos: safePreviewPhotos,
+  dob: current.dob,
 
-          city: current.city,
-      height: current.height,
-      orientation: current.orientation,
-      interests: current.interests || [],
-         hobbies: current.hobbies || [],
-      favorites: current.favorites || [],
+   city: current.city,
+   height: current.height,
+   orientation: current.orientation,
+   lookingFor: current.lookingFor,
+   relationshipStyle: (current as any).relationshipStyle || "",
+   zodiac: current.zodiac || "",
+
+   travelVibes: Array.isArray((current as any).travelVibes)
+     ? (current as any).travelVibes.slice(0, 5)
+     : [],
+
+   interests: current.interests || [],
+  hobbies: current.hobbies || [],
+  favorites: current.favorites || [],
       distanceMeters: current.distanceMeters,
       distanceText: current.distanceText || "",
       isOnline: !!current.isOnline,
@@ -1053,24 +1130,32 @@ const swipeGesture = Gesture.Pan()
       ? `${Math.max(1, Math.ceil(current.distanceMeters / 1000))} km away`
       : null;
 
-  const onPickLookingFor = async (
-    key: string,
-    kind: "public" | "private" | "restricted"
-  ) => {
-    // restricted intents are hidden unless Premium Mode ON
-    if (kind === "restricted" && !premiumMode) return;
+  const onPickLookingFor = async (key: string) => {
+    const nextFilters: DiscoverFilters = {
+      ...appliedFilters,
+      lookingFor: key ? [key] : [],
+    };
 
     setFilterLookingFor(key);
+    setAppliedFilters(nextFilters);
     setUsers([]);
     setReveal(0);
 
-    // reset strict cycle
+    // The top Looking For row is part of Discover filtering,
+    // so persist it just like filters applied from the Filter screen.
+    await saveDiscoverFilters(nextFilters);
+
+    // Reset strict cycle whenever the intent changes.
     setPhase("strict");
     setExpandedSearch(false);
 
     setMessage("");
-    await fetchDiscover({ lookingFor: key, phase: "strict", expanded: false });
-};
+    await fetchDiscover({
+      lookingFor: key,
+      phase: "strict",
+      expanded: false,
+    });
+  };
 
    return (
     <SafeAreaView style={styles.safe}>
@@ -1093,19 +1178,7 @@ const swipeGesture = Gesture.Pan()
             <Text style={styles.hSub}>Swipe to buzz • Tap to view</Text>
           </View>
 
-           <View style={{ flexDirection: "row", gap: 10 }}>
-  {/* Premium Mode (shows adult intents) */}
-  <Pressable
-    onPress={() => {
-      setPremiumMode((v) => !v);
-      setMessage(!premiumMode ? "Premium Mode enabled (adult intents unlocked)." : "");
-    }}
-    style={styles.headerBtn}
-    android_ripple={{ color: "rgba(255,255,255,0.2)" }}
-  >
-    <Ionicons name={premiumMode ? "lock-open" : "lock-closed"} size={18} color={RBZ.white} />
-  </Pressable>
-
+          <View style={{ flexDirection: "row", gap: 10 }}>
   {/* Filter */}
   <Pressable
     onPress={() =>
@@ -1115,7 +1188,9 @@ const swipeGesture = Gesture.Pan()
           discoverFilters: encodeURIComponent(
             JSON.stringify({
               ...appliedFilters,
-              lookingFor: filterLookingFor ? [filterLookingFor] : appliedFilters.lookingFor,
+              lookingFor: filterLookingFor
+                ? [filterLookingFor]
+                : appliedFilters.lookingFor,
             })
           ),
         },
@@ -1138,40 +1213,39 @@ const swipeGesture = Gesture.Pan()
 </View>
 </View>
 
-             {/* Looking For row */}
+        {/* Looking For row */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.vibesRow}
         >
-          {LOOKING_FOR.filter((v) => v.kind !== "restricted" || premiumMode).map(
-            (v) => {
-              const active = v.key === filterLookingFor;
-              return (
-                <Pressable
-                  key={v.label}
-                  onPress={() => onPickLookingFor(v.key, v.kind)}
+          {LOOKING_FOR_WITH_ALL.map((option) => {
+            const active = option.key === filterLookingFor;
+
+            return (
+              <Pressable
+                key={option.key || "all"}
+                onPress={() => onPickLookingFor(option.key)}
+                style={[
+                  styles.vibeChip,
+                  active ? styles.vibeChipActive : null,
+                ]}
+              >
+                <Text
                   style={[
-                    styles.vibeChip,
-                    active ? styles.vibeChipActive : null,
+                    styles.vibeText,
+                    active ? styles.vibeTextActive : null,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.vibeText,
-                      active ? styles.vibeTextActive : null,
-                    ]}
-                  >
-                    {v.label}
-                  </Text>
-                </Pressable>
-              );
-            }
-          )}
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </LinearGradient>
 
-         {/* Content */}
+      {/* Content */}
          <View style={styles.body}>
         {loading && !current ? (
           <View style={styles.center}>

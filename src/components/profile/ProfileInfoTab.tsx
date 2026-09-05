@@ -27,23 +27,31 @@ import {
   View
 } from "react-native";
 
+import {
+  LOOKING_FOR_OPTIONS,
+  lookingForKeyFromValue,
+  lookingForLabelFromValue,
+} from "../../constants/lookingFor";
+import {
+  POLITICAL_VIEW_OPTIONS,
+  RELIGION_OPTIONS,
+  ZODIAC_OPTIONS,
+  zodiacDisplayValue,
+} from "../../constants/profileBeliefs";
+import {
+  RELATIONSHIP_STYLE_OPTIONS,
+  relationshipStyleKeyFromValue,
+  relationshipStyleLabelFromValue,
+} from "../../constants/relationshipStyles";
+import LanguagePickerModal from "./LanguagePickerModal";
+import ProfileSingleChoicePicker from "./ProfileSingleChoicePicker";
+import TravelVibePicker from "./TravelVibePicker";
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-const LOOKING_FOR_MAP = [
-  { key: "serious", label: "Serious", icon: "heart" },
-  { key: "casual", label: "Casual", icon: "flash" },
-  { key: "friends", label: "Friends", icon: "people" },
-  { key: "gymbuddy", label: "GymBuddy", icon: "fitness" },
-  { key: "flirty", label: "Flirty", icon: "sparkles" },
-  { key: "chill", label: "Chill", icon: "leaf" },
-  { key: "timepass", label: "Timepass", icon: "hourglass" },
-];
-
-
 const PRONOUN_OPTIONS = ["He/Him", "She/Her", "They/Them", "Custom"];
-const RELATIONSHIP_STYLE_OPTIONS = ["Monogamous", "Open", "Poly"];
 const BODY_TYPE_OPTIONS = ["Slim", "Average", "Athletic", "Curvy", "Muscular", "A little extra", "Prefer not to say"];
 const FITNESS_LEVEL_OPTIONS = ["Not active", "Sometimes", "Active", "Very active"];
 const SMOKING_OPTIONS = ["No", "Sometimes", "Yes"];
@@ -178,30 +186,8 @@ const asCommaText = (v: any) => {
 const safeArray = (v: any): string[] =>
   Array.isArray(v) ? v.filter(Boolean) : [];
 
-const commaToArray = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
-
-const lookingForLabelFromValue = (val?: string) => {
-  if (!val) return "";
-  const byLabel = LOOKING_FOR_MAP.find((x) => x.label.toLowerCase() === val.toLowerCase());
-  if (byLabel) return byLabel.label;
-  const byKey = LOOKING_FOR_MAP.find((x) => x.key === val);
-  return byKey ? byKey.label : val;
-};
-
-const getVisibilityLabel = (value: any) => {
-  const str = String(value || "").toLowerCase();
-  return str === "hide" || str === "hidden" || str === "false" ? "Hidden" : "Visible";
-};
-
-const getVisibilityColor = (value: any, RBZ: any) => {
-  const str = String(value || "").toLowerCase();
-  return str === "hide" || str === "hidden" || str === "false" ? RBZ.muted : RBZ.success;
-};
-
-const toggleVisibility = (current: any) => {
-  const str = String(current || "").toLowerCase();
-  return str === "hide" || str === "hidden" || str === "false" ? "show" : "hide";
-};
+const commaToArray = (v: string) =>
+  v.split(",").map((s) => s.trim()).filter(Boolean);
 
 // ============================================================================
 // MAIN COMPONENT
@@ -230,10 +216,9 @@ export default function ProfileInfoTab(props: any) {
     CITY_OPTIONS,
     GENDER_OPTIONS,
     ORIENTATION_OPTIONS,
-    LOOKINGFOR_OPTIONS,
     LIKE_CHIP_OPTIONS,
     DISLIKE_CHIP_OPTIONS,
-     recording,
+    recording,
     startRecording,
     stopRecording,
     playVoice,
@@ -255,7 +240,13 @@ export default function ProfileInfoTab(props: any) {
   const [cityQuery, setCityQuery] = useState("");
   const [cityResults, setCityResults] = useState<string[]>([]);
   const [cityLoading, setCityLoading] = useState(false);
+  const [travelVibeOpen, setTravelVibeOpen] = useState(false);
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
+  const [profileChoiceOpen, setProfileChoiceOpen] = useState<
+    null | "religion" | "politicalViews" | "zodiac"
+  >(null);
   const cityCacheRef = React.useRef<Record<string, string[]>>({});
+  const cityRequestRef = React.useRef(0);
 
   const [countryQuery, setCountryQuery] = useState("");
   const [countryResults, setCountryResults] = useState<string[]>([]);
@@ -331,8 +322,10 @@ React.useEffect(() => {
     company: p.company || user.company || "",
     languages:
       Array.isArray(p.languages) && p.languages.length
-        ? p.languages
-        : user.languages || [],
+        ? p.languages.slice(0, 5)
+        : Array.isArray(user.languages)
+        ? user.languages.slice(0, 5)
+        : [],
 
     // beliefs
     religion: p.religion || user.religion || "",
@@ -402,56 +395,125 @@ React.useEffect(() => {
     doSave();
   };
 
-  // Handle visibility toggle
-  const handleVisibilityToggle = (field: string) => {
-    const current = (form as any)?.[field];
-    const newValue = toggleVisibility(current);
-    setForm((p: any) => ({ ...p, [field]: newValue }));
-    saveSingleField({ [field]: newValue });
-  };
-
-  // City search effect
+  // City search effect — worldwide, English labels when available.
   React.useEffect(() => {
+    const requestId = ++cityRequestRef.current;
+
     if (selectOpen?.field !== "city") return;
+
     const q = cityQuery.trim();
-    if (q.length < 3) {
+
+    if (q.length < 2) {
       setCityResults([]);
+      setCityLoading(false);
       return;
     }
-const t = setTimeout(async () => {
-  try {
-    // ✅ cache hit
-    const cached = cityCacheRef.current[q.toLowerCase()];
+
+    const cacheKey = q.toLocaleLowerCase("en");
+    const cached = cityCacheRef.current[cacheKey];
+
     if (cached) {
       setCityResults(cached);
+      setCityLoading(false);
       return;
     }
 
-    setCityLoading(true);
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=20`;
+    const t = setTimeout(async () => {
+      try {
+        setCityLoading(true);
+
+        const url =
+          `https://nominatim.openstreetmap.org/search?` +
+          `q=${encodeURIComponent(q)}` +
+          `&format=jsonv2&addressdetails=1&namedetails=1` +
+          `&accept-language=en&limit=30`;
 
         const res = await fetch(url, {
           headers: {
             Accept: "application/json",
+            "Accept-Language": "en",
             "User-Agent": "RomBuzzApp/1.0",
           },
         });
+
+        if (!res.ok) {
+          throw new Error(`City search failed: ${res.status}`);
+        }
+
         const data = await res.json();
-        const mapped: string[] = (Array.isArray(data) ? data : [])
+
+        // Do not allow an older request to replace newer results.
+        if (requestId !== cityRequestRef.current) return;
+
+        const mapped = (Array.isArray(data) ? data : [])
           .map((x: any) => {
-            const city = x?.address?.city || x?.address?.town || x?.address?.village || 
-                        x?.address?.municipality || x?.address?.county || x?.address?.state || "";
-            const country = x?.address?.country || "";
-            return `${city}${country ? ", " + country : ""}`.trim();
+            const address = x?.address || {};
+            const placeType = String(
+              x?.addresstype || x?.type || ""
+            ).toLowerCase();
+
+            const isLocality = [
+              "city",
+              "town",
+              "village",
+              "municipality",
+              "hamlet",
+            ].includes(placeType);
+
+            const addressCity =
+              address.city ||
+              address.town ||
+              address.village ||
+              address.municipality ||
+              address.hamlet ||
+              "";
+
+            // Prevent states/counties from appearing as cities.
+            if (!addressCity && !isLocality) return "";
+
+            const city =
+              x?.namedetails?.["name:en"] ||
+              addressCity ||
+              x?.name ||
+              "";
+
+            const region =
+              address.state ||
+              address.region ||
+              address.province ||
+              "";
+
+            const country = address.country || "";
+
+            return [city, region, country]
+              .filter(
+                (part, index, parts) =>
+                  Boolean(part) &&
+                  parts.findIndex(
+                    (candidate) =>
+                      String(candidate).toLowerCase() ===
+                      String(part).toLowerCase()
+                  ) === index
+              )
+              .join(", ");
           })
           .filter(Boolean);
-        setCityResults(Array.from(new Set(mapped)));
+
+        const unique = Array.from(new Set(mapped)) as string[];
+
+        cityCacheRef.current[cacheKey] = unique;
+        setCityResults(unique);
       } catch (e) {
-        setCityResults([]);
+        if (requestId === cityRequestRef.current) {
+          setCityResults([]);
+        }
       } finally {
-        setCityLoading(false);
+        if (requestId === cityRequestRef.current) {
+          setCityLoading(false);
+        }
       }
-    }, 450);
+    }, 350);
+
     return () => clearTimeout(t);
   }, [cityQuery, selectOpen?.field]);
 
@@ -545,87 +607,6 @@ const t = setTimeout(async () => {
         {title}
       </Text>
       {children}
-    </View>
-  );
-
-  // Render Field with Visibility
-  const renderFieldWithVisibility = (
-    label: string, 
-    field: string, 
-    value: any, 
-    visibilityField?: string, 
-    options?: string[]
-  ) => (
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: RBZ.border,
-    }}>
-      <TouchableOpacity
-        onPress={() => {
-          if (options) {
-            setEditingField(field);
-            setSelectOpen({
-              field,
-              title: label,
-              options,
-              value: toTitle(value),
-            });
-          } else {
-            setTextOpen({
-              field,
-              title: label,
-              value: asText(value),
-              placeholder: `Enter ${label.toLowerCase()}`,
-            });
-          }
-        }}
-        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-      >
-        <Text style={{
-          fontSize: 16,
-          color: RBZ.text,
-          fontWeight: '500',
-        }}>
-          {label}
-        </Text>
-        
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{
-            fontSize: 16,
-            color: !value ? RBZ.muted : RBZ.text,
-          }}>
-            {toTitle(value) || "Select"}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={RBZ.muted} />
-        </View>
-      </TouchableOpacity>
-      
-      {visibilityField && (
-        <TouchableOpacity
-          onPress={() => handleVisibilityToggle(visibilityField)}
-          style={{
-            marginLeft: 12,
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            borderRadius: 12,
-            backgroundColor: getVisibilityColor((form as any)?.[visibilityField], RBZ) + '15',
-          }}
-        >
-          <Ionicons
-            name={
-              getVisibilityLabel((form as any)?.[visibilityField]) === "Visible"
-                ? "eye-outline"
-                : "eye-off-outline"
-            }
-            size={18}
-            color={getVisibilityColor((form as any)?.[visibilityField], RBZ)}
-          />
-        </TouchableOpacity>
-      )}
     </View>
   );
 
@@ -795,20 +776,42 @@ const t = setTimeout(async () => {
                 value: toTitle(form.city),
               });
             })}
-            
-            {renderFieldWithVisibility("Gender", "gender", form.gender, "genderVisibility", GENDER_OPTIONS)}
-            
-            {renderFieldWithVisibility("Orientation", "orientation", form.orientation, "orientationVisibility", ORIENTATION_OPTIONS)}
-            
-            {renderInfoRow("Looking for", lookingForLabelFromValue(form.lookingFor), () => {
-              setEditingField("lookingFor");
+
+            {renderInfoRow("Gender", toTitle(form.gender), () => {
+              setEditingField("gender");
               setSelectOpen({
-                field: "lookingFor",
-                title: "Looking for",
-                options: LOOKINGFOR_OPTIONS,
-                value: lookingForLabelFromValue(form.lookingFor),
+                field: "gender",
+                title: "Gender",
+                options: GENDER_OPTIONS,
+                value: toTitle(form.gender),
               });
             })}
+
+            {renderInfoRow("Orientation", toTitle(form.orientation), () => {
+              setEditingField("orientation");
+              setSelectOpen({
+                field: "orientation",
+                title: "Orientation",
+                options: ORIENTATION_OPTIONS,
+                value: toTitle(form.orientation),
+              });
+            })}
+            
+            {renderInfoRow(
+              "Looking for",
+              lookingForLabelFromValue(form.lookingFor),
+              () => {
+                setEditingField("lookingFor");
+                setSelectOpen({
+                  field: "lookingFor",
+                  title: "Looking for",
+                  options: LOOKING_FOR_OPTIONS.map(
+                    (option) => option.label
+                  ),
+                  value: lookingForLabelFromValue(form.lookingFor),
+                });
+              }
+            )}
             
             {renderInfoRow("Height", toTitle(form.height), () => {
               setEditingField("height");
@@ -853,57 +856,6 @@ const t = setTimeout(async () => {
                 value: toTitle(form.pronouns),
               });
             })}
-            
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingVertical: 16,
-            }}>
- 
-              <TouchableOpacity
-                onPress={() => handleVisibilityToggle("genderVisibility")}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 20,
-                  backgroundColor: getVisibilityColor((form as any)?.genderVisibility, RBZ) + '15',
-                }}
-              >
-                <Text style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: getVisibilityColor((form as any)?.genderVisibility, RBZ),
-                }}>
-                  {getVisibilityLabel((form as any)?.genderVisibility)}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingVertical: 16,
-            }}>
-              <TouchableOpacity
-                onPress={() => handleVisibilityToggle("orientationVisibility")}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 20,
-                  backgroundColor: getVisibilityColor((form as any)?.orientationVisibility, RBZ) + '15',
-                }}
-              >
-                <Text style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: getVisibilityColor((form as any)?.orientationVisibility, RBZ),
-                }}>
-                  {getVisibilityLabel((form as any)?.orientationVisibility)}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </>
         ))}
 
@@ -925,71 +877,39 @@ const t = setTimeout(async () => {
               });
             })}
             
-            {renderInfoRow("Travel mode", (form as any)?.travelMode ? "Active" : "Inactive", () => {
-              setEditingField("travelMode");
-              setSelectOpen({
-                field: "travelMode",
-                title: "Travel mode",
-                options: ["Inactive", "Active"],
-                value: (form as any)?.travelMode ? "Active" : "Inactive",
-              });
-            })}
-            
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingVertical: 16,
-            }}>
-              <View>
-                <Text style={{
-                  fontSize: 16,
-                  color: RBZ.text,
-                  fontWeight: '500',
-                  marginBottom: 4,
-                }}>
-                  Distance visibility
-                </Text>
-                <Text style={{
-                  fontSize: 14,
-                  color: RBZ.muted,
-                }}>
-                  {getVisibilityLabel((form as any)?.distanceVisibility)}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => handleVisibilityToggle("distanceVisibility")}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 20,
-                  backgroundColor: getVisibilityColor((form as any)?.distanceVisibility, RBZ) + '15',
-                }}
-              >
-                <Text style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: getVisibilityColor((form as any)?.distanceVisibility, RBZ),
-                }}>
-                  {getVisibilityLabel((form as any)?.distanceVisibility)}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {renderInfoRow(
+              "Travel Vibe",
+              Array.isArray((form as any)?.travelVibes) &&
+                (form as any).travelVibes.length
+                ? (form as any).travelVibes.join(", ")
+                : "Add your travel vibe",
+              () => setTravelVibeOpen(true)
+            )}
           </>
         ))}
 
         {/* DATING */}
         {renderSection("Dating", (
           <>
-            {renderInfoRow("Relationship style", toTitle((form as any)?.relationshipStyle), () => {
-              setEditingField("relationshipStyle");
-              setSelectOpen({
-                field: "relationshipStyle",
-                title: "Relationship style",
-                options: RELATIONSHIP_STYLE_OPTIONS,
-                value: toTitle((form as any)?.relationshipStyle),
-              });
-            })}
+           {renderInfoRow(
+              "Relationship style",
+              relationshipStyleLabelFromValue(
+                (form as any)?.relationshipStyle
+              ),
+              () => {
+                setEditingField("relationshipStyle");
+                setSelectOpen({
+                  field: "relationshipStyle",
+                  title: "Relationship style",
+                  options: RELATIONSHIP_STYLE_OPTIONS.map(
+                    (option) => option.label
+                  ),
+                  value: relationshipStyleLabelFromValue(
+                    (form as any)?.relationshipStyle
+                  ),
+                });
+              }
+            )}
           </>
         ))}
 
@@ -1113,47 +1033,34 @@ const t = setTimeout(async () => {
               });
             })}
             
-            {renderInfoRow("Languages", asCommaText((form as any)?.languages), () => {
-              setTextOpen({
-                field: "languages",
-                title: "Languages (comma separated)",
-                value: asCommaText((form as any)?.languages),
-                placeholder: "e.g., English, Spanish",
-                asArray: true,
-              });
-            })}
+            {renderInfoRow(
+              "Languages",
+              asCommaText((form as any)?.languages),
+              () => setLanguagePickerOpen(true)
+            )}
           </>
         ))}
 
         {/* BELIEFS */}
         {renderSection("Beliefs", (
           <>
-            {renderInfoRow("Religion", toTitle((form as any)?.religion), () => {
-              setTextOpen({
-                field: "religion",
-                title: "Religion",
-                value: asText((form as any)?.religion),
-                placeholder: "Optional",
-              });
-            })}
-            
-            {renderInfoRow("Political views", toTitle((form as any)?.politicalViews), () => {
-              setTextOpen({
-                field: "politicalViews",
-                title: "Political views",
-                value: asText((form as any)?.politicalViews),
-                placeholder: "Optional",
-              });
-            })}
-            
-            {renderInfoRow("Zodiac", toTitle((form as any)?.zodiac), () => {
-              setTextOpen({
-                field: "zodiac",
-                title: "Zodiac sign",
-                value: asText((form as any)?.zodiac),
-                placeholder: "e.g., Leo",
-              });
-            })}
+            {renderInfoRow(
+              "Religion",
+              asText((form as any)?.religion),
+              () => setProfileChoiceOpen("religion")
+            )}
+
+            {renderInfoRow(
+              "Political views",
+              asText((form as any)?.politicalViews),
+              () => setProfileChoiceOpen("politicalViews")
+            )}
+
+            {renderInfoRow(
+              "Zodiac",
+              zodiacDisplayValue((form as any)?.zodiac),
+              () => setProfileChoiceOpen("zodiac")
+            )}
           </>
         ))}
 
@@ -1177,15 +1084,6 @@ const t = setTimeout(async () => {
                 value: asCommaText((form as any)?.favoriteMovies),
                 placeholder: "e.g., Breaking Bad, Interstellar",
                 asArray: true,
-              });
-            })}
-            
-            {renderInfoRow("Travel style", toTitle((form as any)?.travelStyle), () => {
-              setTextOpen({
-                field: "travelStyle",
-                title: "Travel style",
-                value: asText((form as any)?.travelStyle),
-                placeholder: "e.g., Road trips, Luxury, Backpacking",
               });
             })}
             
@@ -1559,6 +1457,100 @@ const t = setTimeout(async () => {
         ))}
       </View>
 
+                  <TravelVibePicker
+              visible={travelVibeOpen}
+              selected={
+                Array.isArray((form as any)?.travelVibes)
+                  ? (form as any).travelVibes
+                  : []
+              }
+              onClose={() => setTravelVibeOpen(false)}
+              onSave={(values) => {
+                setForm((prev: any) => ({
+                  ...prev,
+                  travelVibes: values,
+                }));
+
+                saveSingleField({
+                  travelVibes: values,
+                });
+
+                setTravelVibeOpen(false);
+              }}
+            />
+
+            <LanguagePickerModal
+              visible={languagePickerOpen}
+              selected={
+                Array.isArray((form as any)?.languages)
+                  ? (form as any).languages.slice(0, 5)
+                  : []
+              }
+              RBZ={RBZ}
+              onClose={() => setLanguagePickerOpen(false)}
+              onSave={(values) => {
+                const languages = values.slice(0, 5);
+
+                setForm((prev: any) => ({
+                  ...prev,
+                  languages,
+                }));
+
+                saveSingleField({
+                  languages,
+                });
+
+                setLanguagePickerOpen(false);
+              }}
+            />
+                        <ProfileSingleChoicePicker
+              visible={!!profileChoiceOpen}
+              title={
+                profileChoiceOpen === "religion"
+                  ? "Religion"
+                  : profileChoiceOpen === "politicalViews"
+                  ? "Political views"
+                  : "Zodiac sign"
+              }
+              placeholder={
+                profileChoiceOpen === "religion"
+                  ? "Type your religion..."
+                  : profileChoiceOpen === "politicalViews"
+                  ? "Type your political views..."
+                  : "Type your zodiac sign..."
+              }
+              value={
+                profileChoiceOpen
+                  ? asText((form as any)?.[profileChoiceOpen])
+                  : ""
+              }
+              options={
+                profileChoiceOpen === "religion"
+                  ? RELIGION_OPTIONS
+                  : profileChoiceOpen === "politicalViews"
+                  ? POLITICAL_VIEW_OPTIONS
+                  : ZODIAC_OPTIONS
+              }
+              RBZ={RBZ}
+              onClose={() => setProfileChoiceOpen(null)}
+              onSave={(value) => {
+                const field = profileChoiceOpen;
+
+                if (!field) return;
+
+                setForm((prev: any) => ({
+                  ...prev,
+                  [field]: value,
+                }));
+
+                saveSingleField({
+                  [field]: value,
+                });
+
+                setProfileChoiceOpen(null);
+              }}
+            />
+
       {/* ============================================================================
          MODALS (Preserved functionality)
       ============================================================================ */}
@@ -1590,43 +1582,103 @@ const t = setTimeout(async () => {
 
             {selectOpen?.field === "city" && (
               <>
-                <TextInput
-                  value={cityQuery}
-                  onChangeText={setCityQuery}
-                  placeholder="Search city worldwide..."
-                  placeholderTextColor={RBZ.muted}
-                  autoCorrect={false}
+                <View
                   style={{
-                    height: 48,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    height: 50,
                     borderWidth: 1,
                     borderColor: RBZ.border,
-                    borderRadius: 12,
-                    paddingHorizontal: 16,
-                    fontSize: 16,
-                    marginBottom: 12,
-                    backgroundColor: '#f8f9fa',
+                    borderRadius: 14,
+                    backgroundColor: "#f8f9fa",
+                    paddingHorizontal: 14,
                   }}
-                />
+                >
+                  <Ionicons
+                    name="search-outline"
+                    size={20}
+                    color={RBZ.muted}
+                  />
+
+                  <TextInput
+                    value={cityQuery}
+                    onChangeText={setCityQuery}
+                    placeholder="Search any city worldwide"
+                    placeholderTextColor={RBZ.muted}
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                    returnKeyType="search"
+                    style={{
+                      flex: 1,
+                      height: "100%",
+                      paddingHorizontal: 10,
+                      fontSize: 16,
+                      color: RBZ.text,
+                    }}
+                  />
+
+                  {!!cityQuery && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCityQuery("");
+                        setCityResults([]);
+                      }}
+                      hitSlop={10}
+                    >
+                      <Ionicons
+                        name="close-circle"
+                        size={20}
+                        color={RBZ.muted}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: RBZ.muted,
+                    marginTop: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  {cityQuery.trim().length < 2
+                    ? "Type at least 2 letters. Search covers cities and towns worldwide."
+                    : cityLoading
+                    ? "Searching worldwide…"
+                    : cityResults.length
+                    ? `${cityResults.length} matching location${
+                        cityResults.length === 1 ? "" : "s"
+                      }`
+                    : "No city found. Try adding the country name."}
+                </Text>
+
                 {cityLoading && (
-                  <View style={{ paddingVertical: 10 }}>
+                  <View style={{ paddingVertical: 8 }}>
                     <ActivityIndicator color={RBZ.primary} />
                   </View>
                 )}
               </>
             )}
 
-            <ScrollView style={{ maxHeight: 400 }}>
+            <ScrollView
+              style={{ maxHeight: 400 }}
+              keyboardShouldPersistTaps="handled"
+            >
               {(
                 selectOpen?.field === "city"
-                  ? (cityQuery.trim().length >= 3 ? cityResults : (selectOpen?.options || []))
+                  ? cityResults
                   : (selectOpen?.options || [])
               ).map((opt: string) => {
                 const active = opt === selectOpen?.value;
+
                 return (
                   <TouchableOpacity
                     key={opt}
                     onPress={() =>
-                      setSelectOpen((p: any) => (p ? { ...p, value: opt } : p))
+                      setSelectOpen((p: any) =>
+                        p ? { ...p, value: opt } : p
+                      )
                     }
                     style={{
                       paddingVertical: 16,
@@ -1635,11 +1687,13 @@ const t = setTimeout(async () => {
                       borderBottomColor: RBZ.border,
                     }}
                   >
-                    <Text style={{
-                      fontSize: 16,
-                      color: active ? RBZ.primary : RBZ.text,
-                      fontWeight: active ? '600' : '400',
-                    }}>
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        color: active ? RBZ.primary : RBZ.text,
+                        fontWeight: active ? "600" : "400",
+                      }}
+                    >
                       {opt}
                     </Text>
                   </TouchableOpacity>
@@ -1685,14 +1739,16 @@ const t = setTimeout(async () => {
 
                   const field = selectOpen.field;
                   const rawValue = selectOpen.value;
-                  const value = field === "lookingFor"
-                    ? rawValue === "Long-term" ? "serious" :
-                      rawValue === "Casual" ? "casual" :
-                      rawValue === "Friends" ? "friends" :
-                      rawValue === "GymBuddy" ? "gymbuddy" : rawValue
-                    : field === "travelMode"
-                    ? rawValue === "Active"
-                    : rawValue;
+
+                const value =
+                    field === "lookingFor"
+                      ? lookingForKeyFromValue(rawValue)
+                      : field === "relationshipStyle"
+                      ? relationshipStyleKeyFromValue(rawValue)
+                      : field === "travelMode"
+                      ? rawValue === "Active"
+                      : rawValue;
+
                   handleFieldSave(field, value);
                 }}
                 style={{

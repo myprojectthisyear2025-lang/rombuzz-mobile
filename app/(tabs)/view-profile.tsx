@@ -7,6 +7,9 @@
  * ============================================================================
  */
 
+import { lookingForLabelFromValue } from "@/src/constants/lookingFor";
+import { zodiacDisplayValue } from "@/src/constants/profileBeliefs";
+import { relationshipStyleLabelFromValue } from "@/src/constants/relationshipStyles";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
@@ -118,7 +121,8 @@ interface UserProfile {
   pronouns?: string;
   country?: string;
   hometown?: string;
-  travelMode?: boolean;
+  travelMode?: boolean; // legacy/web
+  travelVibes?: string[];
 
   relationshipStyle?: string;
 
@@ -1307,7 +1311,9 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               <View style={styles.detailItem}>
                 <Ionicons name="search" size={14} color={RBZ.muted} />
                 <Text style={styles.detailLabel}>Looking For</Text>
-                <Text style={styles.detailValue}>{user.lookingFor}</Text>
+                <Text style={styles.detailValue}>
+                  {lookingForLabelFromValue(user.lookingFor)}
+                </Text>
               </View>
             ) : null}
 
@@ -1378,7 +1384,11 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                   </View>
                   <View style={styles.infoRowMid}>
                     <Text style={styles.infoLabel}>Relationship style</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.relationshipStyle)}</Text>
+                    <Text style={styles.infoValue}>
+                      {relationshipStyleLabelFromValue(
+                        user.relationshipStyle
+                      )}
+                    </Text>
                   </View>
                 </View>
               ) : null}
@@ -1419,9 +1429,8 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           user?.workoutFrequency,
           user?.diet,
           user?.sleepSchedule,
-          user?.travelStyle,
           user?.petsPreference,
-          user?.travelMode
+          user?.travelVibes
         ) ? (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -1490,18 +1499,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                 </View>
               ) : null}
 
-              {user?.travelStyle ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="airplane" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Travel style</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.travelStyle)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
               {user?.petsPreference ? (
                 <View style={styles.infoRow}>
                   <View style={styles.infoIconBubble}>
@@ -1514,14 +1511,30 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                 </View>
               ) : null}
 
-              {typeof user?.travelMode === "boolean" ? (
+                       {Array.isArray(user?.travelVibes) &&
+              user.travelVibes.length > 0 ? (
                 <View style={styles.infoRow}>
                   <View style={styles.infoIconBubble}>
-                    <Ionicons name="navigate" size={14} color={RBZ.c2} />
+                    <Ionicons name="airplane" size={14} color={RBZ.c2} />
                   </View>
+
                   <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Travel mode</Text>
-                    <Text style={styles.infoValue}>{user.travelMode ? "On" : "Off"}</Text>
+                    <Text style={styles.infoLabel}>Travel Vibe</Text>
+
+                    <View style={[styles.pillGrid, { marginTop: 8 }]}>
+                      {user.travelVibes.slice(0, 5).map((vibe) => (
+                        <View key={vibe} style={styles.pill}>
+                          <Ionicons
+                            name="navigate"
+                            size={12}
+                            color={RBZ.c2}
+                          />
+                          <Text style={styles.pillText}>
+                            {vibe}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
                 </View>
               ) : null}
@@ -1586,14 +1599,16 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                 </View>
               ) : null}
 
-              {asArray(user?.languages).length > 0 ? (
+              {asArray(user?.languages).slice(0, 5).length > 0 ? (
                 <View style={styles.chipsWrapSoft}>
-                  {asArray(user.languages).map((lang, idx) => (
-                    <View key={`${lang}-${idx}`} style={styles.softChip}>
-                      <Ionicons name="language" size={12} color={RBZ.c2} />
-                      <Text style={styles.softChipText}>{toTitle(lang)}</Text>
-                    </View>
-                  ))}
+                  {asArray(user.languages)
+                    .slice(0, 5)
+                    .map((lang, idx) => (
+                      <View key={`${lang}-${idx}`} style={styles.softChip}>
+                        <Ionicons name="language" size={12} color={RBZ.c2} />
+                        <Text style={styles.softChipText}>{toTitle(lang)}</Text>
+                      </View>
+                    ))}
                 </View>
               ) : null}
             </View>
@@ -1640,7 +1655,9 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                   </View>
                   <View style={styles.infoRowMid}>
                     <Text style={styles.infoLabel}>Zodiac</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.zodiac)}</Text>
+                    <Text style={styles.infoValue}>
+                      {zodiacDisplayValue(user.zodiac)}
+                    </Text>
                   </View>
                 </View>
               ) : null}

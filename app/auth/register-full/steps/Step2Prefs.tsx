@@ -31,7 +31,12 @@ import {
   View
 } from "react-native";
 
+import {
+  RELATIONSHIP_STYLE_OPTIONS,
+  relationshipStyleKeyFromValue,
+} from "../../../../src/constants/relationshipStyles";
 import { INTEREST_OPTIONS, RegisterForm } from "../index";
+
 // Local state for adding custom interest
 
 type Props = {
@@ -424,6 +429,50 @@ export default function Step2Prefs({
             borderRadius: 20,
           }}
         />
+      </View>
+
+      {/* Relationship Style */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Relationship style</Text>
+
+        <Text style={styles.subtitle}>
+          Choose the relationship structure that feels right for you.
+          You can change this later.
+        </Text>
+
+        <View style={styles.chipsContainer}>
+          {RELATIONSHIP_STYLE_OPTIONS.map((option) => {
+            const active =
+              relationshipStyleKeyFromValue(
+                form.relationshipStyle
+              ) === option.key;
+
+            return (
+              <TouchableOpacity
+                key={option.key}
+                style={[
+                  styles.chip,
+                  active && styles.chipActive,
+                ]}
+                onPress={() =>
+                  setField(
+                    "relationshipStyle",
+                    active ? "" : option.key
+                  )
+                }
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    active && styles.chipTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
   {/* Interests (merged + manual add with auto-suggest) */}

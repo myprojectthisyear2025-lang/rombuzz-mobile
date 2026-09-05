@@ -18,6 +18,9 @@
 
 import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import { API_BASE } from "@/src/config/api";
+import { lookingForLabelFromValue } from "@/src/constants/lookingFor";
+import { zodiacDisplayValue } from "@/src/constants/profileBeliefs";
+import { relationshipStyleLabelFromValue } from "@/src/constants/relationshipStyles";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
@@ -93,7 +96,14 @@ function pickPublicFields(u: any) {
     pronouns: u.pronouns,
     country: u.country,
     hometown: u.hometown,
+
+    // Legacy/web compatibility.
     travelMode: u.travelMode,
+
+    // Mobile Travel Vibe.
+    travelVibes: Array.isArray(u.travelVibes)
+      ? u.travelVibes.slice(0, 5)
+      : [],
 
     relationshipStyle: u.relationshipStyle,
     bodyType: u.bodyType,
@@ -116,7 +126,6 @@ function pickPublicFields(u: any) {
 
     favoriteMusic: u.favoriteMusic,
     favoriteMovies: u.favoriteMovies,
-    travelStyle: u.travelStyle,
     petsPreference: u.petsPreference,
 
     likes: u.likes,
@@ -1120,18 +1129,32 @@ if (loading && !user) {
               <Info label="Orientation" value={toText(user.orientation)} />
             )}
             {showField(user, "lookingFor", user.lookingFor) && (
-              <Info label="Looking for" value={toText(user.lookingFor)} />
+              <Info
+                label="Looking for"
+                value={lookingForLabelFromValue(user.lookingFor)}
+              />
             )}
             {showField(user, "relationshipStyle", user.relationshipStyle) && (
-              <Info label="Relationship style" value={toText(user.relationshipStyle)} />
+              <Info
+                label="Relationship style"
+                value={relationshipStyleLabelFromValue(
+                  user.relationshipStyle
+                )}
+              />
             )}
-            {showField(user, "height", user.height) && (
+                    {showField(user, "height", user.height) && (
               <Info label="Height" value={toText(user.height)} />
             )}
-            {showField(user, "travelMode", user.travelMode) && (
-              <Info label="Travel mode" value="Available" />
-            )}
           </View>
+
+          {showField(user, "travelVibes", user.travelVibes) &&
+          Array.isArray(user.travelVibes) &&
+          user.travelVibes.length > 0 ? (
+            <ChipSection
+              title="Travel Vibe"
+              items={user.travelVibes.slice(0, 5)}
+            />
+          ) : null}
 
           {(showField(user, "bodyType", user.bodyType) ||
             showField(user, "fitnessLevel", user.fitnessLevel) ||
@@ -1188,7 +1211,14 @@ if (loading && !user) {
                 <Info label="Company" value={toText(user.company)} />
               )}
               {showField(user, "languages", user.languages) && (
-                <Info label="Languages" value={toText(user.languages)} />
+                <Info
+                  label="Languages"
+                  value={toText(
+                    Array.isArray(user.languages)
+                      ? user.languages.slice(0, 5)
+                      : user.languages
+                  )}
+                />
               )}
             </View>
           )}
@@ -1206,14 +1236,16 @@ if (loading && !user) {
                 <Info label="Political views" value={toText(user.politicalViews)} />
               )}
               {showField(user, "zodiac", user.zodiac) && (
-                <Info label="Zodiac" value={toText(user.zodiac)} />
+                <Info
+                  label="Zodiac"
+                  value={zodiacDisplayValue(user.zodiac)}
+                />
               )}
             </View>
           )}
 
           {(showField(user, "favoriteMusic", user.favoriteMusic) ||
             showField(user, "favoriteMovies", user.favoriteMovies) ||
-            showField(user, "travelStyle", user.travelStyle) ||
             showField(user, "petsPreference", user.petsPreference) ||
             showField(user, "likes", user.likes) ||
             showField(user, "dislikes", user.dislikes)) && (
@@ -1226,9 +1258,7 @@ if (loading && !user) {
               {showField(user, "favoriteMovies", user.favoriteMovies) && (
                 <Info label="Fav movies" value={toText(user.favoriteMovies)} />
               )}
-              {showField(user, "travelStyle", user.travelStyle) && (
-                <Info label="Travel style" value={toText(user.travelStyle)} />
-              )}
+           
               {showField(user, "petsPreference", user.petsPreference) && (
                 <Info label="Pet preference" value={toText(user.petsPreference)} />
               )}

@@ -56,6 +56,7 @@ import {
 } from "@/src/components/profile/profileGalleryMedia";
 import { API_BASE } from "@/src/config/api";
 import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
+import { syncProfileLookingForToDiscover } from "@/src/features/discover/discoverFilterStorage";
 import { useCachedProfile } from "@/src/features/performance/useCachedProfile";
 import { rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 
@@ -460,16 +461,6 @@ const ORIENTATION_OPTIONS = [
   "Questioning",
 ];
 
-const LOOKINGFOR_OPTIONS = [
-  "Serious",
-  "Casual",
-  "Friends",
-  "GymBuddy",
-  "Flirty",
-  "Chill",
-  "Timepass",
-];
-
 
 // Chip options (Likes/Dislikes) — you chose picker/chips, no typing
 const LIKE_CHIP_OPTIONS = [
@@ -566,6 +557,7 @@ type ProfileForm = {
   longitude: number | null;
   distanceVisibility: string;
   travelMode: boolean;
+  travelVibes: string[];
 
   // About
   bio: string;
@@ -625,33 +617,6 @@ const VISIBILITY_OPTIONS: {
   { label: "Matches only", value: "matches" },
   { label: "Hidden", value: "hidden" },
 ];
-const LOOKING_FOR_MAP = [
-  { key: "serious", label: "Serious" },
-  { key: "casual", label: "Casual" },
-  { key: "friends", label: "Friends" },
-  { key: "gymbuddy", label: "GymBuddy" },
-  { key: "flirty", label: "Flirty" },
-  { key: "chill", label: "Chill" },
-  { key: "timepass", label: "Timepass" },
-];
-
-
-const lookingForLabelFromValue = (val?: string) => {
-  if (!val) return "";
-  // if already a label, keep it
-  const byLabel = LOOKING_FOR_MAP.find((x) => x.label.toLowerCase() === val.toLowerCase());
-  if (byLabel) return byLabel.label;
-
-  // if it's a key, convert to label
-  const byKey = LOOKING_FOR_MAP.find((x) => x.key === val);
-  return byKey ? byKey.label : val;
-};
-
-const lookingForKeyFromLabel = (label?: string) => {
-  if (!label) return "";
-  const found = LOOKING_FOR_MAP.find((x) => x.label === label);
-  return found ? found.key : label; // fallback
-};
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -758,12 +723,15 @@ const profilePerf = useCachedProfile();
         ...(user || {}),
         ...patch,
         ...(data?.user || {}),
-      };
+           };
 
-          setUser(merged);
+      setUser(merged);
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
       profilePerf.writeCachedProfile(merged).catch(() => {});
 
+      if (Object.prototype.hasOwnProperty.call(patch, "lookingFor")) {
+        await syncProfileLookingForToDiscover(patch.lookingFor);
+      }
 
       setEditingField(null);
       setSelectOpen(null);
@@ -818,6 +786,7 @@ const [form, setForm] = useState<ProfileForm>({
   longitude: null,
   distanceVisibility: "public",
   travelMode: false,
+  travelVibes: [],
 
   // About
   bio: "",
@@ -870,10 +839,11 @@ const [form, setForm] = useState<ProfileForm>({
 
 
   // Voice
-   const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const [recording, setRecording] = useState(false);
   const [voiceUrl, setVoiceUrl] = useState<string>("");
   const [voiceDurationSec, setVoiceDurationSec] = useState<number>(0);
+  const voiceDurationRecoveryRef = useRef<string>("");
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
 
@@ -977,6 +947,9 @@ useEffect(() => {
     longitude: u?.longitude ?? null,
     distanceVisibility: u?.distanceVisibility || "public",
     travelMode: !!u?.travelMode,
+    travelVibes: Array.isArray(u?.travelVibes)
+      ? u.travelVibes.slice(0, 5)
+      : [],
 
     // About
     bio: u?.bio || "",
@@ -1004,7 +977,9 @@ useEffect(() => {
     school: u?.school || "",
     jobTitle: u?.jobTitle || "",
     company: u?.company || "",
-    languages: Array.isArray(u?.languages) ? u.languages : [],
+    languages: Array.isArray(u?.languages)
+      ? u.languages.slice(0, 5)
+      : [],
 
     // Beliefs
     religion: u?.religion || "",
@@ -1027,6 +1002,92 @@ useEffect(() => {
     fieldVisibility: u?.fieldVisibility || {},
   });
 }, []);
+
+/**
+ * Recover duration for older voice intros that were saved before
+ * voiceDurationSec was persisted by the MongoDB User schema.
+ *
+ * The audio itself already exists, so we load only its metadata,
+ * recover the real duration, save it to MongoDB, and update cache.
+ */
+useEffect(() => {
+  if (!voiceUrl) {
+    voiceDurationRecoveryRef.current = "";
+    return;
+  }
+
+  if (voiceDurationSec > 0) {
+    voiceDurationRecoveryRef.current = voiceUrl;
+    return;
+  }
+
+  if (voiceDurationRecoveryRef.current === voiceUrl) return;
+
+  voiceDurationRecoveryRef.current = voiceUrl;
+
+  let probeSound: Audio.Sound | null = null;
+
+  const recoverVoiceDuration = async () => {
+    try {
+      const created = await Audio.Sound.createAsync(
+        { uri: voiceUrl },
+        { shouldPlay: false }
+      );
+
+      probeSound = created.sound;
+
+      const status: any = created.status?.isLoaded
+        ? created.status
+        : await created.sound.getStatusAsync();
+
+      const durationMillis =
+        status?.isLoaded && status?.durationMillis
+          ? Number(status.durationMillis)
+          : 0;
+
+      if (durationMillis <= 0) return;
+
+      const recoveredDurationSec = Math.max(
+        1,
+        Math.round(durationMillis / 1000)
+      );
+
+      // Show the real duration immediately.
+      setVoiceDurationSec(recoveredDurationSec);
+
+      // Permanently backfill the missing value in MongoDB.
+      const updated = await apiJson("/users/me", "PUT", {
+        voiceDurationSec: recoveredDurationSec,
+      });
+
+      // Do not let an old recovery overwrite a newly changed/deleted voice.
+      if (voiceDurationRecoveryRef.current !== voiceUrl) return;
+
+      const merged = {
+        ...(user || {}),
+        ...(updated?.user || {}),
+        voiceDurationSec: recoveredDurationSec,
+      };
+
+      setUser(merged);
+
+      // Keep stale-first Profile cache and RBZ_USER synchronized too.
+      await profilePerf.writeCachedProfile(merged);
+    } catch (e: any) {
+      console.log(
+        "⚠️ Voice duration recovery failed:",
+        e?.message || e
+      );
+    } finally {
+      if (probeSound) {
+        await probeSound.unloadAsync().catch(() => {});
+        probeSound = null;
+      }
+    }
+  };
+
+  recoverVoiceDuration();
+}, [voiceUrl, voiceDurationSec, profilePerf, user]);
 
  const hydrateUserFromLocal = useCallback(async () => {
   if (hydratedOnceRef.current && user) return true;
@@ -1787,7 +1848,6 @@ setStoryOpen(true);
     CITY_OPTIONS={CITY_OPTIONS}
     GENDER_OPTIONS={GENDER_OPTIONS}
     ORIENTATION_OPTIONS={ORIENTATION_OPTIONS}
-    LOOKINGFOR_OPTIONS={LOOKINGFOR_OPTIONS}
     LIKE_CHIP_OPTIONS={LIKE_CHIP_OPTIONS}
     DISLIKE_CHIP_OPTIONS={DISLIKE_CHIP_OPTIONS}
   />
@@ -1879,6 +1939,7 @@ setStoryOpen(true);
             style={{
               flex: 1,
               backgroundColor: RBZ.bg,
+              paddingTop: insets.top,
               paddingBottom: insets.bottom,
             }}
           >
@@ -1900,7 +1961,15 @@ setStoryOpen(true);
 
           </LinearGradient>
 
-       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+       <ScrollView
+         style={{ flex: 1 }}
+         contentContainerStyle={{
+           padding: 16,
+           paddingBottom: Math.max(insets.bottom + 28, 48),
+         }}
+         keyboardShouldPersistTaps="handled"
+         showsVerticalScrollIndicator={false}
+       >
 
   {(showAll || showBioOnly || showInfoOnly) && (
     <View style={styles.formCard}>

@@ -54,6 +54,13 @@ import {
 
 import { API_BASE } from "../../../src/config/api";
 import {
+  LOOKING_FOR_OPTIONS,
+  lookingForKeyFromValue,
+} from "../../../src/constants/lookingFor";
+import {
+  relationshipStyleKeyFromValue,
+} from "../../../src/constants/relationshipStyles";
+import {
   clearOnboardingDraft,
   loadOnboardingDraft,
   saveOnboardingDraft,
@@ -81,12 +88,15 @@ export const GENDERS = [
   "Prefer not to say",
 ];
 
-export const LOOKING_FOR = [
-  { key: "serious", label: "Long-term" },
-  { key: "casual", label: "Casual" },
-  { key: "friends", label: "Friends" },
-  { key: "gymbuddy", label: "GymBuddy" },
-];
+// Shared RomBuzz catalog.
+// Step1Basic already imports LOOKING_FOR from this file, so keeping this
+// small bridge avoids duplicating relationship-intention options in Signup.
+export const LOOKING_FOR = LOOKING_FOR_OPTIONS.map(
+  ({ key, label }) => ({
+    key,
+    label,
+  })
+);
 
 export const INTEREST_OPTIONS = [
   "Music", "Travel", "Movies", "Foodie", "Sports", "Art", "Books", "Gaming", "Fitness", "Pets",
@@ -139,6 +149,7 @@ export type RegisterForm = {
   height: string;
 
   // Matching
+  relationshipStyle: string;
   interestedIn: string[];
   ageMin: number;
   ageMax: number;
@@ -217,6 +228,7 @@ export default function RegisterFullScreen() {
   city: "",
   height: "",
 
+  relationshipStyle: "",
   interestedIn: [],
   ageMin: 18,
   ageMax: 35,
@@ -314,6 +326,13 @@ export default function RegisterFullScreen() {
           setForm((current) => ({
             ...current,
             ...draft.form,
+            lookingFor: lookingForKeyFromValue(
+              draft.form?.lookingFor || current.lookingFor
+            ),
+            relationshipStyle: relationshipStyleKeyFromValue(
+              draft.form?.relationshipStyle ||
+                current.relationshipStyle
+            ),
             interestedIn: Array.isArray(draft.form?.interestedIn)
               ? draft.form.interestedIn
               : current.interestedIn,
@@ -480,11 +499,14 @@ export default function RegisterFullScreen() {
   // Basics
   gender: form.gender,
   dob: form.dob,
-  lookingFor: form.lookingFor,
+  lookingFor: lookingForKeyFromValue(form.lookingFor),
   city: form.city,
   height: form.height,
 
   // Matching
+  relationshipStyle: relationshipStyleKeyFromValue(
+    form.relationshipStyle
+  ),
   interestedIn: form.interestedIn,
   preferences: {
     ageRange: [form.ageMin, form.ageMax],
