@@ -1,291 +1,753 @@
 /**
- * ============================================================================
- * 📁 File: src/components/profile/PrivateNotesTab.tsx
- * 🎯 Purpose: Profile → Private Notes (Diary-style, private, persistent)
- * ============================================================================
+ * Path: src/components/profile/PrivateNotesTab.tsx
+ * Purpose: Profile → Private Notes private journal UI and note CRUD controller.
+ * Used by: Profile screen Private Notes tab.
  */
 
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { privateNotesStyles as styles } from "@/src/features/profile/privateNotes/privateNotes.styles";
+
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  ink: "#111827",
-  muted: "#6b7280",
-  line: "rgba(17,24,39,0.08)",
-};
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Note = {
   _id: string;
   text: string;
-  createdAt: number;
-  updatedAt?: number;
+  createdAt: number | string;
+  updatedAt?: number | string;
 };
 
 async function authFetch(
   path: string,
   options: RequestInit = {}
 ) {
-  const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+  const token =
+    await SecureStore.getItemAsync(
+      "RBZ_TOKEN"
+    );
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(options.headers || {}),
-    },
-  });
+  const res = await fetch(
+    `${API_BASE}${path}`,
+    {
+      ...options,
+      headers: {
+        "Content-Type":
+          "application/json",
+        Authorization:
+          `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    }
+  );
 
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || "Request failed");
+
+  if (!res.ok) {
+    throw new Error(
+      data?.error ||
+        "Request failed"
+    );
+  }
 
   return data;
 }
 
-export default function PrivateNotesTab() {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState<Note | null>(null);
-  const [text, setText] = useState("");
+function formatNoteDate(
+  value?: number | string
+) {
+  if (!value) return "";
 
-  /* ================= LOAD NOTES ================= */
+  const date = new Date(value);
+
+  if (
+    Number.isNaN(date.getTime())
+  ) {
+    return "";
+  }
+
+  return date.toLocaleDateString(
+    undefined,
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+}
+
+export default function PrivateNotesTab() {
+  const { colors, isDark } =
+    useRomBuzzTheme();
+
+  const insets =
+    useSafeAreaInsets();
+
+  const [notes, setNotes] =
+    useState<Note[]>([]);
+
+  const [
+    editorOpen,
+    setEditorOpen,
+  ] = useState(false);
+
+  const [
+    editingNote,
+    setEditingNote,
+  ] = useState<Note | null>(null);
+
+  const [text, setText] =
+    useState("");
+
   useEffect(() => {
     loadNotes();
   }, []);
 
   const loadNotes = async () => {
     try {
-      const data = await authFetch("/profile/notes");
+      const data =
+        await authFetch(
+          "/profile/notes"
+        );
+
       setNotes(data.notes || []);
     } catch (err) {
-      console.error("❌ Failed to load notes", err);
+      console.error(
+        "❌ Failed to load notes",
+        err
+      );
     }
   };
 
-  /* ================= EDITOR ================= */
   const openWrite = () => {
     setEditingNote(null);
     setText("");
     setEditorOpen(true);
   };
 
-  const openEdit = (note: Note) => {
+  const openEdit = (
+    note: Note
+  ) => {
     setEditingNote(note);
     setText(note.text);
     setEditorOpen(true);
   };
 
-  const saveNote = async () => {
-    if (!text.trim()) {
-      Alert.alert("Private Notes", "Write something before saving.");
-      return;
-    }
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setEditingNote(null);
+    setText("");
+  };
 
-    try {
-      if (editingNote) {
-        const data = await authFetch(
-          `/profile/notes/${editingNote._id}`,
-          {
-            method: "PUT",
-            body: JSON.stringify({ text }),
-          }
-        );
+ const saveNote = () => {
+  if (!text.trim()) {
+    Alert.alert(
+      "Private Notes",
+      "Write something before saving."
+    );
 
+    return;
+  }
+
+  // Capture current editor values before closing it.
+  const nextText = text;
+  const noteBeingEdited = editingNote;
+  const now = Date.now();
+
+  // ============================================================
+  // EDIT EXISTING NOTE
+  // ============================================================
+  if (noteBeingEdited) {
+    const previousNote = noteBeingEdited;
+
+    const optimisticNote: Note = {
+      ...noteBeingEdited,
+      text: nextText,
+      updatedAt: now,
+    };
+
+    // Update UI immediately.
+    setNotes((prev) =>
+      prev.map((note) =>
+        note._id === noteBeingEdited._id
+          ? optimisticNote
+          : note
+      )
+    );
+
+    // Close editor immediately — no API wait.
+    closeEditor();
+
+    // Persist in background.
+    void authFetch(
+      `/profile/notes/${noteBeingEdited._id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          text: nextText,
+        }),
+      }
+    )
+      .then((data) => {
+        if (!data?.note) return;
+
+        // Replace optimistic note with MongoDB response.
         setNotes((prev) =>
-          prev.map((n) =>
-            n._id === editingNote._id ? data.note : n
+          prev.map((note) =>
+            note._id === noteBeingEdited._id
+              ? data.note
+              : note
           )
         );
-      } else {
-        const data = await authFetch("/profile/notes", {
-          method: "POST",
-          body: JSON.stringify({ text }),
-        });
+      })
+      .catch(() => {
+        // Roll back only this note if save failed.
+        setNotes((prev) =>
+          prev.map((note) =>
+            note._id === noteBeingEdited._id
+              ? previousNote
+              : note
+          )
+        );
 
-        setNotes((prev) => [data.note, ...prev]);
-      }
+        Alert.alert(
+          "Private Notes",
+          "Failed to save note. Your previous version was restored."
+        );
+      });
 
-      setEditorOpen(false);
-      setEditingNote(null);
-      setText("");
-    } catch {
-      Alert.alert("Error", "Failed to save note");
+    return;
+  }
+
+  // ============================================================
+  // CREATE NEW NOTE
+  // ============================================================
+  const tempId =
+    `temp-note-${now}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+
+  const optimisticNote: Note = {
+    _id: tempId,
+    text: nextText,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Show it immediately.
+  setNotes((prev) => [
+    optimisticNote,
+    ...prev,
+  ]);
+
+  // Close editor immediately — no API wait.
+  closeEditor();
+
+  // Persist in background.
+  void authFetch(
+    "/profile/notes",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        text: nextText,
+      }),
     }
-  };
+  )
+    .then((data) => {
+      if (!data?.note) return;
 
-  const deleteNote = (note: Note) => {
-    Alert.alert("Delete note?", "This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await authFetch(`/profile/notes/${note._id}`, {
-              method: "DELETE",
-            });
-            setNotes((prev) =>
-              prev.filter((n) => n._id !== note._id)
-            );
-          } catch {
-            Alert.alert("Error", "Failed to delete note");
-          }
+      // Replace temporary note with real MongoDB note.
+      setNotes((prev) =>
+        prev.map((note) =>
+          note._id === tempId
+            ? data.note
+            : note
+        )
+      );
+    })
+    .catch(() => {
+      // Remove only the temporary note if save failed.
+      setNotes((prev) =>
+        prev.filter(
+          (note) =>
+            note._id !== tempId
+        )
+      );
+
+      Alert.alert(
+        "Private Notes",
+        "Failed to save note. Please try again."
+      );
+    });
+};
+
+  const deleteNote = (
+    note: Note
+  ) => {
+    Alert.alert(
+      "Delete note?",
+      "This cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
         },
-      },
-    ]);
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await authFetch(
+                `/profile/notes/${note._id}`,
+                {
+                  method:
+                    "DELETE",
+                }
+              );
+
+              setNotes(
+                (prev) =>
+                  prev.filter(
+                    (item) =>
+                      item._id !==
+                      note._id
+                  )
+              );
+            } catch {
+              Alert.alert(
+                "Error",
+                "Failed to delete note"
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
-  /* ================= UI ================= */
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.title}>   Private Notes</Text>
+        <View style={styles.headingWrap}>
+          <View
+            style={[
+              styles.privateIcon,
+              {
+                backgroundColor:
+                  colors.surfaceMuted,
+              },
+            ]}
+          >
+            <Ionicons
+              name="lock-closed"
+              size={13}
+              color={colors.brand}
+            />
+          </View>
 
-        <Pressable onPress={openWrite} style={styles.writeBtn}>
-          <Ionicons name="add" size={18} color={RBZ.white} />
-          <Text style={styles.writeText}>Write</Text>
+          <View style={styles.headingText}>
+            <Text
+              style={[
+                styles.title,
+                {
+                  color:
+                    colors.text,
+                },
+              ]}
+            >
+              Private Notes
+            </Text>
+
+            <Text
+              style={[
+                styles.subtitle,
+                {
+                  color:
+                    colors.textMuted,
+                },
+              ]}
+            >
+              Only you can see these.
+            </Text>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={openWrite}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.addButton,
+            {
+              backgroundColor:
+                colors.brand,
+            },
+            pressed && {
+              opacity: 0.72,
+            },
+          ]}
+        >
+          <Ionicons
+            name="add"
+            size={20}
+            color={colors.white}
+          />
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {notes.length === 0 && (
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={[
+          styles.content,
+          notes.length === 0 &&
+            styles.emptyContent,
+        ]}
+      >
+        {notes.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>
-              This is your private space.
-            </Text>
-            <Text style={styles.emptySub}>
-              Write thoughts you don’t want to send.
-            </Text>
-          </View>
-        )}
-
-        {notes.map((note) => (
-          <View key={note._id} style={styles.card}>
-            <Text style={styles.date}>
-              {new Date(note.createdAt).toLocaleDateString()}
-            </Text>
-
-            <Text style={styles.body} numberOfLines={3}>
-              {note.text}
-            </Text>
-
-            <View style={styles.actions}>
-              <Pressable onPress={() => openEdit(note)}>
-                <Ionicons
-                  name="create-outline"
-                  size={18}
-                  color={RBZ.c4}
-                />
-              </Pressable>
-
-              <Pressable onPress={() => deleteNote(note)}>
-                <Ionicons
-                  name="trash-outline"
-                  size={18}
-                  color={RBZ.c1}
-                />
-              </Pressable>
+            <View
+              style={[
+                styles.emptyIcon,
+                {
+                  backgroundColor:
+                    colors.surfaceMuted,
+                },
+              ]}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={25}
+                color={
+                  colors.iconMuted
+                }
+              />
             </View>
+
+            <Text
+              style={[
+                styles.emptyTitle,
+                {
+                  color:
+                    colors.text,
+                },
+              ]}
+            >
+              Your private space
+            </Text>
+
+            <Text
+              style={[
+                styles.emptySubtitle,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              Save thoughts, reminders or
+              anything you want to keep to
+              yourself.
+            </Text>
+
+            <Pressable
+              onPress={openWrite}
+              style={[
+                styles.emptyAction,
+                {
+                  backgroundColor:
+                    colors.brand,
+                },
+              ]}
+            >
+              <Ionicons
+                name="add"
+                size={17}
+                color={colors.white}
+              />
+
+              <Text
+                style={
+                  styles.emptyActionText
+                }
+              >
+                New note
+              </Text>
+            </Pressable>
           </View>
-        ))}
+        ) : (
+          notes.map((note) => {
+            const displayDate =
+              formatNoteDate(
+                note.updatedAt ||
+                  note.createdAt
+              );
+
+            return (
+              <Pressable
+                key={note._id}
+                onPress={() =>
+                  openEdit(note)
+                }
+                style={({ pressed }) => [
+                  styles.noteRow,
+                  {
+                    backgroundColor:
+                      colors.surface,
+
+                    borderColor:
+                      colors.border,
+                  },
+                  pressed && {
+                    opacity: 0.72,
+                  },
+                ]}
+              >
+                <View
+                  style={
+                    styles.noteMain
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.noteText,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                    numberOfLines={4}
+                  >
+                    {note.text}
+                  </Text>
+
+                  {!!displayDate && (
+                    <Text
+                      style={[
+                        styles.noteDate,
+                        {
+                          color:
+                            colors.textMuted,
+                        },
+                      ]}
+                    >
+                      {displayDate}
+                    </Text>
+                  )}
+                </View>
+
+                <View
+                  style={
+                    styles.noteActions
+                  }
+                >
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={
+                      colors.iconMuted
+                    }
+                  />
+
+                  <Pressable
+                    onPress={() =>
+                      deleteNote(note)
+                    }
+                    hitSlop={10}
+                    style={[
+                      styles.deleteButton,
+                      {
+                        backgroundColor:
+                          colors.surfaceMuted,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={15}
+                      color={
+                        colors.danger
+                      }
+                    />
+                  </Pressable>
+                </View>
+              </Pressable>
+            );
+          })
+        )}
       </ScrollView>
 
-      <Modal visible={editorOpen} animationType="slide">
-        <View style={styles.modalWrap}>
-          <View style={styles.modalHeader}>
-            <Pressable onPress={() => setEditorOpen(false)}>
-              <Ionicons name="close" size={22} color={RBZ.ink} />
-            </Pressable>
+      <Modal
+        visible={editorOpen}
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={
+          closeEditor
+        }
+      >
+        <StatusBar
+          style={
+            isDark
+              ? "light"
+              : "dark"
+          }
+        />
 
-            <Text style={styles.modalTitle}>
-              {editingNote ? "Edit note" : "New note"}
-            </Text>
+        <KeyboardAvoidingView
+          style={[
+            styles.editorScreen,
+            {
+              backgroundColor:
+                colors.background,
+            },
+          ]}
+          behavior={
+            Platform.OS === "ios"
+              ? "padding"
+              : undefined
+          }
+        >
+          <View
+            style={[
+              styles.editorSafe,
+              {
+                paddingTop:
+                  insets.top,
+                paddingBottom:
+                  insets.bottom,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.editorHeader,
+                {
+                  borderBottomColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Pressable
+                onPress={closeEditor}
+                style={
+                  styles.editorSide
+                }
+              >
+                <Text
+                  style={[
+                    styles.cancelText,
+                    {
+                      color:
+                        colors.textSecondary,
+                    },
+                  ]}
+                >
+                  Cancel
+                </Text>
+              </Pressable>
 
-            <Pressable onPress={saveNote}>
-              <Text style={styles.save}>Save</Text>
-            </Pressable>
+              <Text
+                style={[
+                  styles.editorTitle,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                {editingNote
+                  ? "Edit note"
+                  : "New note"}
+              </Text>
+
+              <Pressable
+                onPress={saveNote}
+                style={[
+                  styles.editorSide,
+                  styles.editorRight,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.saveText,
+                    {
+                      color:
+                        colors.brand,
+                    },
+                  ]}
+                >
+                  Save
+                </Text>
+              </Pressable>
+            </View>
+
+            <View
+              style={
+                styles.editorBody
+              }
+            >
+              <View
+                style={
+                  styles.editorPrivacy
+                }
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={12}
+                  color={
+                    colors.textMuted
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.editorPrivacyText,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  Only visible to you
+                </Text>
+              </View>
+
+              <TextInput
+                value={text}
+                onChangeText={setText}
+                autoFocus
+                placeholder="Write whatever is on your mind…"
+                placeholderTextColor={
+                  colors.textMuted
+                }
+                multiline
+                textAlignVertical="top"
+                style={[
+                  styles.input,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              />
+            </View>
           </View>
-
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder="Write freely. This stays private."
-            placeholderTextColor={RBZ.muted}
-            multiline
-            style={styles.input}
-          />
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
-
-/* ================= STYLES ================= */
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: RBZ.ink,
-  },
-  writeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: RBZ.c3,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    marginRight: 10,
-  },
-  writeText: { color: RBZ.white, fontWeight: "800" },
-  empty: { marginTop: 40, alignItems: "center" },
-  emptyText: { fontSize: 16, fontWeight: "700", color: RBZ.ink },
-  emptySub: { marginTop: 6, color: RBZ.muted },
-  card: {
-    backgroundColor: RBZ.white,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  date: { fontSize: 12, color: RBZ.muted },
-  body: { fontSize: 15, lineHeight: 22, color: RBZ.ink },
-  actions: { flexDirection: "row", gap: 18, justifyContent: "flex-end" },
-  modalWrap: { flex: 1, padding: 16, backgroundColor: RBZ.white },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  modalTitle: { fontSize: 16, fontWeight: "800", color: RBZ.ink },
-  save: { color: RBZ.c4, fontWeight: "800" },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    textAlignVertical: "top",
-    color: RBZ.ink,
-  },
-});
