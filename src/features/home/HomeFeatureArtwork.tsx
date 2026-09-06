@@ -20,11 +20,11 @@ type Props = {
 
 const ARTWORK = {
   microbuzz: require(
-    "@/assets/images/rombuzz-home-microbuzz.jpg"
+    "@/assets/images/rombuzz-home-microbuzz.png"
   ),
 
   discover: require(
-    "@/assets/images/rombuzz-home-discover.jpg"
+    "@/assets/images/rombuzz-home-discover.png"
   ),
 } as const;
 
@@ -34,7 +34,12 @@ export default function HomeFeatureArtwork({
   return (
     <Image
       source={ARTWORK[scene]}
-      style={styles.image}
+      style={[
+        styles.image,
+        scene === "microbuzz"
+          ? styles.microbuzzImage
+          : styles.discoverImage,
+      ]}
       resizeMode="cover"
       accessible={false}
     />
@@ -46,5 +51,24 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: "100%",
     height: "100%",
+  },
+
+  // Keep both faces better framed inside the narrow MicroBuzz card.
+  microbuzzImage: {
+    transform: [
+      { translateX: 11 },
+      { scale: 1.2 },
+
+    ],
+  },
+
+  // Discover has more people extending toward the right side,
+  // so give that artwork slightly more leftward positioning.
+  discoverImage: {
+    transform: [
+      { translateX: 11 },
+      { scale: 1.2 },
+
+    ],
   },
 });

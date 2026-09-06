@@ -155,8 +155,8 @@ export const homeStyles =
     },
 
     greeting: {
-      paddingTop: 6,
-      paddingBottom: 6,
+      paddingTop: 3,
+      paddingBottom: 1,
     },
 
     greetingWrap: {
@@ -173,6 +173,10 @@ export const homeStyles =
     greetingCopy: {
       flex: 1,
       minWidth: 0,
+
+      justifyContent: "flex-start",
+
+      paddingTop: 3,
     },
 
     greetingRow: {

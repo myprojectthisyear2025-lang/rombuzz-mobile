@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
 
     backgroundColor:
-      "rgba(8,8,11,0.08)",
+      "rgba(8,8,11,0.03)",
   },
 
   bottomShade: {
@@ -161,10 +161,10 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
 
-    height: 100,
+    height: 92,
 
     backgroundColor:
-      "rgba(8,8,11,0.64)",
+      "rgba(8,8,11,0.38)",
   },
 
   badge: {

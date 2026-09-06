@@ -5,13 +5,11 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useState } from "react";
 
 import {
   Animated,
-  Pressable,
   StatusBar,
   Text,
   View,
@@ -22,11 +20,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import HomeDashboard from "@/src/features/home/HomeDashboard";
+import HomeNotificationButton from "@/src/features/home/HomeNotificationButton";
 import { homeStyles as styles } from "@/src/features/home/homeStyles";
 import { useHomeThemeStyles } from "@/src/features/home/useHomeThemeStyles";
 
 export default function HomeScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const fontsLoaded = useRomBuzzTypography();
 
@@ -138,50 +136,10 @@ export default function HomeScreen() {
         ]}
       >
         <View style={styles.topBar}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open Let’sBuzz"
-            onPress={() =>
-              router.push("/letsbuzz")
-            }
-            style={({ pressed }) => [
-              styles.letsBuzzButton,
-              pressed &&
-                styles.topActionPressed,
-            ]}
-          >
-            <View
-              style={[
-                styles.letsBuzzIconWrap,
-                theme.letsBuzzIconWrap,
-              ]}
-            >
-              <Ionicons
-                name="heart"
-                size={18}
-                color={colors.brand}
-              />
-            </View>
-
-            <View
-              style={styles.letsBuzzCopy}
-            >
-              <Text
-                style={[
-                  styles.letsBuzzTitle,
-                  theme.letsBuzzTitle,
-                ]}
-              >
-                Let’sBuzz
-              </Text>
-
-              <Text
-                style={styles.letsBuzzMeta}
-              >
-                Live feed
-              </Text>
-            </View>
-          </Pressable>
+          <View
+            style={styles.topBarSpacer}
+            pointerEvents="none"
+          />
 
           <View
             style={styles.brandWrap}
@@ -214,10 +172,7 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          <View
-            style={styles.topBarSpacer}
-            pointerEvents="none"
-          />
+          <HomeNotificationButton />
         </View>
 
         <Animated.View

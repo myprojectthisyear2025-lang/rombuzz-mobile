@@ -59,9 +59,9 @@ const RBZ = {
 
 const TAB_ORDER = [
   "homepage",
-  "chat",
+  "letsbuzz",
   "social-stats",
-  "notifications",
+  "chat",
   "profile",
 ] as const;
 
@@ -635,8 +635,20 @@ export default function TabLayout() {
       }, 0);
 
       const safeUnread = Math.max(0, unread);
+
       setNotifUnreadTotal(safeUnread);
-      await SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, String(safeUnread)).catch(() => {});
+
+      await SecureStore.setItemAsync(
+        NOTIF_UNREAD_TOTAL_KEY,
+        String(safeUnread)
+      ).catch(() => {});
+
+      DeviceEventEmitter.emit(
+        "rbz:notif:unread-total",
+        {
+          total: safeUnread,
+        }
+      );
     } catch {
       // Keep cached/stale badge instead of forcing 0 on network failure.
     }
@@ -673,8 +685,24 @@ export default function TabLayout() {
         // if backend sends read=false (or missing), treat as unread
         if (!n.read) {
           setNotifUnreadTotal((c) => {
-            const next = Math.max(0, Number(c || 0) + 1);
-            SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, String(next)).catch(() => {});
+            const next =
+              Math.max(
+                0,
+                Number(c || 0) + 1
+              );
+
+            SecureStore.setItemAsync(
+              NOTIF_UNREAD_TOTAL_KEY,
+              String(next)
+            ).catch(() => {});
+
+            DeviceEventEmitter.emit(
+              "rbz:notif:unread-total",
+              {
+                total: next,
+              }
+            );
+
             return next;
           });
         }
@@ -803,11 +831,16 @@ screenOptions={{
 
   tabBarLabelStyle: {
     fontSize: 10,
+    lineHeight: 13,
     fontFamily: RBZFont.bold,
-    marginTop: -2,
+    marginTop: 1,
+    textAlign: "center",
+    width: "100%",
   },
 
   tabBarItemStyle: {
+    flex: 1,
+    minWidth: 0,
     paddingVertical: 2,
   },
 
@@ -835,52 +868,100 @@ screenOptions={{
 }}
 >
 
-    <Tabs.Screen
-  name="homepage"
-  options={{
-    title: "Home",
+       <Tabs.Screen
+      name="homepage"
+      options={{
+        title: "Home",
 
-    tabBarIcon: ({ focused }) => (
-      <TabIconWrap active={focused}>
-        <Ionicons
-          name={
-            focused
-              ? "home"
-              : "home-outline"
-          }
-          size={24}
-          color={
-            tabIconColor(focused)
-          }
-        />
-      </TabIconWrap>
-    ),
-  }}
-/>
-        <Tabs.Screen
-            name="chat"
-            options={{
-              title: "Chat",
-
-              // ✅ Do NOT clear unread when user only opens the Chat tab.
-              // Per-person unread badges must stay visible in the chat list.
-              // Unread clears only when the actual conversation thread is opened.
-              tabBarButton: (props: any) => (
-            <Pressable
-              {...props}
-              onPress={(e) => {
-                props?.onPress?.(e);
-              }}
+        tabBarIcon: ({ focused }) => (
+          <TabIconWrap active={focused}>
+            <Ionicons
+              name={
+                focused
+                  ? "home"
+                  : "home-outline"
+              }
+              size={24}
+              color={
+                tabIconColor(focused)
+              }
             />
-          ),
+          </TabIconWrap>
+        ),
+      }}
+    />
 
+    <Tabs.Screen
+      name="letsbuzz"
+      options={{
+        title: "Let’sBuzz",
 
-          tabBarIcon: ({ focused }) => (
-            <TabIconWrap active={focused}>
-              <View style={{ position: "relative" }}>
+        tabBarIcon: ({ focused }) => (
+          <TabIconWrap active={focused}>
+            <Ionicons
+              name={
+                focused
+                  ? "radio"
+                  : "radio-outline"
+              }
+              size={24}
+              color={
+                tabIconColor(focused)
+              }
+            />
+          </TabIconWrap>
+        ),
+      }}
+    />
 
-                {/* ✅ Pulse ring appears only when unread exists */}
-             {chatUnreadTotal > 0 && (
+    <Tabs.Screen
+      name="social-stats"
+      options={{
+        title: "Social",
+
+        tabBarIcon: ({ focused }) => (
+          <TabIconWrap active={focused}>
+            <Ionicons
+              name={
+                focused
+                  ? "flame"
+                  : "flame-outline"
+              }
+              size={24}
+              color={
+                tabIconColor(focused)
+              }
+            />
+          </TabIconWrap>
+        ),
+      }}
+    />
+
+    <Tabs.Screen
+      name="chat"
+      options={{
+        title: "Chat",
+
+        // ✅ Do NOT clear unread when user only opens the Chat tab.
+        // Per-person unread badges must stay visible in the chat list.
+        // Unread clears only when the actual conversation thread is opened.
+        tabBarButton: (props: any) => (
+          <Pressable
+            {...props}
+            onPress={(e) => {
+              props?.onPress?.(e);
+            }}
+          />
+        ),
+
+        tabBarIcon: ({ focused }) => (
+          <TabIconWrap active={focused}>
+            <View
+              style={{
+                position: "relative",
+              }}
+            >
+              {chatUnreadTotal > 0 && (
                 <Animated.View
                   pointerEvents="none"
                   style={[
@@ -889,40 +970,62 @@ screenOptions={{
                       borderColor:
                         colors.brand,
 
-                      opacity: chatPulse.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 0.55],
-                      }),
-                        transform: [
+                      opacity:
+                        chatPulse.interpolate(
                           {
-                            scale: chatPulse.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [1, 1.42],
-                            }),
+                            inputRange:
+                              [0, 1],
+
+                            outputRange:
+                              [0, 0.55],
+                          }
+                        ),
+
+                      transform: [
+                        {
+                          scale:
+                            chatPulse.interpolate(
+                              {
+                                inputRange:
+                                  [0, 1],
+
+                                outputRange:
+                                  [1, 1.42],
+                              }
+                            ),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+              )}
+
+              <Animated.View
+                style={{
+                  transform:
+                    chatUnreadTotal > 0
+                      ? [
+                          {
+                            scale:
+                              chatPulse.interpolate(
+                                {
+                                  inputRange:
+                                    [0, 1],
+
+                                  outputRange:
+                                    [1, 1.08],
+                                }
+                              ),
+                          },
+                        ]
+                      : [
+                          {
+                            scale: 1,
                           },
                         ],
-                      },
-                    ]}
-                  />
-                )}
-
-                {/* ✅ Subtle icon “breath” synced with ring */}
-                        <Animated.View
-                  style={{
-                    transform:
-                      chatUnreadTotal > 0
-                        ? [
-                            {
-                              scale: chatPulse.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [1, 1.08],
-                              }),
-                            },
-                          ]
-                        : [{ scale: 1 }],
-                  }}
-                >
-              <Ionicons
+                }}
+              >
+                <Ionicons
                   name={
                     focused
                       ? "chatbubble-ellipses"
@@ -930,131 +1033,89 @@ screenOptions={{
                   }
                   size={24}
                   color={
-                    tabIconColor(focused)
+                    tabIconColor(
+                      focused
+                    )
                   }
                 />
-                </Animated.View>
+              </Animated.View>
 
-                {/* ✅ Server-accurate unread total badge */}
-                <Badge count={chatUnreadTotal} />
-              </View>
-            </TabIconWrap>
-          ),
-        }}
-      />
-
-
-    <Tabs.Screen
-  name="social-stats"
-  options={{
-    title: "Social",
-
-    tabBarIcon: ({ focused }) => (
-      <TabIconWrap active={focused}>
-    <Ionicons
-          name={
-            focused
-              ? "flame"
-              : "flame-outline"
-          }
-          size={24}
-          color={
-            tabIconColor(focused)
-          }
-        />
-      </TabIconWrap>
-    ),
-  }}
-/>
-
-    <Tabs.Screen
-  name="notifications"
-  options={{
-    title: "Notifications",
-
-    tabBarIcon: ({ focused }) => {
-      const rotate = shake.interpolate({
-        inputRange: [-1, 1],
-        outputRange: ["-10deg", "10deg"],
-      });
-            return (
-              <TabIconWrap active={focused}>
-                <Animated.View style={{ transform: [{ rotate }] }}>
-                  <View style={{ position: "relative" }}>
-                 <Ionicons
-                      name={
-                        focused
-                          ? "notifications"
-                          : "notifications-outline"
-                      }
-                      size={24}
-                      color={
-                        tabIconColor(focused)
-                      }
-                    />
-                    {!focused && <Badge count={notifUnreadTotal} />}
-                  </View>
-                </Animated.View>
-              </TabIconWrap>
-            );
-          },
-        }}
-      />
-
-     <Tabs.Screen
-          name="profile"
-          options={{
-            title: "Profile",
-
-            tabBarIcon: ({ focused }) => {
-              const ring =
-                focused
-                  ? 2
-                  : profileCompletion >= 0.85
-                    ? 2
-                    : 1;
-
-              return (
-                <TabIconWrap active={focused}>
-               <View
-                  style={[
-                    styles.avatarRing,
-                    {
-                      borderWidth: ring,
-
-                      borderColor:
-                        focused
-                          ? colors.brand
-                          : colors.borderStrong,
-
-                      backgroundColor:
-                        colors.surfaceMuted,
-                    },
-                  ]}
-                >
-                  {profilePhoto ? (
-                    <Image
-                      source={{ uri: profilePhoto }}
-                      style={styles.avatarImg}
-                    />
-                  ) : (
-               <Ionicons
-                name="person"
-                size={22}
-                color={
-                  tabIconColor(focused)
+              <Badge
+                count={
+                  chatUnreadTotal
                 }
               />
-                  )}
-                </View>
-              </TabIconWrap>
-            );
-          },
-        }}
-      />
+            </View>
+          </TabIconWrap>
+        ),
+      }}
+    />
+
+    <Tabs.Screen
+      name="profile"
+      options={{
+        title: "Profile",
+
+        tabBarIcon: ({ focused }) => {
+          const ring =
+            focused
+              ? 2
+              : profileCompletion >=
+                  0.85
+                ? 2
+                : 1;
+
+          return (
+            <TabIconWrap
+              active={focused}
+            >
+              <View
+                style={[
+                  styles.avatarRing,
+                  {
+                    borderWidth:
+                      ring,
+
+                    borderColor:
+                      focused
+                        ? colors.brand
+                        : colors.borderStrong,
+
+                    backgroundColor:
+                      colors.surfaceMuted,
+                  },
+                ]}
+              >
+                {profilePhoto ? (
+                  <Image
+                    source={{
+                      uri:
+                        profilePhoto,
+                    }}
+                    style={
+                      styles.avatarImg
+                    }
+                  />
+                ) : (
+                  <Ionicons
+                    name="person"
+                    size={22}
+                    color={
+                      tabIconColor(
+                        focused
+                      )
+                    }
+                  />
+                )}
+              </View>
+            </TabIconWrap>
+          );
+        },
+      }}
+    />
 
       {/* HIDDEN ROUTES */}
-      <Tabs.Screen name="letsbuzz" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
       <Tabs.Screen name="discover" options={{ href: null }} />
       <Tabs.Screen name="microbuzz" options={{ href: null }} />
       <Tabs.Screen name="filter" options={{ href: null }} />
