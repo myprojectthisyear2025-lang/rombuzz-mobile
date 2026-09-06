@@ -11,6 +11,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@expo-google-fonts/manrope": "^0.4.2",
     "@expo/vector-icons": "^15.0.3",
     "@maplibre/maplibre-react-native": "^11.2.1",
     "@ptomasroos/react-native-multi-slider": "^2.2.2",

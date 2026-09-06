@@ -11,8 +11,11 @@
 
 import { Sentry } from "@/src/monitoring/sentry";
 
-import { useColorScheme } from "@/hooks/use-color-scheme";
 import { API_BASE } from "@/src/config/api";
+import {
+  RomBuzzThemeProvider,
+  useRomBuzzTheme,
+} from "@/src/design/RomBuzzThemeProvider";
 import AppUpdateGate from "@/src/features/appUpdate/AppUpdateGate";
 import { hasOnboardingDraft } from "@/src/features/auth/onboarding/rbzOnboardingDraft";
 import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
@@ -28,7 +31,12 @@ import Constants from "expo-constants";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -148,9 +156,33 @@ async function removePushTokenFromBackend(authToken: string, pushToken: string) 
 }
 
 function RootLayout() {
-  const colorScheme = useColorScheme();
+  const {
+    colors,
+    isDark,
+  } = useRomBuzzTheme();
+
   const router = useRouter();
   const segments = useSegments() as string[];
+
+  const navigationTheme = useMemo(() => {
+    const baseTheme =
+      isDark ? DarkTheme : DefaultTheme;
+
+    return {
+      ...baseTheme,
+
+      colors: {
+        ...baseTheme.colors,
+
+        primary: colors.brand,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.brand,
+      },
+    };
+  }, [colors, isDark]);
 
   const [ready, setReady] = useState(false);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
@@ -466,17 +498,23 @@ function RootLayout() {
     !splashDone
   ) {
     return (
-      <ThemeProvider
-        value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
-      >
-        <StatusBar style="auto" />
+      <ThemeProvider value={navigationTheme}>
+        <StatusBar
+          style={isDark ? "light" : "dark"}
+          backgroundColor={colors.background}
+        />
       </ThemeProvider>
     );
   }
 
-        return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+   return (
+    <GestureHandlerRootView
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+      }}
+    >
+      <ThemeProvider value={navigationTheme}>
         <VideoCallProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
@@ -499,9 +537,12 @@ function RootLayout() {
 
           <IncomingMeetMiddleOverlay />
           <ActiveVideoCallMiniBubble />
-               </VideoCallProvider>
+        </VideoCallProvider>
 
-        <StatusBar style="auto" />
+        <StatusBar
+          style={isDark ? "light" : "dark"}
+          backgroundColor={colors.background}
+        />
       </ThemeProvider>
     </GestureHandlerRootView>
   );
@@ -509,9 +550,11 @@ function RootLayout() {
 
 function AppRoot() {
   return (
-    <AppUpdateGate>
-      <RootLayout />
-    </AppUpdateGate>
+    <RomBuzzThemeProvider>
+      <AppUpdateGate>
+        <RootLayout />
+      </AppUpdateGate>
+    </RomBuzzThemeProvider>
   );
 }
 

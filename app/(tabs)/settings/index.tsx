@@ -15,6 +15,8 @@ import * as SecureStore from "expo-secure-store";
 import React from "react";
 import { Alert, Linking } from "react-native";
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+
 import {
   Card,
   NavRow,
@@ -32,6 +34,16 @@ const DELETE_INFO_URL = "https://rombuzz.com/delete-account";
 
 export default function SettingsHome() {
   const router = useRouter();
+
+  const { mode } =
+    useRomBuzzTheme();
+
+  const appearanceLabel =
+    mode === "system"
+      ? "System"
+      : mode === "dark"
+        ? "Dark"
+        : "Light";
 
   const openPublicPage = async (url: string, label: string) => {
     try {
@@ -81,10 +93,23 @@ export default function SettingsHome() {
 
       <Card>
         <NavRow
+          icon="color-palette-outline"
+          label="Appearance"
+          value={appearanceLabel}
+          onPress={() =>
+            router.push(
+              "/(tabs)/settings/appearance"
+            )
+          }
+        />
+
+        <NavRow
           icon="shield-outline"
           label="Privacy controls"
           onPress={() =>
-            router.push("/(tabs)/settings/privacy")
+            router.push(
+              "/(tabs)/settings/privacy"
+            )
           }
         />
 
@@ -92,7 +117,9 @@ export default function SettingsHome() {
           icon="notifications-outline"
           label="Notifications"
           onPress={() =>
-            router.push("/(tabs)/settings/notifications")
+            router.push(
+              "/(tabs)/settings/notifications"
+            )
           }
         />
       </Card>

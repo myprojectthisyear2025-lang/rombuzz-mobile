@@ -17,6 +17,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+
 export const RBZ = {
   c1: "#B1123C",
   c2: "#D8345F",
@@ -40,6 +42,7 @@ export function ScreenShell({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useRomBuzzTheme();
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -51,7 +54,15 @@ export function ScreenShell({
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.root,
+        {
+          paddingTop: insets.top,
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"
@@ -65,11 +76,16 @@ export function ScreenShell({
           <Ionicons
             name="chevron-back"
             size={27}
-            color={RBZ.text}
+            color={colors.text}
           />
         </Pressable>
 
-        <Text style={styles.headerTitle}>
+        <Text
+          style={[
+            styles.headerTitle,
+            { color: colors.text },
+          ]}
+        >
           {title}
         </Text>
 
@@ -98,6 +114,8 @@ export function Card({
 }: {
   children: React.ReactNode;
 }) {
+  const { colors } = useRomBuzzTheme();
+
   const items =
     React.Children.toArray(children);
 
@@ -118,6 +136,10 @@ export function Card({
     <View
       style={[
         styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
         rowGroup
           ? styles.rowCard
           : styles.contentCard,
@@ -129,7 +151,15 @@ export function Card({
 
           {rowGroup &&
           index < items.length - 1 ? (
-            <View style={styles.divider} />
+            <View
+              style={[
+                styles.divider,
+                {
+                  backgroundColor:
+                    colors.border,
+                },
+              ]}
+            />
           ) : null}
         </React.Fragment>
       ))}
@@ -140,6 +170,7 @@ export function Card({
 export function NavRow({
   icon,
   label,
+  value,
   onPress,
   danger,
 }: {
@@ -147,18 +178,26 @@ export function NavRow({
     typeof Ionicons
   >["name"];
   label: string;
+  value?: string;
   onPress: () => void;
   danger?: boolean;
 }) {
-  const color =
-    danger ? RBZ.danger : RBZ.text;
+  const { colors } = useRomBuzzTheme();
+
+  const textColor =
+    danger
+      ? colors.danger
+      : colors.text;
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
-        pressed && styles.rowPressed,
+        pressed && {
+          backgroundColor:
+            colors.surfaceMuted,
+        },
       ]}
     >
       <View style={styles.rowLeft}>
@@ -167,26 +206,44 @@ export function NavRow({
           size={21}
           color={
             danger
-              ? RBZ.danger
-              : RBZ.c1
+              ? colors.danger
+              : colors.brand
           }
         />
 
         <Text
           style={[
             styles.rowText,
-            { color },
+            {
+              color: textColor,
+            },
           ]}
         >
           {label}
         </Text>
       </View>
 
-      <Ionicons
-        name="chevron-forward"
-        size={18}
-        color={RBZ.soft}
-      />
+      <View style={styles.rowRight}>
+        {value ? (
+          <Text
+            style={[
+              styles.rowValue,
+              {
+                color:
+                  colors.textSecondary,
+              },
+            ]}
+          >
+            {value}
+          </Text>
+        ) : null}
+
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={colors.iconMuted}
+        />
+      </View>
     </Pressable>
   );
 }
@@ -204,16 +261,25 @@ export function ToggleRow({
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const { colors } = useRomBuzzTheme();
+
   return (
     <View style={styles.row}>
       <View style={styles.rowLeft}>
         <Ionicons
           name={icon}
           size={21}
-          color={RBZ.c1}
+          color={colors.brand}
         />
 
-        <Text style={styles.rowText}>
+        <Text
+          style={[
+            styles.rowText,
+            {
+              color: colors.text,
+            },
+          ]}
+        >
           {label}
         </Text>
       </View>
@@ -222,8 +288,8 @@ export function ToggleRow({
         value={value}
         onValueChange={onChange}
         trackColor={{
-          false: "#DDD9DC",
-          true: RBZ.c1,
+          false: colors.borderStrong,
+          true: colors.brand,
         }}
       />
     </View>
@@ -235,8 +301,18 @@ export function SectionTitle({
 }: {
   children: string;
 }) {
+  const { colors } = useRomBuzzTheme();
+
   return (
-    <Text style={styles.sectionTitle}>
+    <Text
+      style={[
+        styles.sectionTitle,
+        {
+          color:
+            colors.textSecondary,
+        },
+      ]}
+    >
       {children}
     </Text>
   );
@@ -247,8 +323,18 @@ export function SmallText({
 }: {
   children: string;
 }) {
+  const { colors } = useRomBuzzTheme();
+
   return (
-    <Text style={styles.small}>
+    <Text
+      style={[
+        styles.small,
+        {
+          color:
+            colors.textSecondary,
+        },
+      ]}
+    >
       {children}
     </Text>
   );
@@ -343,6 +429,16 @@ const styles = StyleSheet.create({
     gap: 13,
   },
 
+  rowRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  rowValue: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
   rowText: {
     color: RBZ.text,
     fontSize: 16,

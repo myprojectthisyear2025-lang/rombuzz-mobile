@@ -19,6 +19,8 @@ import PremiumBuzzReceiverOverlay, {
   type PremiumBuzzOverlayPayload,
 } from "@/src/components/buzz/PremiumBuzzReceiverOverlay";
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import FirstSignupTour from "@/src/features/onboarding/FirstSignupTour";
 import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
 import { getSocket, onNotification } from "@/src/lib/socket";
@@ -64,7 +66,6 @@ const TAB_ORDER = [
 ] as const;
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const logo = require("@/assets/images/logo.png");
 
 /* ============================================================
    SMALL UI HELPERS
@@ -76,10 +77,23 @@ function Dot({ visible }: { visible: boolean }) {
 }
 
 function Badge({ count }: { count: number }) {
+  const { colors } = useRomBuzzTheme();
+
   if (!count) return null;
+
   return (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>{count > 99 ? "99+" : String(count)}</Text>
+    <View
+      style={[
+        styles.badge,
+        {
+          backgroundColor: colors.brand,
+          borderColor: colors.tabBar,
+        },
+      ]}
+    >
+      <Text style={styles.badgeText}>
+        {count > 99 ? "99+" : String(count)}
+      </Text>
     </View>
   );
 }
@@ -114,6 +128,16 @@ export default function TabLayout() {
   const router = useRouter();
   const segments = useSegments();
   const insets = useSafeAreaInsets();
+
+  const { colors } =
+    useRomBuzzTheme();
+
+  const tabIconColor = (
+    focused: boolean
+  ) =>
+    focused
+      ? colors.brand
+      : colors.iconMuted;
 
   /* -------------------------------
      💎 PREMIUM BUZZ GLOBAL OVERLAY
@@ -764,43 +788,84 @@ export default function TabLayout() {
      TABS UI
   ============================================================ */
 
-  const TabsContent = (
-   <Tabs
-  initialRouteName="homepage"
-  screenOptions={{
-    headerShown: false,
-    tabBarShowLabel: false,
+ const TabsContent = (
+ <Tabs
+initialRouteName="homepage"
+screenOptions={{
+  headerShown: false,
+  tabBarShowLabel: true,
 
-    // ✅keep tabs mounted so heavy screens render instantly on return
+  tabBarActiveTintColor:
+    colors.brand,
 
-    tabBarStyle: {
-      backgroundColor: RBZ.c1,
-      borderTopColor: RBZ.c3,
-      borderTopWidth: 1,
-      height: 72 + insets.bottom,
-      paddingBottom: 10 + insets.bottom,
-      paddingTop: 10,
-    },
-  }}
+  tabBarInactiveTintColor:
+    colors.iconMuted,
+
+  tabBarLabelStyle: {
+    fontSize: 10,
+    fontFamily: RBZFont.bold,
+    marginTop: -2,
+  },
+
+  tabBarItemStyle: {
+    paddingVertical: 2,
+  },
+
+  // ✅keep tabs mounted so heavy screens render instantly on return
+
+  tabBarStyle: {
+    backgroundColor:
+      colors.tabBar,
+
+    borderTopColor:
+      colors.tabBarBorder,
+
+    borderTopWidth:
+      StyleSheet.hairlineWidth,
+
+    height: 62 + insets.bottom,
+
+    paddingBottom:
+      Math.max(insets.bottom, 6),
+
+    paddingTop: 6,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+}}
 >
 
-      <Tabs.Screen
-        name="homepage"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIconWrap active={focused}>
-              <Image source={logo} style={styles.logoIcon} />
-            </TabIconWrap>
-          ),
-        }}
-      />
-           <Tabs.Screen
-        name="chat"
-        options={{
-          // ✅ Do NOT clear unread when user only opens the Chat tab.
-          // Per-person unread badges must stay visible in the chat list.
-          // Unread clears only when the actual conversation thread is opened.
-          tabBarButton: (props: any) => (
+    <Tabs.Screen
+  name="homepage"
+  options={{
+    title: "Home",
+
+    tabBarIcon: ({ focused }) => (
+      <TabIconWrap active={focused}>
+        <Ionicons
+          name={
+            focused
+              ? "home"
+              : "home-outline"
+          }
+          size={24}
+          color={
+            tabIconColor(focused)
+          }
+        />
+      </TabIconWrap>
+    ),
+  }}
+/>
+        <Tabs.Screen
+            name="chat"
+            options={{
+              title: "Chat",
+
+              // ✅ Do NOT clear unread when user only opens the Chat tab.
+              // Per-person unread badges must stay visible in the chat list.
+              // Unread clears only when the actual conversation thread is opened.
+              tabBarButton: (props: any) => (
             <Pressable
               {...props}
               onPress={(e) => {
@@ -815,16 +880,19 @@ export default function TabLayout() {
               <View style={{ position: "relative" }}>
 
                 {/* ✅ Pulse ring appears only when unread exists */}
-                {chatUnreadTotal > 0 && (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[
-                      styles.chatPulseRing,
-                      {
-                        opacity: chatPulse.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, 0.55],
-                        }),
+             {chatUnreadTotal > 0 && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.chatPulseRing,
+                    {
+                      borderColor:
+                        colors.brand,
+
+                      opacity: chatPulse.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 0.55],
+                      }),
                         transform: [
                           {
                             scale: chatPulse.interpolate({
@@ -854,15 +922,17 @@ export default function TabLayout() {
                         : [{ scale: 1 }],
                   }}
                 >
-                  <Ionicons
-                    name={
-                      focused
-                        ? "chatbubble-ellipses"
-                        : "chatbubble-ellipses-outline"
-                    }
-                    size={26}
-                    color={focused ? RBZ.white : "rgba(255,255,255,0.65)"}
-                  />
+              <Ionicons
+                  name={
+                    focused
+                      ? "chatbubble-ellipses"
+                      : "chatbubble-ellipses-outline"
+                  }
+                  size={24}
+                  color={
+                    tabIconColor(focused)
+                  }
+                />
                 </Animated.View>
 
                 {/* ✅ Server-accurate unread total badge */}
@@ -874,41 +944,53 @@ export default function TabLayout() {
       />
 
 
-      <Tabs.Screen
-        name="social-stats"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIconWrap active={focused} accent={RBZ.c4}>
-              <Ionicons
-                name={focused ? "flame" : "flame-outline"}
-                size={26}
-                color={focused ? RBZ.white : "rgba(255,255,255,0.65)"}
-              />
-            </TabIconWrap>
-          ),
-        }}
-      />
+    <Tabs.Screen
+  name="social-stats"
+  options={{
+    title: "Social",
 
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          tabBarIcon: ({ focused }) => {
-            const rotate = shake.interpolate({
-              inputRange: [-1, 1],
-              outputRange: ["-10deg", "10deg"],
-            });
+    tabBarIcon: ({ focused }) => (
+      <TabIconWrap active={focused}>
+    <Ionicons
+          name={
+            focused
+              ? "flame"
+              : "flame-outline"
+          }
+          size={24}
+          color={
+            tabIconColor(focused)
+          }
+        />
+      </TabIconWrap>
+    ),
+  }}
+/>
+
+    <Tabs.Screen
+  name="notifications"
+  options={{
+    title: "Notifications",
+
+    tabBarIcon: ({ focused }) => {
+      const rotate = shake.interpolate({
+        inputRange: [-1, 1],
+        outputRange: ["-10deg", "10deg"],
+      });
             return (
               <TabIconWrap active={focused}>
                 <Animated.View style={{ transform: [{ rotate }] }}>
                   <View style={{ position: "relative" }}>
-                    <Ionicons
+                 <Ionicons
                       name={
                         focused
                           ? "notifications"
                           : "notifications-outline"
                       }
-                      size={26}
-                      color={focused ? RBZ.white : "rgba(255,255,255,0.65)"}
+                      size={24}
+                      color={
+                        tabIconColor(focused)
+                      }
                     />
                     {!focused && <Badge count={notifUnreadTotal} />}
                   </View>
@@ -919,17 +1001,35 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="profile"
-        options={{
-          tabBarIcon: ({ focused }) => {
-            const ring = focused ? 3 : profileCompletion >= 0.85 ? 3 : 2;
-            return (
-              <TabIconWrap active={focused}>
-                <View
+     <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+
+            tabBarIcon: ({ focused }) => {
+              const ring =
+                focused
+                  ? 2
+                  : profileCompletion >= 0.85
+                    ? 2
+                    : 1;
+
+              return (
+                <TabIconWrap active={focused}>
+               <View
                   style={[
                     styles.avatarRing,
-                    { borderWidth: ring, borderColor: RBZ.c3 },
+                    {
+                      borderWidth: ring,
+
+                      borderColor:
+                        focused
+                          ? colors.brand
+                          : colors.borderStrong,
+
+                      backgroundColor:
+                        colors.surfaceMuted,
+                    },
                   ]}
                 >
                   {profilePhoto ? (
@@ -938,13 +1038,13 @@ export default function TabLayout() {
                       style={styles.avatarImg}
                     />
                   ) : (
-                    <Ionicons
-                      name="person"
-                      size={22}
-                      color={
-                        focused ? RBZ.white : "rgba(255,255,255,0.65)"
-                      }
-                    />
+               <Ionicons
+                name="person"
+                size={22}
+                color={
+                  tabIconColor(focused)
+                }
+              />
                   )}
                 </View>
               </TabIconWrap>
@@ -981,27 +1081,39 @@ export default function TabLayout() {
     />
   );
 
-     // ❌ No swipe outside root tabs
-  if (!isRootTab) {
-    return (
-      <View style={{ flex: 1 }}>
-        {TabsContent}
-        {PremiumBuzzOverlayNode}
-        <IncomingCallOverlay />
-        <FirstSignupTour />
-      </View>
-    );
-  }
-
-  // ✅ Swipe only on root tabs
-   return (
-    <PanGestureHandler
-      onHandlerStateChange={onSwipeEnd}
-      activeOffsetX={[-18, 18]}
-      failOffsetY={[-12, 12]}
+  // ❌ No swipe outside root tabs
+if (!isRootTab) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor:
+          colors.background,
+      }}
     >
-      <View style={{ flex: 1 }}>
-        {TabsContent}
+      {TabsContent}
+      {PremiumBuzzOverlayNode}
+      <IncomingCallOverlay />
+      <FirstSignupTour />
+    </View>
+  );
+}
+
+// ✅ Swipe only on root tabs
+return (
+  <PanGestureHandler
+    onHandlerStateChange={onSwipeEnd}
+    activeOffsetX={[-18, 18]}
+    failOffsetY={[-12, 12]}
+  >
+    <View
+      style={{
+        flex: 1,
+        backgroundColor:
+          colors.background,
+      }}
+    >
+      {TabsContent}
         {PremiumBuzzOverlayNode}
         <IncomingCallOverlay />
         <FirstSignupTour />
@@ -1016,28 +1128,20 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   iconPill: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: RBZ.c2,
-    borderWidth: 1,
-    borderColor: RBZ.c3,
-    marginTop: 4,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    marginTop: 0,
   },
+
   iconPillActive: {
-    shadowColor: RBZ.c3,
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
-    elevation: 8,
+    backgroundColor: "transparent",
   },
-  logoIcon: {
-    width: 28,
-    height: 28,
-    resizeMode: "contain",
-  },
-    dotWrap: {
+
+  dotWrap: {
     position: "absolute",
     right: -2,
     top: 2,
@@ -1084,17 +1188,17 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     fontSize: 11,
   },
-  avatarRing: {
-    width: 32,
-    height: 32,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    backgroundColor: RBZ.c1,
-  },
-  avatarImg: {
-    width: "100%",
-    height: "100%",
-  },
+ avatarRing: {
+  width: 32,
+  height: 32,
+  borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+  overflow: "hidden",
+  backgroundColor: "#F4F4F6",
+},
+avatarImg: {
+  width: "100%",
+  height: "100%",
+},
 });
