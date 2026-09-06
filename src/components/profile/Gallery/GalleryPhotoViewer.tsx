@@ -270,14 +270,13 @@ export default function GalleryPhotoViewer({
 
         return (
           <View
-            style={[
-              styles.page,
-              {
-                width: screenWidth,
-                height: screenHeight,
-                paddingTop: 16 + insets.top,
-              },
-            ]}
+          style={[
+            styles.page,
+            {
+              width: screenWidth,
+              height: screenHeight,
+            },
+          ]}
           >
             {isVideoItem(rowItem) ? (
               <PassiveVideoItem item={rowItem} mediaWidth={mediaWidth} mediaHeight={mediaHeight} />

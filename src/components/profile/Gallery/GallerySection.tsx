@@ -19,46 +19,25 @@
  */
 
 import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
-import { Ionicons } from "@expo/vector-icons";
-import GalleryTabs from "./GalleryTabs";
+import ProfileGalleryContent from "@/src/features/profile/gallery/ProfileGalleryContent";
+import type { ProfileGalleryMediaItem } from "@/src/features/profile/gallery/profileGalleryTypes";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
 import FullscreenViewer from "./FullscreenViewer";
 import { pickMedia } from "./MediaUploader";
-import PhotoGrid from "./PhotoGrid";
 import ProfileUploadPreview from "./ProfileUploadPreview";
-import ReelGrid from "./ReelGrid";
 
 import {
   Alert,
-  Pressable,
-  StyleSheet,
-  Text,
   View,
 } from "react-native";
 
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  ink: "#111827",
-  muted: "#6b7280",
-  bg: "#ffffff",
-  card: "#ffffff",
-  soft: "#f8fafc",
-  line: "rgba(17,24,39,0.08)",
-} as const;
-
-type MediaItem = {
-  id: string;
-  url: string;
-  type: "image" | "video";
-  caption?: string;
-  privacy?: "public" | "matches" | "private";
-  createdAt?: any;
-};
+type MediaItem = ProfileGalleryMediaItem;
 
 type PublishScope = "public" | "matches" | "private";
 type PublishIntent = "discover" | "viewprofile" | "letsbuzz" | "firstimpression";
@@ -441,102 +420,21 @@ const closePublish = () => {
 };
 
 
- return (
-    <View style={{ marginTop: 14 }}>
-      {/* Segmented header */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Gallery</Text>
-        <Text style={styles.cardBody}>
-          Photos for Discover vibes, Reels for personality. Choose who sees what.
-        </Text>
-
-       <GalleryTabs
-  active={segment}
-  photosCount={photos.length}
-  reelsCount={reels.length}
-  onChange={setSegment}
-/>
-
-
-        {/* Add buttons */}
-        <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-          <Pressable
-            onPress={() => openPicker("photo")}
-            style={[styles.addBtn, { borderColor: "rgba(216,52,95,0.35)" }]}
-          >
-            <Ionicons name="add-circle" size={18} color={RBZ.c2} />
-            <Text style={[styles.addBtnText, { color: RBZ.c2 }]}>Add Photo</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => openPicker("reel")}
-            style={[styles.addBtn, { borderColor: "rgba(181,23,158,0.35)" }]}
-          >
-            <Ionicons name="add-circle" size={18} color={RBZ.c4} />
-            <Text style={[styles.addBtnText, { color: RBZ.c4 }]}>Add Reel</Text>
-          </Pressable>
-        </View>
-      </View>
-
-   {/* Grid */}
-<View
-  style={[styles.card, { marginTop: 12 }]}
-  onLayout={(e) => {
-    const w = e.nativeEvent.layout.width;
-    setGridWidth((prev) => (Math.abs(prev - w) < 1 ? prev : w));
-  }}
->
-  <Text style={styles.cardTitle}>
-    {segment === "photos" ? "Your Photos" : "Your Reels"}
-  </Text>
-
-
-  {/* 🔄 Pull to refresh (lightweight) */}
-  <Pressable
-    onPress={() => onRefresh?.()}
-    style={{ alignSelf: "flex-end", marginTop: 6 }}
-  >
-    <Text style={{ color: RBZ.muted, fontWeight: "700", fontSize: 12 }}>
-      Pull down to refresh
-    </Text>
-  </Pressable>
-
-{gridItemSize > 0 && list.length === 0 ? (
-  <View style={styles.emptyWrap}>
-    <Ionicons
-      name={segment === "photos" ? "images-outline" : "videocam-outline"}
-      size={42}
-      color={RBZ.muted}
-    />
-    <Text style={styles.emptyTitle}>
-      {segment === "photos"
-        ? "No photos yet"
-        : "No reels yet"}
-    </Text>
-    <Text style={styles.emptySub}>
-      {segment === "photos"
-        ? "Add a photo to show your vibe."
-        : "Reels help people feel your personality."}
-    </Text>
-  </View>
-) : (
-  gridItemSize > 0 &&
-  (segment === "photos" ? (
-    <PhotoGrid
-      items={photos}
-      size={gridItemSize}
+return (
+  <View>
+    <ProfileGalleryContent
+      active={segment}
+      photos={photos}
+      reels={reels}
+      onChange={setSegment}
+      onAddPhoto={() =>
+        openPicker("photo")
+      }
+      onAddReel={() =>
+        openPicker("reel")
+      }
       onOpen={openViewer}
     />
-  ) : (
-    <ReelGrid
-      items={reels}
-      size={gridItemSize}
-      onOpen={openViewer}
-    />
-  ))
-)}
-
-      </View>
 
       <ProfileUploadPreview
         visible={publishOpen}
@@ -582,325 +480,3 @@ const closePublish = () => {
   </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: RBZ.card,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    padding: 14,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: RBZ.ink,
-  },
-  cardBody: {
-    marginTop: 6,
-    color: RBZ.muted,
-    lineHeight: 18,
-  },
-
-  segmentWrap: {
-    flexDirection: "row",
-    marginTop: 12,
-    gap: 10,
-  },
-  segmentBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "rgba(216,52,95,0.25)",
-    backgroundColor: "rgba(216,52,95,0.06)",
-    borderRadius: 999,
-    paddingVertical: 10,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  segmentBtnActive: {
-    backgroundColor: RBZ.c2,
-    borderColor: "rgba(216,52,95,0.60)",
-  },
-  segmentBtnActiveAlt: {
-    backgroundColor: RBZ.c4,
-    borderColor: "rgba(181,23,158,0.60)",
-  },
-  segmentText: {
-    fontWeight: "800",
-    color: RBZ.ink,
-  },
-
-  addBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: RBZ.soft,
-  },
-  addBtnText: {
-    fontWeight: "800",
-  },
-
-  grid: {
-    marginTop: 10,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  gridItem: {
-    aspectRatio: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    backgroundColor: RBZ.soft,
-  },
-  gridImg: {
-    width: "100%",
-    height: "100%",
-  },
-  badge: {
-    position: "absolute",
-    top: 7,
-    right: 7,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 999,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.10)",
-  },
-  reelPill: {
-    position: "absolute",
-    left: 7,
-    bottom: 7,
-    flexDirection: "row",
-    gap: 6,
-    alignItems: "center",
-    backgroundColor: "rgba(181,23,158,0.92)",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  reelPillText: {
-    color: RBZ.white,
-    fontWeight: "900",
-    fontSize: 12,
-  },
-
-  backdrop: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.40)",
-  },
-  sheet: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 12,
-    maxHeight: "85%",
-    backgroundColor: RBZ.white,
-    borderRadius: 22,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.10)",
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 50,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(17,24,39,0.18)",
-    marginBottom: 10,
-  },
-  sheetTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: RBZ.ink,
-  },
-  sheetSub: {
-    marginTop: 6,
-    color: RBZ.muted,
-    lineHeight: 18,
-  },
-  sheetLabel: {
-    marginTop: 10,
-    fontWeight: "900",
-    color: RBZ.ink,
-  },
-  choiceRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 8,
-    flexWrap: "wrap",
-  },
-  chip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipText: {
-    fontWeight: "900",
-  },
-  input: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.12)",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: RBZ.ink,
-    backgroundColor: "rgba(248,250,252,1)",
-  },
-  toolsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-  toolBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.10)",
-    backgroundColor: "rgba(248,250,252,1)",
-    borderRadius: 14,
-    paddingVertical: 10,
-    alignItems: "center",
-    gap: 4,
-  },
-  toolText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: RBZ.ink,
-  },
-  publishBtn: {
-    marginTop: 12,
-    backgroundColor: RBZ.c1,
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  publishBtnText: {
-    color: RBZ.white,
-    fontWeight: "900",
-  },
-  noteTiny: {
-    marginTop: 8,
-    fontSize: 11,
-    color: RBZ.muted,
-    lineHeight: 15,
-  },
-
-  viewerWrap: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.92)",
-    justifyContent: "center",
-  },
-  viewerTop: {
-    position: "absolute",
-    top: 18,
-    left: 10,
-    right: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    zIndex: 10,
-  },
-  viewerIconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  viewerBody: {
-    width: "100%",
-    height: "72%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  viewerMedia: {
-    width: "100%",
-    height: "100%",
-  },
-  viewerMeta: {
-    position: "absolute",
-    bottom: 20,
-    left: 14,
-    right: 14,
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "center",
-  },
-  metaPill: {
-    backgroundColor: RBZ.c2,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-  },
-  metaPillAlt: {
-    backgroundColor: RBZ.c4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-  },
-  metaText: {
-    color: RBZ.white,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    fontSize: 12,
-    letterSpacing: 0.6,
-  },
-  sheetHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "space-between",
-},
-
-sheetCloseBtn: {
-  width: 36,
-  height: 36,
-  borderRadius: 999,
-  backgroundColor: "rgba(17,24,39,0.06)",
-  justifyContent: "center",
-  alignItems: "center",
-},
-sheetScroll: {
-  paddingBottom: 16,
-},
-  emptyWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 28,
-    gap: 10,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: RBZ.ink,
-  },
-  emptySub: {
-    fontSize: 13,
-    color: RBZ.muted,
-    textAlign: "center",
-    lineHeight: 18,
-    maxWidth: 220,
-  },
-
-});

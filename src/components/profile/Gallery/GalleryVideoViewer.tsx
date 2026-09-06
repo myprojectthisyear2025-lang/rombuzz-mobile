@@ -362,14 +362,13 @@ export default function GalleryVideoViewer({
 
         return (
           <View
-            style={[
-              styles.page,
-              {
-                width: screenWidth,
-                height: screenHeight,
-                paddingTop: 16 + insets.top,
-              },
-            ]}
+          style={[
+          styles.page,
+          {
+            width: screenWidth,
+            height: screenHeight,
+          },
+        ]}
           >
             {isVideoItem(rowItem) ? (
                 <ActiveVideoItem
@@ -450,33 +449,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  scrubberTrack: {
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 2,
-    overflow: "hidden",
-  },
+ scrubberTrack: {
+  height: 2,
+  backgroundColor:
+    "rgba(255,255,255,0.28)",
+  borderRadius: 1,
+  overflow: "hidden",
+},
 
   scrubberFill: {
     height: "100%",
     backgroundColor: RBZ.c3,
   },
 
-  scrubberHandle: {
-    position: "absolute",
-    marginLeft: -12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: RBZ.c3,
-    borderWidth: 3,
-    borderColor: RBZ.white,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
-  },
+scrubberHandle: {
+  position: "absolute",
+  marginLeft: -6,
+
+  width: 12,
+  height: 12,
+  borderRadius: 6,
+
+  backgroundColor:
+    "#FFFFFF",
+},
 
   timeRow: {
     marginTop: 8,
@@ -484,9 +480,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  timeText: {
-    color: RBZ.white,
-    fontSize: 12,
-    fontWeight: "700",
-  },
+ timeText: {
+  color:
+    "rgba(255,255,255,0.72)",
+  fontSize: 10.5,
+  fontWeight: "600",
+},
 });

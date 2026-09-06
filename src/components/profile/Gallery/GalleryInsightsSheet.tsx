@@ -16,30 +16,29 @@
  */
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
   Image,
   Modal,
+  PanResponder,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  Animated,
-  PanResponder,
-  Dimensions,
+  View
 } from "react-native";
 
-import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
-import { getGiftById } from "@/src/config/rombuzzGifts";
 import {
   getGiftSummary,
   type GiftSummaryGiftItem,
   type GiftSummaryResponse,
   type GiftSummaryRow,
 } from "@/src/api/gifts";
+import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
+import { getGiftById } from "@/src/config/rombuzzGifts";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const MAX_SHEET_HEIGHT = SCREEN_HEIGHT * 0.85;
@@ -92,9 +91,11 @@ export default function GalleryInsightsSheet({
   mediaId,
   apiFetch,
   apiJson,
-  bottomInset,
+ bottomInset,
+actionLayout = "photo",
+onShare,
 
-  // Notification deep-link support
+// Notification deep-link support
   deepLinkOpenComments,
   deepLinkOpenInsights,
   deepLinkInsightsTab,
@@ -107,7 +108,8 @@ export default function GalleryInsightsSheet({
   apiFetch: (path: string, init?: RequestInit) => Promise<any>;
   apiJson: (path: string, method: string, body: any) => Promise<any>;
   bottomInset: number;
-
+actionLayout?: "photo" | "reel";
+onShare?: () => void;
   deepLinkOpenComments?: boolean;
   deepLinkOpenInsights?: boolean;
   deepLinkInsightsTab?: "gifts" | "comments";
@@ -415,39 +417,53 @@ export default function GalleryInsightsSheet({
 
   return (
     <>
-      {/* Futuristic insights button */}
-      <Animated.View style={[styles.insightsBtn, { bottom: bottomInset + 20 }]}>
-        <Pressable
-          onPress={() => {
-            setDrawerOpen(true);
-          }}
-          style={styles.insightsBtnInner}
-        >
-          <Ionicons name="analytics" size={20} color={RBZ.white} />
-          <Text style={styles.insightsText}>Insights</Text>
-          <View style={styles.btnGlow} />
-        </Pressable>
-      </Animated.View>
+     <View
+  pointerEvents="box-none"
+  style={[
+    styles.viewerActions,
+    actionLayout === "reel"
+      ? [
+          styles.viewerActionsReel,
+          {
+            bottom:
+              bottomInset + 86,
+          },
+        ]
+      : [
+          styles.viewerActionsPhoto,
+          {
+            bottom:
+              bottomInset + 20,
+          },
+        ],
+  ]}
+>
+<ViewerAction
+  icon="gift-outline"
+  label="Gifts"
+  onPress={() => {
+    setExpandedGiftRow(null);
+    setTab("gifts");
+    setDrawerOpen(true);
+  }}
+/>
 
-      {/* Stats overlay */}
-      {drawerOpen === false && insights && (
-        <Animated.View style={[styles.statsWrap, { bottom: bottomInset + 80 }]}>
-          {Number(insights?.totalGifts || 0) > 0 && (
-            <Pressable onPress={() => setDrawerOpen(true)} style={styles.statPill}>
-              <Ionicons name="gift" size={16} color={RBZ.white} />
-              <Text style={styles.statText}>{Number(insights.totalGifts)}</Text>
-              <View style={styles.statGlow} />
-            </Pressable>
-          )}
-          {Number(insights?.threads?.length || 0) > 0 && (
-            <Pressable onPress={() => setDrawerOpen(true)} style={styles.statPill}>
-              <Ionicons name="chatbubble-ellipses" size={16} color={RBZ.white} />
-              <Text style={styles.statText}>{Number(insights.threads.length)}</Text>
-              <View style={styles.statGlow} />
-            </Pressable>
-          )}
-        </Animated.View>
-      )}
+<ViewerAction
+  icon="chatbubble-outline"
+  label="Comments"
+  onPress={
+    openPrivateComments
+  }
+/>
+
+  <ViewerAction
+    icon="arrow-redo-outline"
+    label="Share"
+    onPress={() => {
+      onShare?.();
+    }}
+  />
+</View>
 
       {/* Main Insights Drawer */}
       <Modal visible={drawerOpen} transparent animationType="none">
@@ -762,7 +778,40 @@ export default function GalleryInsightsSheet({
     </>
   );
 }
-
+function ViewerAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: React.ComponentProps<
+    typeof Ionicons
+  >["name"];
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      hitSlop={7}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.viewerActionButton,
+        pressed && {
+          opacity: 0.6,
+          transform: [
+            { scale: 0.96 },
+          ],
+        },
+      ]}
+    >
+      <Ionicons
+        name={icon}
+        size={19}
+        color="#FFFFFF"
+      />
+    </Pressable>
+  );
+}
 const styles = StyleSheet.create({
   insightsBtn: {
     position: "absolute",
@@ -1385,6 +1434,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  viewerActions: {
+  position: "absolute",
+  zIndex: 30,
+},
+
+viewerActionsPhoto: {
+  right: 16,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+},
+
+viewerActionsReel: {
+  right: 14,
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 10,
+},
+
+viewerActionButton: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+
+  alignItems: "center",
+  justifyContent: "center",
+
+  backgroundColor:
+    "rgba(8,8,11,0.50)",
+
+  borderWidth:
+    StyleSheet.hairlineWidth,
+
+  borderColor:
+    "rgba(255,255,255,0.18)",
+},
 });
 
 function RGBA(color: string, alpha: number) {

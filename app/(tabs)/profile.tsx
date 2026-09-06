@@ -20,7 +20,6 @@
 import PrivateNotesTab from "@/src/components/profile/PrivateNotesTab";
 import ProfileInfoTab from "@/src/components/profile/ProfileInfoTab";
 import AddStoryModal from "@/src/components/story/AddStoryModal";
-import StoryAvatar from "@/src/components/story/StoryAvatar";
 import StoryViewer from "@/src/components/story/StoryViewer";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -47,17 +46,22 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import BuzzStreakCard from "@/src/components/profile/BuzzStreakCard";
 import GallerySection from "@/src/components/profile/Gallery/GallerySection";
 import {
   buildProfileGalleryMedia,
   normalizeImageUrl,
   uniqueImageUrls,
 } from "@/src/components/profile/profileGalleryMedia";
+
 import { API_BASE } from "@/src/config/api";
 import { uploadRomBuzzMedia } from "@/src/config/uploadMedia";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import { syncProfileLookingForToDiscover } from "@/src/features/discover/discoverFilterStorage";
 import { useCachedProfile } from "@/src/features/performance/useCachedProfile";
+import ProfileBuzzStreakCard from "@/src/features/profile/buzzStreak/ProfileBuzzStreakCard";
+import ProfileIdentityHero from "@/src/features/profile/ProfileIdentityHero";
+import ProfileTabBar from "@/src/features/profile/ProfileTabBar";
 import { rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 
 
@@ -281,35 +285,14 @@ async function apiJson(path: string, method: string, body: any) {
     throw new Error(msg);
   }
 
-  return data;
-}
-
-function Pill({
-  active,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.pill,
-        active ? { backgroundColor: RBZ.c3, borderColor: RBZ.c3 } : null,
-      ]}
-    >
-      <Text style={[styles.pillText, active ? { color: RBZ.white } : null]}>{label}</Text>
-    </Pressable>
-  );
+   return data;
 }
 
 function Chip({
   text,
   selected,
   onPress,
+
 }: {
   text: string;
   selected: boolean;
@@ -622,6 +605,8 @@ const VISIBILITY_OPTIONS: {
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const fontsLoaded = useRomBuzzTypography();
+  const { colors } = useRomBuzzTheme();
 
    const {
     post,
@@ -854,6 +839,28 @@ const [form, setForm] = useState<ProfileForm>({
     const n = `${fn} ${ln}`.trim();
     return n || "Your Profile";
   }, [user]);
+
+  const age = useMemo(
+    () => computeAgeFromDob(user?.dob),
+    [user?.dob]
+  );
+
+  const memberSinceLabel = useMemo(() => {
+    if (!user?.createdAt) return "—";
+
+    return new Date(
+      user.createdAt
+    ).toLocaleDateString(undefined, {
+      month: "short",
+      year: "numeric",
+    });
+  }, [user?.createdAt]);
+
+  const profileLocationLabel = useMemo(() => {
+    return String(
+      user?.city || form.city || ""
+    ).trim();
+  }, [user?.city, form.city]);
 
   const avatarUri = useMemo(() => {
     return (
@@ -1691,115 +1698,97 @@ setStoryOpen(true);
     ];
   }, []);
 
-  if (loading) {
+   if (loading || !fontsLoaded) {
     return (
-      <View style={[styles.center, { backgroundColor: RBZ.bg }]}>
-        <ActivityIndicator />
-        <Text style={{ marginTop: 10, color: RBZ.muted }}>Loading profile…</Text>
+      <View
+        style={[
+          styles.center,
+          {
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        <ActivityIndicator
+          color={colors.brand}
+        />
+
+        <Text
+          style={{
+            marginTop: 10,
+            color:
+              colors.textSecondary,
+          }}
+        >
+          Loading profile…
+        </Text>
       </View>
     );
   }
 
   return (
   <ScrollView
-  style={{ flex: 1, backgroundColor: RBZ.bg }}
+  style={{
+    flex: 1,
+    backgroundColor: colors.background,
+  }}
   showsVerticalScrollIndicator={false}
-  refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    />
+  }
   contentContainerStyle={{
     paddingBottom: 90 + insets.bottom,
   }}
     >
 
-      {/* HERO */}
-    <LinearGradient
-  colors={[RBZ.c1, RBZ.c4]}
-  style={[styles.hero, { paddingTop: insets.top + 16 }]}
-  >
-        <View style={styles.heroTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroTitle}>{fullName}</Text>
-            <Text style={styles.heroSub}>
-              Member since{" "}
-              {user?.createdAt
-                ? new Date(user.createdAt).toLocaleDateString()
-                : "—"}
-            </Text>
-          </View>
-        <Pressable
-  onPress={() => router.push("/(tabs)/settings")}
-  style={styles.heroIconBtn}
->
-  <Ionicons name="settings-outline" size={20} color={RBZ.white} />
-</Pressable>
-        </View>
+      <ProfileIdentityHero
+        fullName={fullName}
+        age={age}
+        avatarUri={avatarUri}
+        memberSince={memberSinceLabel}
+        location={profileLocationLabel}
+        safeTop={insets.top}
+        guidance={
+          guidanceList.length > 0
+            ? guidanceList[guidanceIndex]
+            : null
+        }
+        storiesEnabled={
+          STORIES_V1_ENABLED
+        }
+        hasStory={hasStory}
+        onAvatarPress={
+          handleAvatarPress
+        }
+        onChangeAvatar={
+          changeAvatar
+        }
+        onAddStory={() =>
+          setAddStoryOpen(true)
+        }
+        onWallet={() =>
+          router.push(
+            "../wallet" as any
+          )
+        }
+        onSettings={() =>
+          router.push(
+            "/(tabs)/settings"
+          )
+        }
+      />
 
-        <View style={styles.heroCard}>
-<View style={styles.avatarWrap}>
-  {/* Avatar (animated ring when story exists) */}
- <StoryAvatar
-  uri={avatarUri}
-  hasStory={STORIES_V1_ENABLED && hasStory}
-  seen={STORIES_V1_ENABLED ? myStories.every((s) => s.viewed === true) : true}
-  size={86}
-  onPress={handleAvatarPress}
-/>
+          {/* BUZZSTREAK */}
+          <ProfileBuzzStreakCard />
 
-
-  {/* Camera icon → change avatar (only when no story) */}
-  {!hasStory && (
-    <Pressable onPress={changeAvatar} style={styles.cameraBadge} hitSlop={10}>
-      <Ionicons name="camera" size={14} color={RBZ.white} />
-    </Pressable>
-  )}
-</View>
-
-  <View style={{ flex: 1 }}>
-  {guidanceList.length > 0 && (
-  <View style={styles.guidanceInline}>
-    <Text style={styles.guidanceInlineText}>
-      {guidanceList[guidanceIndex].icon}{" "}
-      {guidanceList[guidanceIndex].text}
-    </Text>
-  </View>
-)}
-
-<View style={styles.actionRow}>
- {STORIES_V1_ENABLED && (
-   <Pressable
-    onPress={() => setAddStoryOpen(true)}
-    style={[styles.actionBtn, { backgroundColor: RBZ.c3 }]}
-   >
-    <Ionicons name="add-circle-outline" size={16} color={RBZ.white} />
-    <Text style={styles.actionBtnText}>Add Story</Text>
-   </Pressable>
- )}
-
-
- <Pressable
-  onPress={() => router.push("../wallet" as any)}
-  style={[styles.actionBtn, { backgroundColor: RBZ.c3 }]}
->
-
-    <Ionicons name="wallet-outline" size={16} color={RBZ.white} />
-    <Text style={styles.actionBtnText}>Wallet</Text>
-  </Pressable>
-</View>
-
-</View>
-</View>
-</LinearGradient>
-
-{/* BUZZSTREAK */}
-<BuzzStreakCard />
-
-
-          {/* TABS */}
-          <View style={[styles.section, { paddingTop: 6 }]}>
-        <View style={styles.tabRow}>
-          <Pill active={tab === "gallery"} label="Gallery" onPress={() => setTab("gallery")} />
-           <Pill active={tab === "info"} label="About" onPress={() => setTab("info")} />
-          <Pill active={tab === "notes"} label="Private Notes" onPress={() => setTab("notes")} />
-        </View>
+          {/* PROFILE TABS */}
+          <ProfileTabBar
+            active={tab}
+            onChange={setTab}
+          />
 
       {tab === "info" && (
   <ProfileInfoTab
@@ -1856,10 +1845,9 @@ setStoryOpen(true);
     ORIENTATION_OPTIONS={ORIENTATION_OPTIONS}
     LIKE_CHIP_OPTIONS={LIKE_CHIP_OPTIONS}
     DISLIKE_CHIP_OPTIONS={DISLIKE_CHIP_OPTIONS}
-  />
+   />
 
 )}
- </View>
 
        {/* GALLERY TAB */}
 {tab === "gallery" && (

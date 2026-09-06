@@ -19,6 +19,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import React, { useMemo, useState } from "react";
+
 import {
   Alert,
   Modal,
@@ -31,6 +32,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import GalleryViewerChrome from "@/src/features/profile/gallery/viewer/GalleryViewerChrome";
 import GalleryInsightsSheet from "./GalleryInsightsSheet";
 import GalleryPhotoViewer from "./GalleryPhotoViewer";
 import GalleryVideoViewer from "./GalleryVideoViewer";
@@ -78,6 +80,39 @@ function splitCaption(caption: string) {
   const extra = (parts.slice(1).join("|") || "").trim();
   return { tags, extra };
 }
+function getUserCaption(
+  caption: string
+) {
+  let text = String(
+    caption || ""
+  ).trim();
+
+  if (!text) return "";
+
+  // Remove metadata tags no matter where
+  // they appear in older/newer records.
+  text = text
+    .replace(
+      /\bkind:(photo|reel)\b/gi,
+      ""
+    )
+    .replace(
+      /\bscope:(public|matches|private)\b/gi,
+      ""
+    )
+    .replace(
+      /\bintent:(discover|viewprofile|letsbuzz|firstimpression)\b/gi,
+      ""
+    );
+
+  // Remove separators left behind.
+  text = text
+    .replace(/\s*\|\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return text;
+}
 
 function upsertTag(tags: string, key: string, value: string) {
   const arr = tags ? tags.split(/\s+/).filter(Boolean) : [];
@@ -93,11 +128,33 @@ function buildCaptionWithScope(oldCaption: string, scope: Scope, extraOverride?:
   return finalExtra ? `${nextTags} | ${finalExtra}` : nextTags;
 }
 
-function inferScopeFromCaption(caption: string): Scope {
+function inferScopeFromCaption(
+  caption: string,
+  privacy?: string
+): Scope {
   const t = String(caption || "");
-  if (t.includes("scope:matches")) return "matches";
-  if (t.includes("scope:private")) return "private";
-  if (t.includes("scope:public")) return "public";
+
+  if (t.includes("scope:matches")) {
+    return "matches";
+  }
+
+  if (t.includes("scope:private")) {
+    return "private";
+  }
+
+  if (t.includes("scope:public")) {
+    return "public";
+  }
+
+  // Legacy media may not have scope:* caption tags.
+  if (privacy === "matches") {
+    return "matches";
+  }
+
+  if (privacy === "private") {
+    return "private";
+  }
+
   return "public";
 }
 
@@ -147,9 +204,8 @@ export default function FullscreenViewer({
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
-  const SCREEN_RATIO = 9 / 16;
-  const mediaHeight = height * 0.78;
-  const mediaWidth = Math.min(width, height * SCREEN_RATIO);
+const mediaHeight = height;
+const mediaWidth = width;
 
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -159,23 +215,43 @@ export default function FullscreenViewer({
   const safeItems = useMemo(() => (Array.isArray(items) ? items.filter(Boolean) : []), [items]);
   const safeIndex = Math.max(0, Math.min(index || 0, Math.max(0, safeItems.length - 1)));
   const current = safeItems[safeIndex] || item || null;
+const currentScope =
+  useMemo(
+    () =>
+      inferScopeFromCaption(
+        current?.caption || "",
+        current?.privacy
+      ),
+    [
+      current?.caption,
+      current?.privacy,
+    ]
+  );
 
-  const captionText = useMemo(() => {
-    if (!current?.caption) return "";
-    const parts = String(current.caption).split("|");
-    return (parts.slice(1).join("|") || "").trim();
-  }, [current?.caption]);
+const currentIsVideo =
+  isVideoItem(current);
+const captionText =
+  useMemo(
+    () =>
+      getUserCaption(
+        current?.caption || ""
+      ),
+    [current?.caption]
+  );
 
   const mediaId = useMemo(() => String(current?.id || item?.id || ""), [current?.id, item?.id]);
 
   async function saveCaption(extraText: string) {
     if (!current?.id) return;
 
-    const nextCaption = buildCaptionWithScope(
-      current.caption || "",
-      inferScopeFromCaption(current.caption || ""),
-      extraText
-    );
+  const nextCaption = buildCaptionWithScope(
+  current.caption || "",
+  inferScopeFromCaption(
+    current.caption || "",
+    current.privacy
+  ),
+  extraText
+);
 
     onLocalPatch?.({ ...current, caption: nextCaption });
     await apiJson(`/media/${current.id}`, "PATCH", { caption: nextCaption });
@@ -183,20 +259,67 @@ export default function FullscreenViewer({
     setEditOpen(false);
     setOptionsOpen(false);
   }
+async function shareCurrent() {
+  const shareUrl = String(
+    current?.url ||
+      current?.mediaUrl ||
+      current?.videoUrl ||
+      ""
+  ).trim();
 
-  async function applyVisibility(scope: Scope) {
-    if (!current?.id) return;
+  const parts = [
+    captionText,
+    shareUrl,
+  ].filter(Boolean);
 
-    const nextCaption = buildCaptionWithScope(current.caption || "", scope);
-    const backendPrivacy = scope === "public" ? "public" : "private";
+  const message =
+    parts.join("\n\n") ||
+    "Check this out on RomBuzz";
 
-    onLocalPatch?.({ ...current, caption: nextCaption, privacy: backendPrivacy });
-    await apiJson(`/media/${current.id}`, "PATCH", { caption: nextCaption, privacy: backendPrivacy });
+  try {
+    const { Share } =
+      require("react-native");
 
-    setVisOpen(false);
-    setOptionsOpen(false);
+    await Share.share({
+      message,
+    });
+  } catch (e: any) {
+    Alert.alert(
+      "Share",
+      e?.message ||
+        "Unable to share this media."
+    );
   }
+}
+ async function applyVisibility(scope: Scope) {
+  if (!current?.id) return;
 
+  const nextCaption =
+    buildCaptionWithScope(
+      current.caption || "",
+      scope
+    );
+
+  // Preserve the real 3-state visibility:
+  // public | matches | private
+  onLocalPatch?.({
+    ...current,
+    caption: nextCaption,
+    privacy: scope,
+  });
+
+  await apiJson(
+    `/media/${current.id}`,
+    "PATCH",
+    {
+      caption: nextCaption,
+      privacy: scope,
+    }
+  );
+
+  setVisOpen(false);
+  setOptionsOpen(false);
+}
   async function deleteCurrent() {
     if (!current?.id) return;
 
@@ -234,29 +357,25 @@ export default function FullscreenViewer({
         <View style={styles.wrap}>
           <StatusBar hidden />
 
-          <View style={[styles.headerBar, { paddingTop: insets.top + 6 }]}>
-            <Pressable onPress={onClose} style={styles.headerBtn}>
-              <Ionicons name="close" size={22} color={RBZ.ink} />
-            </Pressable>
-
-            <Pressable onPress={() => setOptionsOpen(true)} style={styles.headerBtn}>
-              <Ionicons name="ellipsis-vertical" size={20} color={RBZ.ink} />
-            </Pressable>
-          </View>
-
           {isVideoItem(current) ? (
             <GalleryVideoViewer {...mediaViewerProps} />
           ) : (
             <GalleryPhotoViewer {...mediaViewerProps} />
           )}
-
-          {captionText ? (
-            <View style={[styles.captionWrap, { bottom: insets.bottom + 40 }]}>
-              <Text style={styles.captionText} numberOfLines={3}>
-                {captionText}
-              </Text>
-            </View>
-          ) : null}
+         <GalleryViewerChrome
+            caption={captionText}
+            scope={currentScope}
+            createdAt={
+              current?.createdAt
+            }
+            isReel={currentIsVideo}
+            topInset={insets.top}
+            bottomInset={insets.bottom}
+            onClose={onClose}
+            onOptions={() =>
+              setOptionsOpen(true)
+            }
+          />
 
            <GalleryInsightsSheet
             ownerId={ownerId}
@@ -264,6 +383,12 @@ export default function FullscreenViewer({
             apiFetch={apiFetch}
             apiJson={apiJson}
             bottomInset={insets.bottom}
+              actionLayout={
+                currentIsVideo
+                  ? "reel"
+                  : "photo"
+              }
+              onShare={shareCurrent}
             deepLinkOpenComments={deepLinkOpenComments}
             deepLinkOpenInsights={deepLinkOpenInsights}
             deepLinkInsightsTab={deepLinkInsightsTab}
@@ -282,8 +407,11 @@ export default function FullscreenViewer({
               <Pressable
                 style={styles.optionRow}
                 onPress={() => {
-                  const { extra } = splitCaption(String(current?.caption || ""));
-                  setEditDraft(extra);
+                setEditDraft(
+                  getUserCaption(
+                    current?.caption || ""
+                  )
+                );
                   setEditOpen(true);
                 }}
               >
