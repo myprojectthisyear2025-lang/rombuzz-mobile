@@ -16,6 +16,21 @@
 
 import MatchCelebrateOverlay from "@/src/components/match/MatchCelebrateOverlay";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
+
+import {
+  useRomBuzzTheme,
+} from "@/src/design/RomBuzzThemeProvider";
+
+import {
+  RBZFont,
+} from "@/src/design/rombuzzTypography";
+
+import MicroBuzzBottomControls from "@/src/features/microbuzz/MicroBuzzBottomControls";
+import MicroBuzzHeader from "@/src/features/microbuzz/MicroBuzzHeader";
+import MicroBuzzIncomingBuzz from "@/src/features/microbuzz/MicroBuzzIncomingBuzz";
+import MicroBuzzPresenceCard from "@/src/features/microbuzz/MicroBuzzPresenceCard";
+import MicroBuzzRadar from "@/src/features/microbuzz/MicroBuzzRadar";
+
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
 import { Ionicons } from "@expo/vector-icons";
@@ -40,7 +55,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width, height } = Dimensions.get("window");
+const { width } =
+  Dimensions.get("window");
 
 // Premium color palette
 const RBZ = {
@@ -201,7 +217,11 @@ export default function MicroBuzzScreen() {
   }, []);
 
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const insets =
+    useSafeAreaInsets();
+
+  const { colors } =
+    useRomBuzzTheme();
 
   // Permissions
   const [camPerm, requestCamPerm] = useCameraPermissions();
@@ -366,7 +386,10 @@ export default function MicroBuzzScreen() {
   const sweepValueRef = useRef(0);
 
   const radarSize = useMemo(() => {
-    return Math.min(width - 56, 320);
+    return Math.min(
+      width - 28,
+      390
+    );
   }, []);
 
   // Setup permissions
@@ -771,584 +794,628 @@ export default function MicroBuzzScreen() {
     };
   }, []);
 
-  // Radar math
-  const orbitMemo = useRef<Record<string, { a0: number; r: number }>>({}).current;
+  // Radar animation values
+  const sweepRotate =
+    sweep.interpolate({
+      inputRange: [0, 1],
+      outputRange: [
+        "0deg",
+        "360deg",
+      ],
+    });
 
-  function getOrbit(u: NearbyUser, index: number, total: number) {
-    if (!orbitMemo[u.id]) {
-      const angle = (index / Math.max(1, total)) * Math.PI * 2;
-      const minR = 0.28;
-      const maxR = 0.92;
-      const r = minR + ((index % 5) / 5) * (maxR - minR);
-      orbitMemo[u.id] = { a0: angle, r };
-    }
-    return orbitMemo[u.id];
-  }
-
-  const sweepRotate = sweep.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
-
-  const pulseScale = pulse.interpolate({
+  const pulseScale =
+    pulse.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [1, 1.08, 1],
   });
 
-  const glowOpacity = glowPulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 0.8],
-  });
+  const glowOpacity =
+    glowPulse.interpolate({
+      inputRange: [0, 1],
+      outputRange: [
+        0.3,
+        0.8,
+      ],
+    });
 
-  const orbScale = orbPulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.06],
-  });
+  const canGoLive =
+    locGranted &&
+    !!coordsRef.current &&
+    !!mySelfieLocalUri &&
+    !busy;
 
-  const canGoLive = locGranted && !!coordsRef.current && !!mySelfieLocalUri && !busy;
-  const liveDuration = liveStartTime 
-    ? Math.floor((Date.now() - liveStartTime.getTime()) / 60000)
+  const liveDuration =
+    liveStartTime
+      ? Math.floor(
+          (Date.now() -
+            liveStartTime.getTime()) /
+            60000
+        )
     : 0;
 
-  // Get dynamic status message
-  const getStatusMessage = () => {
-    if (!isActive) return STATUS_MESSAGES.inactive[statusMessageIndex % 4];
-    if (nearby.length === 0) return STATUS_MESSAGES.empty[statusMessageIndex % 4];
-    return STATUS_MESSAGES.live[statusMessageIndex % 4];
-  };
+    // Get dynamic status message
+  const getStatusMessage =
+    () => {
+      if (!isActive) {
+        return STATUS_MESSAGES
+          .inactive[
+          statusMessageIndex % 4
+        ];
+      }
+
+      if (
+        nearby.length === 0
+      ) {
+        return STATUS_MESSAGES
+          .empty[
+          statusMessageIndex % 4
+        ];
+      }
+
+      return STATUS_MESSAGES
+        .live[
+        statusMessageIndex % 4
+      ];
+    };
+
+  async function openPresenceCamera() {
+    try {
+      Haptics.impactAsync(
+        Haptics
+          .ImpactFeedbackStyle
+          .Light
+      );
+
+      let granted =
+        !!camPerm?.granted;
+
+      if (!granted) {
+        const r =
+          await requestCamPerm();
+
+        granted =
+          r?.granted === true;
+      }
+
+      if (granted) {
+        setCameraOpen(true);
+      } else {
+        setToast({
+          title:
+            "Camera permission needed",
+
+          sub:
+            "Allow camera access to take your presence selfie",
+        });
+
+        setTimeout(
+          () =>
+            setToast(null),
+          2200
+        );
+      }
+    } catch {
+      setToast({
+        title:
+          "Camera failed",
+        sub:
+          "Please try again",
+      });
+
+      setTimeout(
+        () => setToast(null),
+        2200
+      );
+    }
+  }
+
+  function previewOwnSelfie() {
+    if (!mySelfieLocalUri) {
+      return;
+    }
+
+    setPreviewReportUser(
+      null
+    );
+
+    setPreviewImageUri(
+      mySelfieLocalUri
+    );
+
+    setSelfiePreviewOpen(
+      true
+    );
+
+    Haptics.impactAsync(
+      Haptics
+        .ImpactFeedbackStyle
+        .Light
+    );
+  }
+
+  async function handleLocationControl() {
+    Haptics.impactAsync(
+      Haptics
+        .ImpactFeedbackStyle
+        .Light
+    );
+
+    if (
+      isActiveRef.current
+    ) {
+      await tickOnce();
+    } else {
+      await refreshLocation();
+    }
+  }
+
+  async function handleManualRefresh() {
+    Haptics.impactAsync(
+      Haptics
+        .ImpactFeedbackStyle
+        .Light
+    );
+
+    setBusy(
+      "Refreshing…"
+    );
+
+    await tickOnce();
+
+    setBusy("");
+  }
+
+  function previewNearbyUser(
+    user: NearbyUser
+  ) {
+    setPreviewReportUser({
+      id:
+        String(user.id),
+
+      name:
+        String(
+          user.name ||
+            "MicroBuzz user"
+        ),
+
+      selfieUrl:
+        user.selfieUrl,
+
+      distanceMeters:
+        user.distanceMeters,
+
+      source:
+        "mobile_microbuzz_nearby_preview",
+
+      context:
+        "nearby_selfie_preview",
+    });
+
+    setPreviewImageUri(
+      user.selfieUrl
+    );
+
+    setSelfiePreviewOpen(
+      true
+    );
+
+    Haptics.impactAsync(
+      Haptics
+        .ImpactFeedbackStyle
+        .Light
+    );
+  }
+
+  async function ignoreIncomingBuzz() {
+    try {
+      setBusy(
+        "Ignoring…"
+      );
+
+      await apiFetch(
+        "/microbuzz/buzz",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              toId:
+                buzzReq?.fromId,
+
+              confirm:
+                "ignore",
+            }),
+        }
+      );
+    } catch {}
+
+    setBusy("");
+    setBuzzReq(null);
+  }
+
+  async function acceptIncomingBuzz() {
+    try {
+      setBusy(
+        "Accepting…"
+      );
+
+      await apiFetch(
+        "/microbuzz/buzz",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              toId:
+                buzzReq?.fromId,
+
+              confirm: true,
+            }),
+        }
+      );
+    } catch {}
+
+    setBusy("");
+    setBuzzReq(null);
+  }
 
   return (
-    <View style={[styles.safe, { paddingBottom: insets.bottom }]}>
-      <View style={styles.container}>
-        {/* Premium Header */}
-        <LinearGradient
-          colors={[RBZ.c1, RBZ.c4]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.header, { paddingTop: insets.top + 8 }]
+    <View
+      style={[
+        styles.safe,
+        {
+          paddingBottom:
+            insets.bottom,
+
+          backgroundColor:
+            colors.background,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        <MicroBuzzHeader
+          topInset={
+            insets.top
+          }
+          statusMessage={
+            getStatusMessage()
+          }
+          locationGranted={
+            locGranted
+          }
+          cameraGranted={
+            !!camPerm?.granted
+          }
+          isActive={
+            isActive
+          }
+          onBack={() =>
+            router.back()
+          }
+          onLocationPress={
+            handleLocationControl
+          }
+          onCameraPress={
+            openPresenceCamera
+          }
+        />
+
+        <Animated.ScrollView
+          style={[
+            styles.body,
+            {
+              backgroundColor:
+                colors.background,
+            },
+          ]}
+          contentContainerStyle={
+            styles.redesignContent
+          }
+          showsVerticalScrollIndicator={
+            false
           }
         >
-          <Pressable 
-            onPress={() => router.back()} 
-            style={styles.headerBtn}
-            android_ripple={{ color: RBZ.glass2, borderless: true }}
+          <MicroBuzzPresenceCard
+            selfieUri={
+              mySelfieLocalUri
+            }
+            isActive={
+              isActive
+            }
+            liveDuration={
+              liveDuration
+            }
+            radiusMeters={Math.round(
+              RADIUS_KM *
+                1000
+            )}
+            canGoLive={
+              canGoLive
+            }
+            busy={!!busy}
+            onSelfiePress={
+              openPresenceCamera
+            }
+            onSelfieLongPress={
+              previewOwnSelfie
+            }
+            onGoLive={
+              activateMicroBuzz
+            }
+            onStop={
+              deactivateMicroBuzz
+            }
+          />
+
+          <View
+            style={
+              styles.redesignRadarArea
+            }
           >
-            <Ionicons name="chevron-back" size={22} color={RBZ.white} />
-          </Pressable>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.title}>MicroBuzz</Text>
-            <Text style={styles.subtitle}>{getStatusMessage()}</Text>
-          </View>
-
-          <Pressable
-            onPress={async () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              if (isActiveRef.current) {
-                await tickOnce();
-              } else {
-                await refreshLocation();
+            <MicroBuzzRadar
+              size={
+                radarSize
               }
-            }}
-            style={styles.headerBtn}
-            android_ripple={{ color: RBZ.glass2, borderless: true }}
-          >
-            <Ionicons 
-              name={isActive ? "radio" : "locate"} 
-              size={20} 
-              color={RBZ.white} 
+              nearby={
+                nearby
+              }
+              selfieUri={
+                mySelfieLocalUri
+              }
+              isActive={
+                isActive
+              }
+              sweepRotate={
+                sweepRotate
+              }
+              pulseScale={
+                pulseScale
+              }
+              glowOpacity={
+                glowOpacity
+              }
+              sweepValue={
+                sweepValueRef.current
+              }
+              metersLabel={
+                metersLabel
+              }
+              onBuzz={
+                handleBuzz
+              }
+              onPreview={
+                previewNearbyUser
+              }
             />
-          </Pressable>
-        </LinearGradient>
-
-        {/* Main Content */}
-        <Animated.ScrollView
-          style={styles.body}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Presence Orb - Redesigned */}
-          <View style={styles.presenceCard}>
-            <View style={styles.presenceRow}>
-              <Pressable
-                onPress={async () => {
-                  try {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-                    // Fast path: only check/request camera permission
-                    let granted = !!camPerm?.granted;
-                    if (!granted) {
-                      const r = await requestCamPerm();
-                      granted = r?.granted === true;
-                    }
-
-                    if (granted) {
-                      setCameraOpen(true);
-                    } else {
-                      setToast({
-                        title: "Camera permission needed",
-                        sub: "Allow camera access to take your presence selfie",
-                      });
-                      setTimeout(() => setToast(null), 2200);
-                    }
-                  } catch {
-                    setToast({ title: "Camera failed", sub: "Please try again" });
-                    setTimeout(() => setToast(null), 2200);
-                  }
-                }}
-                hitSlop={12}
-                 onLongPress={() => {
-                  if (!mySelfieLocalUri) return;
-                  setPreviewReportUser(null);
-                  setPreviewImageUri(mySelfieLocalUri);
-                  setSelfiePreviewOpen(true);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-                delayLongPress={300}
-                style={styles.presenceOrbContainer}
-              >
-                <Animated.View style={[
-                  styles.presenceOrbGlow,
-                  isActive && { transform: [{ scale: orbScale }] },
-                  { opacity: isActive ? glowOpacity : 1 }
-                ]}>
-                  <LinearGradient
-                    colors={isActive ? [RBZ.c2, RBZ.c5] : [RBZ.glass, RBZ.glass2]}
-                    style={styles.presenceOrbGradient}
-                  >
-                    {mySelfieLocalUri ? (
-                      <Image
-                        source={{ uri: mySelfieLocalUri }}
-                        style={[styles.presenceImage, styles.unmirror]}
-                      />
-                    ) : (
-                      <View style={styles.presenceEmpty}>
-                          <Ionicons name="camera" size={22} color={RBZ.white} />
-                          <Text style={styles.presenceEmptyText}>Add</Text>
-                        </View>
-                    )}
-                  </LinearGradient>
-                </Animated.View>
-
-                {isActive && (
-                  <View style={styles.liveBadge}>
-                    <LinearGradient
-                      colors={[RBZ.c2, RBZ.c3]}
-                      style={styles.liveBadgeInner}
-                    >
-                      <Text style={styles.liveBadgeText}>LIVE</Text>
-                    </LinearGradient>
-                  </View>
-                )}
-              </Pressable>
-
-              <View style={styles.presenceInfo}>
-                <Text style={styles.presenceTitle}>
-                  {isActive ? "You're Visible" : "Appear Nearby"}
-                </Text>
-                
-                <View style={styles.presenceMetrics}>
-                  <View style={styles.metricItem}>
-                    <Ionicons name="time" size={14} color={RBZ.gray} />
-                    <Text style={styles.metricText}>
-                      {isActive ? `${liveDuration}m` : "—"}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.metricDivider} />
-                  
-                  <View style={styles.metricItem}>
-                    <Ionicons name="people" size={14} color={RBZ.gray} />
-                    <Text style={styles.metricText}>
-                      {isActive ? nearby.length : "—"}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.metricDivider} />
-                  
-                  <View style={styles.metricItem}>
-                    <Ionicons name="navigate" size={14} color={RBZ.gray} />
-                    <Text style={styles.metricText}>
-                      {Math.round(RADIUS_KM * 1000)}m
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.presenceBar}>
-                  <LinearGradient
-                    colors={[RBZ.c2, RBZ.c4]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[
-                      styles.presenceBarFill,
-                      { width: isActive ? '100%' : '0%' }
-                    ]}
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Action Row */}
-            <View style={styles.actionRow}>
-              {!isActive ? (
-                <Pressable
-                  disabled={!canGoLive}
-                  onPress={activateMicroBuzz}
-                  style={[styles.primaryBtn, !canGoLive && styles.primaryBtnDisabled]}
-                  android_ripple={{ color: RBZ.glass2 }}
-                >
-                  <LinearGradient
-                    colors={canGoLive ? [RBZ.c2, RBZ.c4] : [RBZ.gray, RBZ.gray]}
-                    style={styles.primaryBtnGradient}
-                  >
-                    {busy ? (
-                      <ActivityIndicator color={RBZ.white} />
-                    ) : (
-                      <>
-                        <Ionicons name="flash" size={20} color={RBZ.white} />
-                        <Text style={styles.primaryBtnText}>Go Live</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </Pressable>
-              ) : (
-                <Pressable
-                  onPress={deactivateMicroBuzz}
-                  style={styles.stopBtn}
-                  android_ripple={{ color: RBZ.glass2 }}
-                >
-                  <LinearGradient
-                    colors={[RBZ.ink, RBZ.inkLight]}
-                    style={styles.stopBtnGradient}
-                  >
-                    {busy ? (
-                      <ActivityIndicator color={RBZ.white} />
-                    ) : (
-                      <>
-                        <Ionicons name="power" size={20} color={RBZ.white} />
-                        <Text style={styles.stopBtnText}>Stop</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </Pressable>
-              )}
-
-              <Pressable
-                onPress={async () => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setBusy("Refreshing…");
-                  await tickOnce();
-                  setBusy("");
-                }}
-                style={styles.secondaryBtn}
-                android_ripple={{ color: RBZ.glass }}
-              >
-                <Ionicons name="refresh" size={18} color={RBZ.c1} />
-              </Pressable>
-            </View>
           </View>
 
-          {/* Tip */}
-          <View style={styles.tipContainer}>
-            <Ionicons name="sparkles" size={14} color={RBZ.c2} />
-            <Text style={styles.tipText}>{TIPS[tipIndex]}</Text>
-          </View>
-
-          {/* Proximity Ring - Redesigned Radar */}
-          <View style={styles.radarWrapper}>
-            <LinearGradient
-              colors={[RBZ.inkLight, RBZ.ink]}
-              style={[styles.radarCard, { width: radarSize + 32 }]}
+          {isActive &&
+          nearby.length ===
+            0 ? (
+            <View
+              style={
+                styles.redesignEmptyState
+              }
             >
-              <View style={[styles.radar, { width: radarSize, height: radarSize }]}>
-                {/* Particle background */}
-                <View style={styles.particleField}>
-                  {[...Array(12)].map((_, i) => (
-                    <Animated.View
-                      key={i}
-                      style={[
-                        styles.particle,
-                        {
-                          left: `${20 + (i * 7) % 60}%`,
-                          top: `${15 + (i * 13) % 70}%`,
-                          opacity: pulse.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.1, 0.3],
-                          }),
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
+              <Text
+                style={[
+                  styles.redesignEmptyTitle,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                You may find a match
+              </Text>
 
-                {/* Glow rings */}
-                <View style={[styles.radarRing, styles.ringOuter]} />
-                <View style={[styles.radarRing, styles.ringMiddle]} />
-                <View style={[styles.radarRing, styles.ringInner]} />
-
-                {/* Heat gradient */}
-                <LinearGradient
-                  colors={[
-                    'rgba(177,18,60,0)',
-                    'rgba(181,23,158,0.1)',
-                    'rgba(216,52,95,0.2)',
-                  ]}
-                  style={styles.heatGradient}
-                />
-
-                {/* Sweep line */}
-                <Animated.View
-                  style={[
-                    styles.sweep,
-                    { transform: [{ rotate: sweepRotate }] },
-                  ]}
-                >
-                  <LinearGradient
-                    colors={['rgba(233,72,106,0.4)', 'transparent']}
-                    style={styles.sweepBeam}
-                  />
-                </Animated.View>
-
-                {/* Center pulse */}
-                <Animated.View style={[
-                  styles.centerPulse,
-                  { transform: [{ scale: pulseScale }] }
-                ]}>
-                  <LinearGradient
-                    colors={[RBZ.c2, RBZ.c4]}
-                    style={styles.centerCore}
-                  >
-                    <Ionicons name="flash" size={24} color={RBZ.white} />
-                  </LinearGradient>
-                </Animated.View>
-
-                {/* User capsules */}
-                             {nearby.slice(0, 8).map((u, i) => {
-                  const { a0, r } = getOrbit(u, i, nearby.length);
-                  const t = sweepValueRef.current;
-                  const angle = a0 + t * Math.PI * 2;
-                  const radius = (radarSize / 2) * r;
-                  const x = radarSize / 2 + Math.cos(angle) * radius;
-                  const y = radarSize / 2 + Math.sin(angle) * radius;
-
-                  return (
-                    <Pressable
-                      key={u.id}
-                      onPress={() => handleBuzz(u.id)}
-                                        onLongPress={() => {
-                        setPreviewReportUser({
-                          id: String(u.id),
-                          name: String(u.name || "MicroBuzz user"),
-                          selfieUrl: u.selfieUrl,
-                          distanceMeters: u.distanceMeters,
-                          source: "mobile_microbuzz_nearby_preview",
-                          context: "nearby_selfie_preview",
-                        });
-                        setPreviewImageUri(u.selfieUrl);
-                        setSelfiePreviewOpen(true);
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      }}
-                      style={[styles.userCapsule, { left: x - 24, top: y - 24 }]}
-                    >
-                      <Animated.View style={[
-                        styles.userGlow,
-                        { opacity: glowOpacity }
-                      ]}>
-                        <Image source={{ uri: u.selfieUrl }} style={styles.userImage} />
-                      </Animated.View>
-                      
-                      {u.distanceMeters && (
-                        <View style={styles.userDistance}>
-                          <Text style={styles.userDistanceText}>
-                            {metersLabel(u.distanceMeters)}
-                          </Text>
-                        </View>
-                      )}
-                      
-                      <View style={styles.userActiveDot} />
-                    </Pressable>
-                  );
-                })}
-
-                {/* Lock overlay when inactive */}
-                {!isActive && (
-                  <View style={styles.radarLock}>
-                    <LinearGradient
-                      colors={['rgba(11,11,16,0.7)', 'rgba(26,21,37,0.8)']}
-                      style={styles.radarLockInner}
-                    >
-                      <View style={styles.radarLockBadge}>
-                        <Ionicons name="lock-closed" size={16} color={RBZ.white} />
-                        <Text style={styles.radarLockText}>Go Live to scan</Text>
-                      </View>
-                    </LinearGradient>
-                  </View>
-                )}
-              </View>
-
-              {/* Radar footer */}
-              <View style={styles.radarFooter}>
-                <View style={styles.footerItem}>
-                  <Text style={styles.footerValue}>
-                    {isActive ? nearby.length : '—'}
-                  </Text>
-                  <Text style={styles.footerLabel}>nearby</Text>
-                </View>
-                
-                <View style={styles.footerDivider} />
-                
-                <View style={styles.footerItem}>
-                  <Text style={styles.footerValue}>
-                    {isActive ? `${liveDuration}m` : '—'}
-                  </Text>
-                  <Text style={styles.footerLabel}>live</Text>
-                </View>
-                
-                <View style={styles.footerDivider} />
-                
-                <View style={styles.footerItem}>
-                  <Text style={styles.footerValue}>
-                    {Math.round(RADIUS_KM * 1000)}m
-                  </Text>
-                  <Text style={styles.footerLabel}>radius</Text>
-                </View>
-              </View>
-            </LinearGradient>
-          </View>
-
-          {/* Empty state poetic message */}
-          {isActive && nearby.length === 0 && (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>quiet frequency</Text>
-              <Text style={styles.emptySubtitle}>
-                no one else live right now.{"\n"}
-                you're the signal in the dark.
+              <Text
+                style={[
+                  styles.redesignEmptySubtitle,
+                  {
+                    color:
+                      colors.textMuted,
+                  },
+                ]}
+              >
+                No one else live
+                right now. You're
+                the signal in the
+                dark.
               </Text>
             </View>
-          )}
+          ) : null}
+
+          <MicroBuzzBottomControls
+            tip={
+              TIPS[
+                tipIndex
+              ]
+            }
+            nearbyCount={
+              nearby.length
+            }
+            isActive={
+              isActive
+            }
+            onRefresh={
+              handleManualRefresh
+            }
+          />
         </Animated.ScrollView>
 
-        {/* Busy overlay */}
-        {busy && (
-          <View style={styles.busyOverlay}>
-            <ActivityIndicator color={RBZ.c2} />
-            <Text style={styles.busyText}>{busy}</Text>
-          </View>
-        )}
+        {busy ? (
+          <View
+            style={[
+              styles.busyOverlay,
+              {
+                backgroundColor:
+                  colors.surface,
 
-        {/* Toast */}
-        {toast && (
-          <Animated.View style={styles.toast}>
-            <Text style={styles.toastTitle}>{toast.title}</Text>
-            {toast.sub && <Text style={styles.toastSub}>{toast.sub}</Text>}
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
+            <ActivityIndicator
+              color={
+                colors.brand
+              }
+            />
+
+            <Text
+              style={[
+                styles.busyText,
+                {
+                  color:
+                    colors.text,
+                },
+              ]}
+            >
+              {busy}
+            </Text>
+          </View>
+        ) : null}
+
+        {toast ? (
+          <Animated.View
+            style={[
+              styles.toast,
+              {
+                backgroundColor:
+                  colors.surfaceRaised,
+
+                borderColor:
+                  colors.borderStrong,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.toastTitle,
+                {
+                  color:
+                    colors.text,
+                },
+              ]}
+            >
+              {toast.title}
+            </Text>
+
+            {toast.sub ? (
+              <Text
+                style={[
+                  styles.toastSub,
+                  {
+                    color:
+                      colors.textSecondary,
+                  },
+                ]}
+              >
+                {toast.sub}
+              </Text>
+            ) : null}
           </Animated.View>
-        )}
+        ) : null}
 
-        {/* Modals (preserved with premium styling) */}
-        
-        {/* Buzz Request Modal */}
-        <Modal visible={!!buzzReq} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.buzzModal}>
-              <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.buzzHeader}>
-                <View>
-                  <Text style={styles.buzzTitle}>⚡ Incoming Buzz</Text>
-                  <Text style={styles.buzzSubtitle}>someone's interested</Text>
-                </View>
-                <Pressable
-                  onPress={async () => {
-                    try {
-                      setBusy("Ignoring…");
-                      await apiFetch("/microbuzz/buzz", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          toId: buzzReq?.fromId,
-                          confirm: "ignore",
-                        }),
-                      });
-                    } catch {}
-                    setBusy("");
-                    setBuzzReq(null);
-                  }}
-                  style={styles.ignoreBtn}
-                >
-                  <Ionicons name="close" size={18} color={RBZ.white} />
-                </Pressable>
-              </LinearGradient>
+        <MicroBuzzIncomingBuzz
+          visible={
+            !!buzzReq
+          }
+          selfieUrl={
+            buzzReq?.selfieUrl
+          }
+          name={
+            buzzRequestName(
+              buzzReq
+            )
+          }
+          age={
+            buzzReq?.dob
+              ? getAge(
+                  buzzReq.dob
+                )
+              : ""
+          }
+          onAvatarPress={() => {
+            if (
+              !buzzReq?.selfieUrl
+            ) {
+              return;
+            }
 
-              <View style={styles.buzzContent}>
-                             <Pressable
-                  onPress={() => {
-                    if (!buzzReq?.selfieUrl) return;
-                    setPreviewReportUser({
-                      id: String(buzzReq.fromId || ""),
-                      name: buzzRequestName(buzzReq),
-                      selfieUrl: buzzReq.selfieUrl,
-                      source: "mobile_microbuzz_incoming_buzz",
-                      context: "incoming_buzz_request",
-                    });
-                    setPreviewImageUri(buzzReq.selfieUrl);
-                    setSelfiePreviewOpen(true);
-                  }}
-                >
-                  <Image
-                    source={{ uri: buzzReq?.selfieUrl }}
-                    style={styles.buzzAvatar}
-                  />
-                </Pressable>
+            setPreviewReportUser({
+              id:
+                String(
+                  buzzReq.fromId ||
+                    ""
+                ),
 
-                <Text style={styles.buzzName}>
-                  {buzzReq?.firstName} {buzzReq?.lastName}
-                  {buzzReq?.dob && `, ${getAge(buzzReq.dob)}`}
-                </Text>
+              name:
+                buzzRequestName(
+                  buzzReq
+                ),
 
-                <View style={styles.buzzActions}>
-                  <Pressable
-                    onPress={async () => {
-                      try {
-                        setBusy("Accepting…");
-                        await apiFetch("/microbuzz/buzz", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ toId: buzzReq?.fromId, confirm: true }),
-                        });
-                      } catch {}
-                      setBusy("");
-                      setBuzzReq(null);
-                    }}
-                    style={styles.acceptAction}
-                  >
-                    <LinearGradient colors={[RBZ.c2, RBZ.c4]} style={styles.actionGradient}>
-                      <Ionicons name="heart" size={18} color={RBZ.white} />
-                      <Text style={styles.actionText}>Accept</Text>
-                    </LinearGradient>
-                  </Pressable>
+              selfieUrl:
+                buzzReq.selfieUrl,
 
-                             <Pressable
-                    onPress={() => setBuzzReq(null)}
-                    style={styles.declineAction}
-                  >
-                    <Text style={styles.declineText}>Not now</Text>
-                  </Pressable>
+              source:
+                "mobile_microbuzz_incoming_buzz",
 
-                  <Pressable
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setIncomingReportMenuOpen(true);
-                    }}
-                    style={styles.buzzMoreAction}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="ellipsis-vertical" size={20} color={RBZ.ink} />
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          </View>
-        </Modal>
+              context:
+                "incoming_buzz_request",
+            });
 
-           {/* Incoming Buzz Report Menu */}
+            setPreviewImageUri(
+              buzzReq.selfieUrl
+            );
+
+            setSelfiePreviewOpen(
+              true
+            );
+          }}
+          onAccept={
+            acceptIncomingBuzz
+          }
+          onNotNow={() =>
+            setBuzzReq(null)
+          }
+          onIgnore={
+            ignoreIncomingBuzz
+          }
+          onReport={() => {
+            Haptics.impactAsync(
+              Haptics
+                .ImpactFeedbackStyle
+                .Light
+            );
+
+            setIncomingReportMenuOpen(
+              true
+            );
+          }}
+        />
+
+        {/* Incoming Buzz Report Menu */}
         <Modal
           visible={incomingReportMenuOpen}
           transparent
@@ -1356,10 +1423,32 @@ export default function MicroBuzzScreen() {
           onRequestClose={() => setIncomingReportMenuOpen(false)}
         >
           <Pressable
-            style={styles.microReportMenuOverlay}
-            onPress={() => setIncomingReportMenuOpen(false)}
+            style={[
+              styles.microReportMenuOverlay,
+              {
+                backgroundColor:
+                  colors.overlay,
+              },
+            ]}
+            onPress={() =>
+              setIncomingReportMenuOpen(
+                false
+              )
+            }
           >
-            <Pressable style={styles.microReportMenuCard} onPress={() => {}}>
+            <Pressable
+              style={[
+                styles.microReportMenuCard,
+                {
+                  backgroundColor:
+                    colors.surfaceRaised,
+
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+              onPress={() => {}}
+            >
               <Pressable
                 style={styles.microReportMenuItem}
                 onPress={() => {
@@ -1377,13 +1466,50 @@ export default function MicroBuzzScreen() {
                   setReportSheetOpen(true);
                 }}
               >
-                <View style={styles.microReportIconBubble}>
-                  <Ionicons name="flag-outline" size={18} color={RBZ.c2} />
+                <View
+                  style={[
+                    styles.microReportIconBubble,
+                    {
+                      backgroundColor:
+                        colors.brandSoft,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="flag-outline"
+                    size={18}
+                    color={
+                      colors.brand
+                    }
+                  />
                 </View>
 
-                <View style={styles.microReportTextWrap}>
-                  <Text style={styles.microReportTitle}>Report</Text>
-                  <Text style={styles.microReportSubtitle}>
+                <View
+                  style={
+                    styles.microReportTextWrap
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.microReportTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Report
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.microReportSubtitle,
+                      {
+                        color:
+                          colors.textSecondary,
+                      },
+                    ]}
+                  >
                     Report this incoming buzz
                   </Text>
                 </View>
@@ -1518,26 +1644,140 @@ export default function MicroBuzzScreen() {
         </Modal>
 
         {/* Camera Modal */}
-        <Modal visible={cameraOpen} transparent animationType="slide">
-          <View style={styles.cameraOverlay}>
-            <View style={[styles.cameraSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
-              <View style={styles.cameraHeader}>
-                <Text style={styles.cameraTitle}>Your Presence Selfie</Text>
-                <Pressable 
-                  onPress={() => setCameraOpen(false)}
-                  style={styles.cameraClose}
+        <Modal
+          visible={cameraOpen}
+          transparent
+          animationType="slide"
+        >
+          <View
+            style={[
+              styles.cameraOverlay,
+              {
+                backgroundColor:
+                  colors.overlay,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.cameraSheet,
+                {
+                  backgroundColor:
+                    colors.surface,
+
+                  paddingBottom:
+                    Math.max(
+                      insets.bottom,
+                      18
+                    ),
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.cameraHeader,
+                  {
+                    backgroundColor:
+                      colors.surfaceRaised,
+
+                    borderBottomColor:
+                      colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.cameraTitle,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
                 >
-                  <Ionicons name="close" size={22} color={RBZ.white} />
+                  Your Presence Selfie
+                </Text>
+
+                <Pressable
+                  onPress={() =>
+                    setCameraOpen(
+                      false
+                    )
+                  }
+                  style={[
+                    styles.cameraClose,
+                    {
+                      backgroundColor:
+                        colors.surfaceMuted,
+
+                      borderColor:
+                        colors.border,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="close"
+                    size={22}
+                    color={
+                      colors.icon
+                    }
+                  />
                 </Pressable>
               </View>
 
               {!camPerm?.granted ? (
-                <View style={styles.permissionContainer}>
-                  <Ionicons name="camera-outline" size={48} color={RBZ.c2} />
-                  <Text style={styles.permissionText}>Camera access needed</Text>
-                  <Pressable onPress={requestCamPerm} style={styles.permissionBtn}>
-                    <LinearGradient colors={[RBZ.c2, RBZ.c4]} style={styles.permissionGradient}>
-                      <Text style={styles.permissionBtnText}>Grant Access</Text>
+                <View
+                  style={
+                    styles.permissionContainer
+                  }
+                >
+                  <Ionicons
+                    name="camera-outline"
+                    size={48}
+                    color={
+                      colors.brand
+                    }
+                  />
+
+                  <Text
+                    style={[
+                      styles.permissionText,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Camera access needed
+                  </Text>
+
+                  <Pressable
+                    onPress={
+                      requestCamPerm
+                    }
+                    style={
+                      styles.permissionBtn
+                    }
+                  >
+                    <LinearGradient
+                      colors={[
+                        colors.brand,
+                        colors.brand,
+                      ]}
+                      style={
+                        styles.permissionGradient
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.permissionBtnText,
+                          {
+                            color:
+                              colors.white,
+                          },
+                        ]}
+                      >
+                        Grant Access
+                      </Text>
                     </LinearGradient>
                   </Pressable>
                 </View>
@@ -1570,10 +1810,26 @@ export default function MicroBuzzScreen() {
                           }
                         } catch {}
                       }}
-                      style={styles.captureBtn}
+                      style={
+                        styles.captureBtn
+                      }
                     >
-                      <LinearGradient colors={[RBZ.c2, RBZ.c4]} style={styles.captureGradient}>
-                        <Ionicons name="radio-button-on" size={30} color={RBZ.white} />
+                      <LinearGradient
+                        colors={[
+                          colors.brand,
+                          colors.brand,
+                        ]}
+                        style={
+                          styles.captureGradient
+                        }
+                      >
+                        <Ionicons
+                          name="radio-button-on"
+                          size={30}
+                          color={
+                            colors.white
+                          }
+                        />
                       </LinearGradient>
                     </Pressable>
                   </View>
@@ -1654,8 +1910,40 @@ const styles = StyleSheet.create({
   // Body
   body: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20,
+  },
+
+  redesignContent: {
+    flexGrow: 1,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
+
+  redesignRadarArea: {
+    flexGrow: 1,
+    marginTop: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  redesignEmptyState: {
+    alignItems: "center",
+    paddingHorizontal: 28,
+    paddingTop: 6,
+  },
+
+  redesignEmptyTitle: {
+    fontSize: 13,
+    fontFamily:
+      RBZFont.bold,
+  },
+
+  redesignEmptySubtitle: {
+    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "center",
+    fontFamily:
+      RBZFont.medium,
   },
 
   // Presence Card

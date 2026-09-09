@@ -1,20 +1,7 @@
 /**
- * ============================================================================
- * 📁 File: app/(tabs)/profile.tsx
- * 🎯 RomBuzz Mobile — Profile (FULL: Web parity, minus Social Stats)
- *
- * Uses backend (NO backend changes):
- *  - GET  /profile/full         → load user + media + posts
- *  - PUT  /users/me             → update profile fields
- *  - POST /upload-media         → save gallery items (caption buckets)
- *  - POST /posts                → create MyBuzz post (optional)
- *  - PATCH /account/deactivate  → deactivate
- *  - DELETE /account/delete     → delete
- *
- * Notes:
- *  - Social Stats excluded (you have a separate tab already)
- *  - Uses Cloudinary unsigned upload (same as web)
- * ============================================================================
+ * Path: app/(tabs)/profile.tsx
+ * Purpose: Owner Profile orchestration shell for profile data, media, tabs, saves, and edit flows.
+ * Used by: Expo Router as the main RomBuzz Profile tab.
  */
 
 import PrivateNotesTab from "@/src/components/profile/PrivateNotesTab";
@@ -25,7 +12,6 @@ import StoryViewer from "@/src/components/story/StoryViewer";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
-import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 
@@ -41,7 +27,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -60,6 +45,11 @@ import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import { syncProfileLookingForToDiscover } from "@/src/features/discover/discoverFilterStorage";
 import { useCachedProfile } from "@/src/features/performance/useCachedProfile";
 import ProfileBuzzStreakCard from "@/src/features/profile/buzzStreak/ProfileBuzzStreakCard";
+import ProfileEditScreen from "@/src/features/profile/edit/ProfileEditScreen";
+import type {
+  ProfileEditForm,
+  ProfileEditTarget,
+} from "@/src/features/profile/edit/profileEditTypes";
 import ProfileIdentityHero from "@/src/features/profile/ProfileIdentityHero";
 import ProfileTabBar from "@/src/features/profile/ProfileTabBar";
 import { rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
@@ -91,7 +81,6 @@ const RBZ = {
 // v1 release: keep Stories implemented, but hide them from users.
 const STORIES_V1_ENABLED = false;
 
-type Audience = "public" | "matches" | "hidden";
 function buildGuidanceList(user: any) {
   if (!user) return [];
   const list: { icon: string; text: string }[] = [];
@@ -521,87 +510,6 @@ function computeAgeFromDob(dob?: string) {
   return age;
 }
 
-type ProfileForm = {
-  // Identity
-  firstName: string;
-  lastName: string;
-  gender: string;
-  genderVisibility: string;
-  pronouns: string;
-  orientation: string;
-  orientationVisibility: string;
-  dob: string;
-
-  // Location
-  city: string;
-  country: string;
-  hometown: string;
-  latitude: number | null;
-  longitude: number | null;
-  distanceVisibility: string;
-  travelMode: boolean;
-  travelVibes: string[];
-
-  // About
-  bio: string;
-  voiceUrl?: string;
-  vibeTags: string[];
-
-  // Dating
-  lookingFor: string;
-  relationshipStyle: string;
-  interestedIn: string[];
-
-  // Body
-  height: string;
-  bodyType: string;
-  fitnessLevel: string;
-
-  // Lifestyle
-  smoking: string;
-  drinking: string;
-  workoutFrequency: string;
-  diet: string;
-  sleepSchedule: string;
-
-  // Background
-  educationLevel: string;
-  school: string;
-  jobTitle: string;
-  company: string;
-  languages: string[];
-
-  // Beliefs
-  religion: string;
-  politicalViews: string;
-  zodiac: string;
-
-  // Interests
-  interests: string[];
-  hobbies: string[];
-  favoriteMusic: string[];
-  favoriteMovies: string[];
-  travelStyle: string;
-  petsPreference: string;
-
-  // Multi-value profile preferences.
-  // Backend may still return legacy CSV strings, but mobile keeps arrays.
-  likes: string[];
-  dislikes: string[];
-  favorites: any[];
-  visibilityMode: Audience;
-  fieldVisibility: Record<string, Audience>;
-};
-
-const VISIBILITY_OPTIONS: {
-  label: string;
-  value: Audience;
-}[] = [
-  { label: "Public", value: "public" },
-  { label: "Matches only", value: "matches" },
-  { label: "Hidden", value: "hidden" },
-];
-
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -649,15 +557,7 @@ const [loading, setLoading] = useState(false);
 
 
   // Modals
-  type EditTarget =
-  | "bio"
-  | "interests"
-  | "voice"
-  | "info"
-  | "all"
-  | null;
-
-const [editTarget, setEditTarget] = useState<EditTarget>(null);
+const [editTarget, setEditTarget] = useState<ProfileEditTarget>(null);
 
 // Avatar fullscreen viewer
 const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
@@ -747,13 +647,8 @@ useEffect(() => {
   }
 }, [deepLinkTargetId]);
 
-const showBioOnly = editTarget === "bio";
-const showInterestsOnly = editTarget === "interests";
-const showInfoOnly = editTarget === "info";
-const showAll = editTarget === "all";
-
   // Edit form (subset of web, but supports all core fields + favorites voice)
-const [form, setForm] = useState<ProfileForm>({
+const [form, setForm] = useState<ProfileEditForm>({
   // Identity
   firstName: "",
   lastName: "",
@@ -1461,7 +1356,7 @@ setStoryOpen(true);
 
       setVoiceUrl(displayVoice);
       setVoiceDurationSec(durationSec);
-      setForm((p: ProfileForm) => ({
+      setForm((p: ProfileEditForm) => ({
         ...p,
         favorites: nextFavorites,
       }));
@@ -1527,7 +1422,7 @@ setStoryOpen(true);
 
       setVoiceUrl("");
       setVoiceDurationSec(0);
-      setForm((p: ProfileForm) => ({
+      setForm((p: ProfileEditForm) => ({
         ...p,
         favorites: Array.isArray(deleted?.favorites) ? deleted.favorites : nextFavorites,
       }));
@@ -1923,255 +1818,42 @@ setStoryOpen(true);
   </View>
 </Modal>
 
-      {/* EDIT MODAL */}
-<Modal
-  visible={editTarget !== null}
-  animationType="slide"
-  onRequestClose={() => setEditTarget(null)}
->
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: RBZ.bg,
-              paddingTop: insets.top,
-              paddingBottom: insets.bottom,
-            }}
-          >
-          <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.modalHeader}>
-<Pressable onPress={() => setEditTarget(null)} style={styles.modalClose}>
-              <Ionicons name="close" size={22} color={RBZ.white} />
-            </Pressable>
-<Text style={styles.modalTitle}>
-  {editTarget === "bio" && "Edit Bio"}
-  {editTarget === "interests" && "Edit Interests & Hobbies"}
-  {editTarget === "info" && "Edit Info"}
-  {editTarget === "all" && "Edit Profile"}
-</Text>
-           {editTarget && (
-  <Pressable onPress={saveProfile} style={styles.modalSave}>
-    <Text style={{ color: RBZ.white, fontWeight: "800" }}>Save</Text>
-  </Pressable>
-)}
+      {/* EDIT PROFILE */}
+      <ProfileEditScreen
+        editTarget={editTarget}
+        setEditTarget={setEditTarget}
+        form={form}
+        setForm={setForm}
+        saveProfile={saveProfile}
+        interestOptions={INTEREST_OPTIONS}
+        hobbyOptions={HOBBY_OPTIONS}
 
-          </LinearGradient>
+        recording={recording}
 
-       <ScrollView
-         style={{ flex: 1 }}
-         contentContainerStyle={{
-           padding: 16,
-           paddingBottom: Math.max(insets.bottom + 28, 48),
-         }}
-         keyboardShouldPersistTaps="handled"
-         showsVerticalScrollIndicator={false}
-       >
+        voiceUrl={voiceUrl}
+        voiceDurationSec={
+          voiceDurationSec
+        }
 
-  {(showAll || showBioOnly || showInfoOnly) && (
-    <View style={styles.formCard}>
+        playing={playing}
 
-      {(showAll || showInfoOnly) && (
-        <>
-          <Text style={styles.formLabel}>First name</Text>
-          <TextInput
-            value={form.firstName}
-            editable={showAll} // only full edit can change names (optional)
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, firstName: v }))}
-            placeholder="First name"
-            placeholderTextColor={RBZ.muted}
-            style={[styles.input, !showAll && { opacity: 0.5 }]}
-          />
+        startRecording={
+          startRecording
+        }
 
-          <Text style={styles.formLabel}>Last name</Text>
-          <TextInput
-            value={form.lastName}
-            editable={showAll} // only full edit can change names (optional)
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, lastName: v }))}
-            placeholder="Last name"
-            placeholderTextColor={RBZ.muted}
-            style={[styles.input, !showAll && { opacity: 0.5 }]}
-          />
-        </>
-      )}
+        stopRecording={
+          stopRecording
+        }
 
-      {(showAll || showBioOnly) && (
-        <>
-          <Text style={styles.formLabel}>Bio</Text>
-          <TextInput
-            value={form.bio}
-            editable
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, bio: v }))}
-            multiline
-            style={styles.input}
-          />
-        </>
-      )}
+        playVoice={
+          playVoice
+        }
 
-      {(showAll || showInfoOnly) && (
-        <>
-          <Text style={styles.formLabel}>City</Text>
-          <TextInput
-            value={form.city}
-            editable
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, city: v }))}
-            placeholder="City"
-            placeholderTextColor={RBZ.muted}
-            style={styles.input}
-          />
+        deleteVoiceIntro={
+          deleteVoice
+        }
+      />
 
-          <Text style={styles.formLabel}>Orientation</Text>
-          <TextInput
-            value={form.orientation}
-            editable
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, orientation: v }))}
-            placeholder="Straight / Gay / Bi / ..."
-            placeholderTextColor={RBZ.muted}
-            style={styles.input}
-          />
-
-          <Text style={styles.formLabel}>Looking for</Text>
-          <TextInput
-            value={form.lookingFor}
-            editable
-            onChangeText={(v) => setForm((p: ProfileForm) => ({ ...p, lookingFor: v }))}
-            placeholder="Serious / Casual / Friends / ..."
-            placeholderTextColor={RBZ.muted}
-            style={styles.input}
-          />
-
-          <Text style={styles.formLabel}>Likes</Text>
-          <TextInput
-            value={normalizeCsvField(form.likes)}
-            editable={showAll}
-            onChangeText={(v) =>
-              setForm((p: ProfileForm) => ({
-                ...p,
-                likes: normalizeStringArray(v).slice(0, 10),
-              }))
-            }
-            placeholder="What you like"
-            placeholderTextColor={RBZ.muted}
-            style={[styles.input, !showAll && { opacity: 0.5 }]}
-          />
-
-          <Text style={styles.formLabel}>Dislikes</Text>
-          <TextInput
-            value={normalizeCsvField(form.dislikes)}
-            editable={showAll}
-            onChangeText={(v) =>
-              setForm((p: ProfileForm) => ({
-                ...p,
-                dislikes: normalizeStringArray(v).slice(0, 10),
-              }))
-            }
-            placeholder="What you dislike"
-            placeholderTextColor={RBZ.muted}
-            style={[styles.input, !showAll && { opacity: 0.5 }]}
-          />
-        </>
-      )}
-
-    </View>
-  )}
-
-
-     {(showAll || showInterestsOnly) && (
-  <View style={[styles.formCard, { marginTop: 12 }]}>
-    <Text style={styles.cardTitle}>Interests (max 10)</Text>
-    <View style={styles.chipWrap}>
-      {INTEREST_OPTIONS.map((x) => {
-        const selected = form.interests.includes(x);
-        return (
-          <Chip
-            key={x}
-            text={x}
-            selected={selected}
-            onPress={() => {
-              if (!(editTarget === "interests" || editTarget === "all")) return;
-              setForm((p: ProfileForm) => {
-                const arr = [...(p.interests || [])];
-                const idx = arr.indexOf(x);
-                if (idx >= 0) arr.splice(idx, 1);
-                else {
-                  if (arr.length >= 10) return p;
-                  arr.push(x);
-                }
-                return { ...p, interests: arr };
-              });
-            }}
-          />
-        );
-      })}
-    </View>
-
-    <Text style={[styles.cardTitle, { marginTop: 14 }]}>Hobbies (max 10)</Text>
-    <View style={styles.chipWrap}>
-      {HOBBY_OPTIONS.map((x) => {
-        const selected = form.hobbies.includes(x);
-        return (
-          <Chip
-            key={x}
-            text={x}
-            selected={selected}
-            onPress={() => {
-              if (!(editTarget === "interests" || editTarget === "all")) return;
-              setForm((p: ProfileForm) => {
-                const arr = [...(p.hobbies || [])];
-                const idx = arr.indexOf(x);
-                if (idx >= 0) arr.splice(idx, 1);
-                else {
-                  if (arr.length >= 10) return p;
-                  arr.push(x);
-                }
-                return { ...p, hobbies: arr };
-              });
-            }}
-          />
-        );
-      })}
-    </View>
-  </View>
-)}
-
-
-        {editTarget === "all" && (
-  <View style={[styles.formCard, { marginTop: 12 }]}>
-    <Text style={styles.cardTitle}>Visibility</Text>
-
-    <View style={styles.visibilityRow}>
-      {VISIBILITY_OPTIONS.map((v) => {
-        const active = form.visibilityMode === v.value;
-        return (
-          <Pressable
-            key={v.value}
-            onPress={() =>
-              setForm((p: ProfileForm) => ({
-                ...p,
-                visibilityMode: v.value,
-              }))
-            }
-            style={[
-              styles.visibilityChip,
-              active && styles.visibilityChipActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.visibilityText,
-                active && styles.visibilityTextActive,
-              ]}
-            >
-              {v.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  </View>
-)}
-            <View style={{ height: 20 }} />
-          </ScrollView>
-          
-        </View>
-      </Modal>
 {/* ADD STORY MODAL (REAL) */}
 <AddStoryModal
   visible={STORIES_V1_ENABLED && addStoryOpen}

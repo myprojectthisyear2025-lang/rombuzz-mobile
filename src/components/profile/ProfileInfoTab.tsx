@@ -1,12 +1,8 @@
 /**
- * ============================================================================
- * 📁 File: src/components/profile/ProfileInfoTab.tsx
- * 🎯 Purpose: Profile → Info tab (Sleek, modern dating app UI)
- *
- * ENHANCEMENTS:
- *  ✅ Clean, minimalist design with perfect spacing
- *  ✅ Elegant cards with subtle borders and shadows  
- *  ✅ Professional typography and visual hierarchy
+ * Path: src/components/profile/ProfileInfoTab.tsx
+ * Purpose: Orchestrates Profile About/edit sections, picker state, and save wiring.
+ * Used by: app/(tabs)/profile.tsx.
+ 
  *  ✅ Visibility options as elegant inline toggles
  *  ✅ Beautiful chip styling with hover effects
  *  ✅ Perfectly spaced sections with clear labels
@@ -14,6 +10,8 @@
  * ============================================================================
  */
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
@@ -28,163 +26,39 @@ import {
 } from "react-native";
 
 import {
-  LOOKING_FOR_OPTIONS,
   lookingForKeyFromValue,
-  lookingForLabelFromValue,
 } from "../../constants/lookingFor";
 import {
   POLITICAL_VIEW_OPTIONS,
   RELIGION_OPTIONS,
   ZODIAC_OPTIONS,
-  zodiacDisplayValue,
 } from "../../constants/profileBeliefs";
 import {
-  RELATIONSHIP_STYLE_OPTIONS,
   relationshipStyleKeyFromValue,
-  relationshipStyleLabelFromValue,
 } from "../../constants/relationshipStyles";
+
+import ProfileInfoSection from "@/src/features/profile/info/ProfileInfoSection";
+import ProfileBackgroundSection from "@/src/features/profile/info/sections/ProfileBackgroundSection";
+import ProfileBasicsSection from "@/src/features/profile/info/sections/ProfileBasicsSection";
+import ProfileBeliefsSection from "@/src/features/profile/info/sections/ProfileBeliefsSection";
+import ProfileBodyBasicsSection from "@/src/features/profile/info/sections/ProfileBodyBasicsSection";
+import ProfileDatingSection from "@/src/features/profile/info/sections/ProfileDatingSection";
+import ProfileFavoritesSection from "@/src/features/profile/info/sections/ProfileFavoritesSection";
+import ProfileIdentitySection from "@/src/features/profile/info/sections/ProfileIdentitySection";
+import ProfileInterestsSection from "@/src/features/profile/info/sections/ProfileInterestsSection";
+import ProfileLifestyleSection from "@/src/features/profile/info/sections/ProfileLifestyleSection";
+import ProfileLocationSection from "@/src/features/profile/info/sections/ProfileLocationSection";
+import ProfileVibeSection from "@/src/features/profile/info/sections/ProfileVibeSection";
+
 import LanguagePickerModal from "./LanguagePickerModal";
 import ProfileSingleChoicePicker from "./ProfileSingleChoicePicker";
 import TravelVibePicker from "./TravelVibePicker";
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const PRONOUN_OPTIONS = ["He/Him", "She/Her", "They/Them", "Custom"];
-const BODY_TYPE_OPTIONS = ["Slim", "Average", "Athletic", "Curvy", "Muscular", "A little extra", "Prefer not to say"];
-const FITNESS_LEVEL_OPTIONS = ["Not active", "Sometimes", "Active", "Very active"];
-const SMOKING_OPTIONS = ["No", "Sometimes", "Yes"];
-const DRINKING_OPTIONS = ["No", "Socially", "Yes"];
-const WORKOUT_OPTIONS = ["Never", "1–2x/week", "3–5x/week", "Daily"];
-const DIET_OPTIONS = ["Anything", "Vegetarian", "Vegan", "Keto", "Other"];
-const SLEEP_OPTIONS = ["Early bird", "Night owl"];
-const EDUCATION_OPTIONS = ["High school", "College", "Undergraduate", "Graduate", "PhD", "Trade school", "Prefer not to say"];
-const PETS_OPTIONS = ["Dog","Cat","Fish","Bird","Rabbit","Hamster","Guinea Pig","Turtle","Horse","Snake","Other","None"];
-const LIKE_OPTIONS = [
-  "Coffee",
-  "Tea",
-  "Late-night talks",
-  "Deep conversations",
-  "Road trips",
-  "Night drives",
-  "Gym",
-  "Yoga",
-  "Meditation",
-  "Running",
-  "Dogs",
-  "Cats",
-  "Pets",
-  "Sunsets",
-  "Sunrises",
-  "Beaches",
-  "Mountains",
-  "Nature walks",
-  "Cooking",
-  "Baking",
-  "Trying new food",
-  "Street food",
-  "Music",
-  "Live concerts",
-  "Festivals",
-  "Podcasts",
-  "Audiobooks",
-  "Movies",
-  "TV shows",
-  "Anime",
-  "Gaming",
-  "Board games",
-  "Books",
-  "Reading",
-  "Writing",
-  "Photography",
-  "Travel",
-  "Spontaneous plans",
-  "Dancing",
-  "Art",
-  "Museums",
-  "Minimalism",
-  "Fashion",
-  "Streetwear",
-  "Perfumes",
-  "Self-care",
-  "Skincare",
-  "Journaling",
-  "Long walks",
-  "Rainy days",
-  "Honesty",
-  "Kindness",
-  "Ambition",
-  "Stability",
-  "Romance",
-  "Surprises",
-  "Spontaneity",
-];
-
-
-const DISLIKE_OPTIONS = [
-  "Smoking",
-  "Drugs",
-  "Dishonesty",
-  "Lies",
-  "Manipulation",
-  "Gaslighting",
-  "Cheating",
-  "Ghosting",
-  "Breadcrumbing",
-  "Rudeness",
-  "Arrogance",
-  "Entitlement",
-  "Judgmental people",
-  "Closed mindset",
-  "Negativity",
-  "Drama",
-  "Toxic behavior",
-  "Disrespect",
-  "Aggression",
-  "Anger issues",
-  "Passive aggression",
-  "Loud chewing",
-  "Bad hygiene",
-  "Messiness",
-  "Oversharing",
-  "No boundaries",
-  "Clinginess",
-  "Jealousy",
-  "Over-controlling",
-  "Unreliability",
-  "Inconsistency",
-  "Excuses",
-  "Victim mindset",
-  "Laziness",
-  "No ambition",
-  "Lack of effort",
-  "Late replies",
-  "Dry texting",
-  "No communication",
-  "Overuse of phone",
-  "Phone addiction",
-  "Fake personas",
-  "Attention seeking",
-  "Disloyalty",
-  "Public embarrassment",
-  "Unkindness",
-  "No accountability",
-];
-
 
 // ============================================================================
 // HELPERS
 // ============================================================================
 
 const asText = (v: any) => (v === null || v === undefined ? "" : String(v));
-const asCommaText = (v: any) => {
-  if (Array.isArray(v)) return v.filter(Boolean).join(", ");
-  if (!v) return "";
-  return String(v);
-};
-const safeArray = (v: any): string[] =>
-  Array.isArray(v) ? v.filter(Boolean) : [];
 
 const commaToArray = (v: string) =>
   v.split(",").map((s) => s.trim()).filter(Boolean);
@@ -208,6 +82,8 @@ const profileMultiArray = (v: any): string[] => {
 // ============================================================================
 
 export default function ProfileInfoTab(props: any) {
+  const { colors } = useRomBuzzTheme();
+
   const {
     styles,
     RBZ,
@@ -230,8 +106,6 @@ export default function ProfileInfoTab(props: any) {
     CITY_OPTIONS,
     GENDER_OPTIONS,
     ORIENTATION_OPTIONS,
-    LIKE_CHIP_OPTIONS,
-    DISLIKE_CHIP_OPTIONS,
     recording,
     startRecording,
     stopRecording,
@@ -240,7 +114,6 @@ export default function ProfileInfoTab(props: any) {
     voiceUrl,
     voiceDurationSec,
     playing,
-    Chip,
   } = props;
 
     const formatDuration = (sec: number) => {
@@ -272,10 +145,6 @@ export default function ProfileInfoTab(props: any) {
     multiline?: boolean;
     asArray?: boolean;
   }>(null);
-// ---------------- SAFE DERIVED VALUES ----------------
-const safeVibeTags: string[] = Array.isArray(form?.vibeTags)
-  ? form.vibeTags
-  : [];
 
 const age = React.useMemo(() => {
   const dob = user?.dob;
@@ -562,235 +431,79 @@ React.useEffect(() => {
     setCountryResults(matches);
   }, [countryQuery]);
 
-  // Render Info Row
-  const renderInfoRow = (
-    label: string,
-    value: string,
-    onPress: () => void,
-    options?: any
-  ) => {
-    const isPlaceholder = !value || value === "Select" || value === "Add";
-
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingVertical: 16,
-          borderBottomWidth: 1,
-          borderBottomColor: RBZ.border,
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 16,
-            color: RBZ.text,
-            fontWeight: "500",
-          }}
-        >
-          {label}
-        </Text>
-
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text
-            style={{
-              fontSize: 16,
-              color: isPlaceholder ? RBZ.muted : RBZ.text,
-              maxWidth: 200,
-              textAlign: "right",
-            }}
-          >
-            {isPlaceholder ? value || "Select" : value}
-          </Text>
-
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color={RBZ.muted}
-          />
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderChipField = (
-    label: string,
-    values: any,
-    onPress: () => void,
-    options?: {
-      max?: number;
-      placeholder?: string;
-    }
-  ) => {
-    const items = safeArray(values).slice(
-      0,
-      options?.max ?? Number.MAX_SAFE_INTEGER
-    );
-
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.75}
-        style={{
-          paddingVertical: 16,
-          borderBottomWidth: 1,
-          borderBottomColor: RBZ.border,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: items.length ? 10 : 0,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 16,
-              color: RBZ.text,
-              fontWeight: "500",
-            }}
-          >
-            {label}
-          </Text>
-
-          {!items.length && (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 16,
-                  color: RBZ.muted,
-                }}
-              >
-                {options?.placeholder || "Select"}
-              </Text>
-
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={RBZ.muted}
-              />
-            </View>
-          )}
-        </View>
-
-        {!!items.length && (
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 8,
-            }}
-          >
-            {items.map((item: string, index: number) => (
-              <View
-                key={`${label}-${item}-${index}`}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                  borderRadius: 999,
-                  backgroundColor: RBZ.primary + "12",
-                  borderWidth: 1,
-                  borderColor: RBZ.primary + "30",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: RBZ.primary,
-                    fontWeight: "600",
-                  }}
-                >
-                  {item}
-                </Text>
-              </View>
-            ))}
-
-            <View
-              style={{
-                justifyContent: "center",
-                paddingHorizontal: 4,
-              }}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={RBZ.muted}
-              />
-            </View>
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  // Render Section
-  const renderSection = (title: string, children: React.ReactNode) => (
-    <View style={{
-      backgroundColor: '#fff',
-      borderRadius: 16,
-      padding: 20,
-      marginBottom: 16,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
-    }}>
-      <Text style={{
-        fontSize: 20,
-        fontWeight: '700',
-        color: RBZ.text,
-        marginBottom: 20,
-      }}>
-        {title}
-      </Text>
+  // Flat section wrapper — no old card/shadow styling.
+  const renderSection = (
+    title: string,
+    children: React.ReactNode
+  ) => (
+    <ProfileInfoSection title={title}>
       {children}
-    </View>
+    </ProfileInfoSection>
   );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#f8f9fa' }}>
-      <View style={{ padding: 16 }}>
+    <ScrollView
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+      }}
+      contentContainerStyle={{
+        paddingBottom: 12,
+      }}
+    >
+      <View
+        style={{
+          paddingHorizontal: 16,
+          paddingTop: 14,
+        }}
+      >
 
             {/* ABOUT */}
         {renderSection("About", (
           <>
-            <Text style={{
-              fontSize: 16,
-              color: RBZ.text,
-              lineHeight: 24,
-              marginBottom: 16,
-            }}>
-              {user?.bio ? user.bio : "Add a bio so people vibe with you."}
+            <Text
+              style={{
+                fontFamily: RBZFont.medium,
+                fontSize: 15,
+                lineHeight: 22,
+                color: colors.text,
+                marginBottom: 16,
+              }}
+            >
+              {user?.bio
+                ? user.bio
+                : "Add a bio so people vibe with you."}
             </Text>
+
             <TouchableOpacity
               onPress={() => setEditTarget("bio")}
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
+                minHeight: 46,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
                 gap: 8,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: RBZ.primary + '10',
+                paddingHorizontal: 14,
+                paddingVertical: 11,
+                borderRadius: 10,
+                backgroundColor: colors.surfaceMuted,
+                borderWidth: 1,
+                borderColor: colors.borderStrong,
               }}
             >
-              <Ionicons name="create-outline" size={18} color={RBZ.primary} />
-              <Text style={{
-                fontSize: 16,
-                color: RBZ.primary,
-                fontWeight: '600',
-              }}>
+              <Ionicons
+                name="create-outline"
+                size={18}
+                color={colors.text}
+              />
+
+              <Text
+                style={{
+                  fontFamily: RBZFont.semiBold,
+                  fontSize: 15,
+                  color: colors.text,
+                }}
+              >
                 Edit Bio
               </Text>
             </TouchableOpacity>
@@ -806,21 +519,31 @@ React.useEffect(() => {
               justifyContent: 'space-between',
               marginBottom: 20,
             }}>
-              <View>
-                <Text style={{
-                  fontSize: 14,
-                  color: RBZ.muted,
-                  marginBottom: 4,
-                }}>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontFamily: RBZFont.medium,
+                    fontSize: 12.5,
+                    color: colors.textMuted,
+                    marginBottom: 4,
+                  }}
+                >
                   Up to 60 seconds
                 </Text>
-                <Text style={{
-                  fontSize: 12,
-                  color: RBZ.success,
-                  fontWeight: '500',
-                }}>
+
+                <Text
+                  style={{
+                    fontFamily: RBZFont.medium,
+                    fontSize: 12.5,
+                    color: voiceUrl
+                      ? colors.textSecondary
+                      : colors.brand,
+                  }}
+                >
                   {voiceUrl
-                    ? `Saved duration: ${formatDuration(voiceDurationSec)}`
+                    ? `Saved duration: ${formatDuration(
+                        voiceDurationSec
+                      )}`
                     : "Boosts matches by 4x"}
                 </Text>
               </View>
@@ -829,17 +552,30 @@ React.useEffect(() => {
                 <TouchableOpacity
                   onPress={playVoice}
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
+                    flexDirection: "row",
+                    alignItems: "center",
                     gap: 6,
                     paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 20,
-                    backgroundColor: RBZ.success + '15',
+                    paddingVertical: 7,
+                    borderRadius: 18,
+                    backgroundColor: colors.surfaceMuted,
+                    borderWidth: 1,
+                    borderColor: colors.border,
                   }}
                 >
-                  <Ionicons name={playing ? "pause" : "play"} size={14} color={RBZ.success} />
-                  <Text style={{ fontSize: 12, color: RBZ.success, fontWeight: '600' }}>
+                  <Ionicons
+                    name={playing ? "pause" : "play"}
+                    size={14}
+                    color={colors.text}
+                  />
+
+                  <Text
+                    style={{
+                      fontFamily: RBZFont.semiBold,
+                      fontSize: 12.5,
+                      color: colors.text,
+                    }}
+                  >
                     {playing ? "Pause" : "Play"}
                   </Text>
                 </TouchableOpacity>
@@ -852,17 +588,30 @@ React.useEffect(() => {
                   onPress={() => stopRecording(false)}
                   style={{
                     flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    minHeight: 48,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
                     gap: 8,
-                    paddingVertical: 14,
-                    borderRadius: 12,
-                    backgroundColor: '#ef4444',
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    backgroundColor: colors.danger,
                   }}
                 >
-                  <Ionicons name="stop" size={20} color="#fff" />
-                  <Text style={{ fontSize: 16, color: '#fff', fontWeight: '600' }}>
+                  <Ionicons
+                    name="stop"
+                    size={19}
+                    color={colors.white}
+                  />
+
+                  <Text
+                    style={{
+                      fontFamily: RBZFont.semiBold,
+                      fontSize: 15,
+                      color: colors.white,
+                    }}
+                  >
                     Stop Recording
                   </Text>
                 </TouchableOpacity>
@@ -871,24 +620,48 @@ React.useEffect(() => {
                   onPress={startRecording}
                   style={{
                     flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    minHeight: 48,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
                     gap: 8,
-                    paddingVertical: 14,
-                    borderRadius: 12,
-                    backgroundColor: voiceUrl ? RBZ.background : RBZ.primary,
-                    borderWidth: voiceUrl ? 1 : 0,
-                    borderColor: RBZ.border,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+
+                    backgroundColor: voiceUrl
+                      ? colors.surfaceMuted
+                      : colors.brand,
+
+                    borderWidth: 1,
+
+                    borderColor: voiceUrl
+                      ? colors.borderStrong
+                      : colors.brand,
                   }}
                 >
-                  <Ionicons name="mic" size={20} color={voiceUrl ? RBZ.text : '#fff'} />
-                  <Text style={{
-                    fontSize: 16,
-                    color: voiceUrl ? RBZ.text : '#fff',
-                    fontWeight: '600',
-                  }}>
-                    {voiceUrl ? "Record Again" : "Record Intro"}
+                  <Ionicons
+                    name="mic"
+                    size={19}
+                    color={
+                      voiceUrl
+                        ? colors.text
+                        : colors.white
+                    }
+                  />
+
+                  <Text
+                    style={{
+                      fontFamily: RBZFont.semiBold,
+                      fontSize: 15,
+                      color: voiceUrl
+                        ? colors.text
+                        : colors.white,
+                    }}
+                  >
+                    {voiceUrl
+                      ? "Record Again"
+                      : "Record Intro"}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -897,15 +670,20 @@ React.useEffect(() => {
                 <TouchableOpacity
                   onPress={deleteVoiceIntro}
                   style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 14,
-                    borderRadius: 12,
-                    backgroundColor: '#ef4444',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    minWidth: 48,
+                    minHeight: 48,
+                    paddingHorizontal: 14,
+                    borderRadius: 10,
+                    backgroundColor: colors.danger,
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  <Ionicons name="trash-outline" size={18} color="#fff" />
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={colors.white}
+                  />
                 </TouchableOpacity>
               )}
             </View>
@@ -913,729 +691,104 @@ React.useEffect(() => {
         ))}
 
         {/* BASICS */}
-        {renderSection("Basics", (
-          <>
-            {renderInfoRow("City", toTitle(form.city), () => {
-              setEditingField("city");
-              setSelectOpen({
-                field: "city",
-                title: "City",
-                options: CITY_OPTIONS,
-                value: toTitle(form.city),
-              });
-            })}
-
-            {renderInfoRow("Gender", toTitle(form.gender), () => {
-              setEditingField("gender");
-              setSelectOpen({
-                field: "gender",
-                title: "Gender",
-                options: GENDER_OPTIONS,
-                value: toTitle(form.gender),
-              });
-            })}
-
-            {renderInfoRow("Orientation", toTitle(form.orientation), () => {
-              setEditingField("orientation");
-              setSelectOpen({
-                field: "orientation",
-                title: "Orientation",
-                options: ORIENTATION_OPTIONS,
-                value: toTitle(form.orientation),
-              });
-            })}
-            
-            {renderInfoRow(
-              "Looking for",
-              lookingForLabelFromValue(form.lookingFor),
-              () => {
-                setEditingField("lookingFor");
-                setSelectOpen({
-                  field: "lookingFor",
-                  title: "Looking for",
-                  options: LOOKING_FOR_OPTIONS.map(
-                    (option) => option.label
-                  ),
-                  value: lookingForLabelFromValue(form.lookingFor),
-                });
-              }
-            )}
-            
-            {renderInfoRow("Height", toTitle(form.height), () => {
-              setEditingField("height");
-              setHeightTemp(parseHeight(form.height));
-            })}
-
-    {age !== null && (
-  <View style={{
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-  }}>
-    <Text style={{
-      fontSize: 16,
-      color: RBZ.text,
-      fontWeight: '500',
-    }}>
-      Age
-    </Text>
-    <Text style={{
-      fontSize: 16,
-      color: RBZ.text,
-      fontWeight: '600',
-    }}>
-      {age}
-    </Text>
-  </View>
-)}
-          </>
-        ))}
+        <ProfileBasicsSection
+          form={form}
+          age={age}
+          toTitle={toTitle}
+          parseHeight={parseHeight}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+          setHeightTemp={setHeightTemp}
+          CITY_OPTIONS={CITY_OPTIONS}
+          GENDER_OPTIONS={GENDER_OPTIONS}
+          ORIENTATION_OPTIONS={ORIENTATION_OPTIONS}
+        />
 
         {/* IDENTITY */}
-        {renderSection("Identity", (
-          <>
-            {renderInfoRow("Pronouns", toTitle(form.pronouns), () => {
-              setEditingField("pronouns");
-              setSelectOpen({
-                field: "pronouns",
-                title: "Pronouns",
-                options: PRONOUN_OPTIONS,
-                value: toTitle(form.pronouns),
-              });
-            })}
-          </>
-        ))}
+        <ProfileIdentitySection
+          form={form}
+          toTitle={toTitle}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+        />
 
         {/* LOCATION */}
-        {renderSection("Location", (
-          <>
-            {renderInfoRow("Country", form.country, () => {
-              setCountryQuery("");
-              setCountryResults([]);
-              setEditingField("country");
-            })}
-            
-            {renderInfoRow("Hometown", toTitle((form as any)?.hometown), () => {
-              setTextOpen({
-                field: "hometown",
-                title: "Hometown",
-                value: asText((form as any)?.hometown),
-                placeholder: "e.g., Chicago, IL",
-              });
-            })}
-            
-            {renderChipField(
-              "Travel Vibe",
-              (form as any)?.travelVibes,
-              () => setTravelVibeOpen(true),
-              {
-                max: 5,
-                placeholder: "Add your travel vibe",
-              }
-            )}
-          </>
-        ))}
+        <ProfileLocationSection
+          form={form}
+          toTitle={toTitle}
+          setCountryQuery={setCountryQuery}
+          setCountryResults={setCountryResults}
+          setEditingField={setEditingField}
+          setTextOpen={setTextOpen}
+          setTravelVibeOpen={setTravelVibeOpen}
+        />
 
         {/* DATING */}
-        {renderSection("Dating", (
-          <>
-           {renderInfoRow(
-              "Relationship",
-              relationshipStyleLabelFromValue(
-                (form as any)?.relationshipStyle
-              ),
-              () => {
-                setEditingField("relationshipStyle");
-                setSelectOpen({
-                  field: "relationshipStyle",
-                  title: "Relationship",
-                  options: RELATIONSHIP_STYLE_OPTIONS.map(
-                    (option) => option.label
-                  ),
-                  value: relationshipStyleLabelFromValue(
-                    (form as any)?.relationshipStyle
-                  ),
-                });
-              }
-            )}
-          </>
-        ))}
+        <ProfileDatingSection
+          form={form}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+        />
 
         {/* BODY & BASICS */}
-        {renderSection("Body & Basics", (
-          <>
-            {renderInfoRow("Body type", toTitle((form as any)?.bodyType), () => {
-              setEditingField("bodyType");
-              setSelectOpen({
-                field: "bodyType",
-                title: "Body type",
-                options: BODY_TYPE_OPTIONS,
-                value: toTitle((form as any)?.bodyType),
-              });
-            })}
-            
-            {renderInfoRow("Fitness level", toTitle((form as any)?.fitnessLevel), () => {
-              setEditingField("fitnessLevel");
-              setSelectOpen({
-                field: "fitnessLevel",
-                title: "Fitness level",
-                options: FITNESS_LEVEL_OPTIONS,
-                value: toTitle((form as any)?.fitnessLevel),
-              });
-            })}
-          </>
-        ))}
+        <ProfileBodyBasicsSection
+          form={form}
+          toTitle={toTitle}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+        />
 
         {/* LIFESTYLE */}
-        {renderSection("Lifestyle", (
-          <>
-            {renderInfoRow("Smoking", toTitle((form as any)?.smoking), () => {
-              setEditingField("smoking");
-              setSelectOpen({
-                field: "smoking",
-                title: "Smoking",
-                options: SMOKING_OPTIONS,
-                value: toTitle((form as any)?.smoking),
-              });
-            })}
-            
-            {renderInfoRow("Drinking", toTitle((form as any)?.drinking), () => {
-              setEditingField("drinking");
-              setSelectOpen({
-                field: "drinking",
-                title: "Drinking",
-                options: DRINKING_OPTIONS,
-                value: toTitle((form as any)?.drinking),
-              });
-            })}
-            
-            {renderInfoRow("Workout", toTitle((form as any)?.workoutFrequency), () => {
-              setEditingField("workoutFrequency");
-              setSelectOpen({
-                field: "workoutFrequency",
-                title: "Workout frequency",
-                options: WORKOUT_OPTIONS,
-                value: toTitle((form as any)?.workoutFrequency),
-              });
-            })}
-            
-            {renderInfoRow("Diet", toTitle((form as any)?.diet), () => {
-              setEditingField("diet");
-              setSelectOpen({
-                field: "diet",
-                title: "Diet",
-                options: DIET_OPTIONS,
-                value: toTitle((form as any)?.diet),
-              });
-            })}
-            
-            {renderInfoRow("Sleep schedule", toTitle((form as any)?.sleepSchedule), () => {
-              setEditingField("sleepSchedule");
-              setSelectOpen({
-                field: "sleepSchedule",
-                title: "Sleep schedule",
-                options: SLEEP_OPTIONS,
-                value: toTitle((form as any)?.sleepSchedule),
-              });
-            })}
-          </>
-        ))}
+        <ProfileLifestyleSection
+          form={form}
+          toTitle={toTitle}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+        />
 
         {/* BACKGROUND */}
-        {renderSection("Background", (
-          <>
-            {renderInfoRow("Education", toTitle((form as any)?.educationLevel), () => {
-              setEditingField("educationLevel");
-              setSelectOpen({
-                field: "educationLevel",
-                title: "Education level",
-                options: EDUCATION_OPTIONS,
-                value: toTitle((form as any)?.educationLevel),
-              });
-            })}
-            
-            {renderInfoRow("School", toTitle((form as any)?.school), () => {
-              setTextOpen({
-                field: "school",
-                title: "School / University",
-                value: asText((form as any)?.school),
-                placeholder: "e.g., UCLA",
-              });
-            })}
-            
-            {renderInfoRow("Job title", toTitle((form as any)?.jobTitle), () => {
-              setTextOpen({
-                field: "jobTitle",
-                title: "Job title",
-                value: asText((form as any)?.jobTitle),
-                placeholder: "e.g., Software Engineer",
-              });
-            })}
-            
-            {renderInfoRow("Company", toTitle((form as any)?.company), () => {
-              setTextOpen({
-                field: "company",
-                title: "Company / Workplace",
-                value: asText((form as any)?.company),
-                placeholder: "e.g., Google",
-              });
-            })}
-            
-            {renderChipField(
-              "Languages",
-              (form as any)?.languages,
-              () => setLanguagePickerOpen(true),
-              {
-                max: 5,
-                placeholder: "Add languages",
-              }
-            )}
-          </>
-        ))}
+        <ProfileBackgroundSection
+          form={form}
+          toTitle={toTitle}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+          setTextOpen={setTextOpen}
+          setLanguagePickerOpen={setLanguagePickerOpen}
+        />
 
         {/* BELIEFS */}
-        {renderSection("Beliefs", (
-          <>
-            {renderInfoRow(
-              "Religion",
-              asText((form as any)?.religion),
-              () => setProfileChoiceOpen("religion")
-            )}
-
-            {renderInfoRow(
-              "Political views",
-              asText((form as any)?.politicalViews),
-              () => setProfileChoiceOpen("politicalViews")
-            )}
-
-            {renderInfoRow(
-              "Zodiac",
-              zodiacDisplayValue((form as any)?.zodiac),
-              () => setProfileChoiceOpen("zodiac")
-            )}
-          </>
-        ))}
+        <ProfileBeliefsSection
+          form={form}
+          setProfileChoiceOpen={setProfileChoiceOpen}
+        />
 
         {/* FAVORITES */}
-        {renderSection("Favorites", (
-          <>
-            {renderChipField(
-              "Music",
-              (form as any)?.favoriteMusic,
-              () => {
-                setTextOpen({
-                  field: "favoriteMusic",
-                  title: "Favorite music genres",
-                  value: asCommaText((form as any)?.favoriteMusic),
-                  placeholder: "e.g., Hip-hop, Pop",
-                  asArray: true,
-                });
-              },
-              {
-                placeholder: "Add",
-              }
-            )}
-            
-            {renderChipField(
-              "Movies/Shows",
-              (form as any)?.favoriteMovies,
-              () => {
-                setTextOpen({
-                  field: "favoriteMovies",
-                  title: "Favorite movies/shows",
-                  value: asCommaText((form as any)?.favoriteMovies),
-                  placeholder: "e.g., Breaking Bad, Interstellar",
-                  asArray: true,
-                });
-              },
-              {
-                placeholder: "Add",
-              }
-            )}
-            
-            {renderInfoRow("Pets", toTitle((form as any)?.petsPreference), () => {
-              setEditingField("petsPreference");
-              setSelectOpen({
-                field: "petsPreference",
-                title: "Pets preference",
-                options: PETS_OPTIONS,
-                value: toTitle((form as any)?.petsPreference),
-              });
-            })}
-          </>
-        ))}
+        <ProfileFavoritesSection
+          form={form}
+          toTitle={toTitle}
+          setTextOpen={setTextOpen}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+        />
 
         {/* VIBE */}
-      {renderSection("Vibe", (
-        
-       <>
-       {/* LIKES & DISLIKES — CHIP MULTI PICKER */}
-{(editingField === "likes" || editingField === "dislikes") && (
-  <View style={{ marginTop: 16 }}>
-    <Text style={{
-      fontSize: 16,
-      fontWeight: "600",
-      color: RBZ.text,
-      marginBottom: 12,
-    }}>
-      {editingField === "likes" ? "Select Likes (max 10)" : "Select Dislikes (max 10)"}
-    </Text>
-
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-      {(editingField === "likes" ? LIKE_OPTIONS : DISLIKE_OPTIONS).map((x: string) => {
-        const selected = safeArray(
-          editingField === "likes" ? form.likes : form.dislikes
-        ).includes(x);
-
-        return (
-          <TouchableOpacity
-            key={x}
-            onPress={() => {
-              setForm((p: any) => {
-                const key = editingField!;
-                const arr = safeArray(p[key]);
-                const idx = arr.indexOf(x);
-
-                if (idx >= 0) arr.splice(idx, 1);
-                else {
-                  if (arr.length >= 10) return p;
-                  arr.push(x);
-                }
-
-                return { ...p, [key]: arr };
-              });
-            }}
-          style={{
-  paddingHorizontal: 14,
-  paddingVertical: 8,
-  borderRadius: 20,
-  borderWidth: 1,
-  borderColor: selected
-    ? (editingField === "likes" ? "#d8345f30" : "#b5179e30")
-    : RBZ.border,
-  backgroundColor: selected
-    ? (editingField === "likes" ? "#d8345f15" : "#b5179e15")
-    : "#fff",
-  }}
-
-          >
-           <Text
-  style={{
-    fontSize: 14,
-    color: selected
-      ? editingField === "likes"
-        ? "#d8345f"
-        : "#b5179e"
-      : RBZ.text,
-    fontWeight: selected ? "600" : "400",
-  }}
-  >
-
-              {x}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-
-    <TouchableOpacity
-      onPress={() => {
-        const field = editingField!;
-        saveSingleField({ [field]: safeArray(form[field]) });
-        setEditingField(null);
-      }}
-      style={{
-        marginTop: 20,
-        paddingVertical: 14,
-        borderRadius: 12,
-        backgroundColor: RBZ.primary,
-        alignItems: "center",
-      }}
-    >
-      <Text style={{ fontSize: 16, fontWeight: "600", color: "#fff" }}>
-        Save
-      </Text>
-    </TouchableOpacity>
-  </View>
-  )}
-
-        {renderChipField(
-          "Vibe tags",
-          safeVibeTags,
-          () => {
-            setSelectOpen({
-              field: "vibeTags",
-              title: "Vibe tags",
-              options: [
-                "Chill",
-                "Romantic",
-                "Funny",
-                "Introvert",
-                "Ambivert",
-                "Extrovert",
-                "Deep thinker",
-                "Spontaneous",
-                "Calm",
-                "Chaotic good",
-              ],
-              value: safeVibeTags,
-              multi: true,
-            });
-          },
-          {
-            placeholder: "Add",
-          }
-        )}
-
-     {/* Likes / Dislikes */}
-       <View style={{ marginTop: 24 }}>
-          {/* LIKES */}
-          <Text
-            style={{
-              fontSize: 16,
-              color: RBZ.text,
-              fontWeight: "500",
-              marginBottom: 12,
-            }}
-          >
-            Likes
-          </Text>
-
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {(Array.isArray(form.likes) ? form.likes : []).slice(0, 10).map((x: string) => (
-              <View
-                key={x}
-                style={{
-                  backgroundColor: "#d8345f15",
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: "#d8345f30",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: "#d8345f",
-                    fontWeight: "500",
-                  }}
-                >
-                  {x}
-                </Text>
-              </View>
-            ))}
-
-            {(!form.likes || form.likes.length === 0) && (
-              <Text style={{ color: RBZ.muted, fontStyle: "italic" }}>
-                No likes added yet
-              </Text>
-            )}
-          </View>
-
-     <TouchableOpacity
-  onPress={() => {
-    setEditingField("likes");
-  }}
-
-
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              paddingVertical: 12,
-              borderRadius: 12,
-              backgroundColor: RBZ.background,
-              borderWidth: 1,
-              borderColor: RBZ.border,
-              marginTop: 16,
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={RBZ.text} />
-            <Text style={{ fontSize: 16, color: RBZ.text, fontWeight: "600" }}>
-              Edit Likes
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ marginTop: 32 }}>
-          {/* DISLIKES */}
-          <Text
-            style={{
-              fontSize: 16,
-              color: RBZ.text,
-              fontWeight: "500",
-              marginBottom: 12,
-            }}
-          >
-            Dislikes
-          </Text>
-
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {(Array.isArray(form.dislikes) ? form.dislikes : []).slice(0, 10).map((x: string) => (
-              <View
-                key={x}
-                style={{
-                  backgroundColor: "#b5179e15",
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: "#b5179e30",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: "#b5179e",
-                    fontWeight: "500",
-                  }}
-                >
-                  {x}
-                </Text>
-              </View>
-            ))}
-
-            {(!form.dislikes || form.dislikes.length === 0) && (
-              <Text style={{ color: RBZ.muted, fontStyle: "italic" }}>
-                No dislikes added yet
-              </Text>
-            )}
-          </View>
-
-        <TouchableOpacity
-  onPress={() => {
-    setEditingField("dislikes");
-  }}
-
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              paddingVertical: 12,
-              borderRadius: 12,
-              backgroundColor: RBZ.background,
-              borderWidth: 1,
-              borderColor: RBZ.border,
-              marginTop: 16,
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={RBZ.text} />
-            <Text style={{ fontSize: 16, color: RBZ.text, fontWeight: "600" }}>
-              Edit Dislikes
-            </Text>
-          </TouchableOpacity>
-        </View>
-          </>
-        ))}
+        <ProfileVibeSection
+          form={form}
+          editingField={editingField}
+          setEditingField={setEditingField}
+          setSelectOpen={setSelectOpen}
+          setForm={setForm}
+          saveSingleField={saveSingleField}
+        />
 
         {/* INTERESTS */}
-        {renderSection("Interests & Hobbies", (
-          <>
-            <View style={{ marginBottom: 24 }}>
-              <Text style={{
-                fontSize: 16,
-                color: RBZ.text,
-                fontWeight: '500',
-                marginBottom: 12,
-              }}>
-                Interests
-              </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {(Array.isArray(user?.interests) ? user.interests : []).slice(0, 10).map((x: string) => (
-                  <View key={x} style={{
-                    backgroundColor: '#d8345f15',
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: '#d8345f30',
-                  }}>
-                    <Text style={{
-                      fontSize: 14,
-                      color: '#d8345f',
-                      fontWeight: '500',
-                    }}>
-                      {x}
-                    </Text>
-                  </View>
-                ))}
-                {(!user?.interests || user.interests?.length === 0) && (
-                  <Text style={{ color: RBZ.muted, fontStyle: 'italic' }}>
-                    No interests added yet
-                  </Text>
-                )}
-              </View>
-            </View>
-            
-            <View>
-              <Text style={{
-                fontSize: 16,
-                color: RBZ.text,
-                fontWeight: '500',
-                marginBottom: 12,
-              }}>
-                Hobbies
-              </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {(Array.isArray(user?.hobbies) ? user.hobbies : []).slice(0, 10).map((x: string) => (
-                  <View key={x} style={{
-                    backgroundColor: '#b5179e15',
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: '#b5179e30',
-                  }}>
-                    <Text style={{
-                      fontSize: 14,
-                      color: '#b5179e',
-                      fontWeight: '500',
-                    }}>
-                      {x}
-                    </Text>
-                  </View>
-                ))}
-                {(!user?.hobbies || user.hobbies?.length === 0) && (
-                  <Text style={{ color: RBZ.muted, fontStyle: 'italic' }}>
-                    No hobbies added yet
-                  </Text>
-                )}
-              </View>
-            </View>
-            
-            <TouchableOpacity
-              onPress={() => setEditTarget("interests")}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: RBZ.background,
-                borderWidth: 1,
-                borderColor: RBZ.border,
-                marginTop: 20,
-              }}
-            >
-              <Ionicons name="add-circle-outline" size={18} color={RBZ.text} />
-              <Text style={{
-                fontSize: 16,
-                color: RBZ.text,
-                fontWeight: '600',
-              }}>
-                Edit Interests & Hobbies
-              </Text>
-            </TouchableOpacity>
-          </>
-        ))}
+        <ProfileInterestsSection
+          user={user}
+          setEditTarget={setEditTarget}
+        />
       </View>
 
-                  <TravelVibePicker
+      <TravelVibePicker
               visible={travelVibeOpen}
               selected={
                 Array.isArray((form as any)?.travelVibes)

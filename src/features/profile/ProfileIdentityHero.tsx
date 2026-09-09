@@ -43,7 +43,7 @@ export default function ProfileIdentityHero({
   memberSince,
   location,
   safeTop,
-  guidance,
+   guidance,
   storiesEnabled,
   hasStory,
   onAvatarPress,

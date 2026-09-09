@@ -846,25 +846,35 @@ screenOptions={{
 
   // ✅keep tabs mounted so heavy screens render instantly on return
 
-  tabBarStyle: {
-    backgroundColor:
-      colors.tabBar,
+  tabBarStyle:
+    tabName === "microbuzz"
+      ? {
+          display: "none",
+        }
+      : {
+          backgroundColor:
+            colors.tabBar,
 
-    borderTopColor:
-      colors.tabBarBorder,
+          borderTopColor:
+            colors.tabBarBorder,
 
-    borderTopWidth:
-      StyleSheet.hairlineWidth,
+          borderTopWidth:
+            StyleSheet.hairlineWidth,
 
-    height: 62 + insets.bottom,
+          height:
+            62 +
+            insets.bottom,
 
-    paddingBottom:
-      Math.max(insets.bottom, 6),
+          paddingBottom:
+            Math.max(
+              insets.bottom,
+              6
+            ),
 
-    paddingTop: 6,
-    elevation: 0,
-    shadowOpacity: 0,
-  },
+          paddingTop: 6,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
 }}
 >
 
