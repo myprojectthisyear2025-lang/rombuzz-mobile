@@ -30,6 +30,7 @@ import {
   getNormalBuzzType,
   type BuzzType,
 } from "@/src/config/buzzTypes";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -491,7 +492,7 @@ export default function BuzzPokeCard({
               ? ["#d1d5db", "#9ca3af"]
               : selectedBuzzType.isPaid
               ? (selectedBuzzType.gradient as any)
-              : [RBZ.c2, RBZ.c4]
+              : [RBZ.c3, RBZ.c3]
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -554,21 +555,17 @@ export default function BuzzPokeCard({
 
 const styles = StyleSheet.create({
   slot: {
-    width: 122,
+    flex: 1,
+    minWidth: 0,
     alignItems: "stretch",
   },
   buttonWrap: {
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: "hidden",
-    shadowColor: RBZ.c2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 4,
   },
   button: {
-    height: 50,
-    borderRadius: 16,
+    height: 46,
+    borderRadius: 14,
     paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
@@ -584,15 +581,15 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: RBZ.white,
-    fontWeight: "900",
+    fontFamily: RBZFont.semiBold,
     fontSize: 14,
-    maxWidth: 78,
+    maxWidth: 110,
   },
   buttonSubText: {
     marginTop: -1,
     color: "rgba(255,255,255,0.86)",
-    fontWeight: "800",
+    fontFamily: RBZFont.semiBold,
     fontSize: 10,
-    maxWidth: 78,
+    maxWidth: 110,
   },
 });

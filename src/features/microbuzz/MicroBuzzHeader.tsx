@@ -7,40 +7,48 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import {
-    useRomBuzzTheme,
+  useRomBuzzTheme,
 } from "@/src/design/RomBuzzThemeProvider";
 
 import {
-    RBZFont,
+  RBZFont,
 } from "@/src/design/rombuzzTypography";
+
+import MicroBuzzGenderSelector from "./MicroBuzzGenderSelector";
+
+import type {
+  MicroBuzzGender,
+} from "./microBuzzTypes";
 
 type Props = {
   topInset: number;
   statusMessage: string;
   locationGranted: boolean;
-  cameraGranted: boolean;
+  radarGender: MicroBuzzGender;
   isActive: boolean;
   onBack: () => void;
   onLocationPress: () => void;
-  onCameraPress: () => void;
+  onRadarGenderChange: (
+    value: MicroBuzzGender
+  ) => void;
 };
 
 export default function MicroBuzzHeader({
   topInset,
   statusMessage,
   locationGranted,
-  cameraGranted,
+  radarGender,
   isActive,
   onBack,
   onLocationPress,
-  onCameraPress,
+  onRadarGenderChange,
 }: Props) {
   const { colors } =
     useRomBuzzTheme();
@@ -139,20 +147,12 @@ export default function MicroBuzzHeader({
           }
         />
 
-        <StatusControl
-          icon="camera"
-          title={
-            cameraGranted
-              ? "Camera On"
-              : "Camera Needed"
+        <MicroBuzzGenderSelector
+          value={
+            radarGender
           }
-          subtitle={
-            cameraGranted
-              ? "Ready for your presence"
-              : "Tap to allow camera"
-          }
-          onPress={
-            onCameraPress
+          onChange={
+            onRadarGenderChange
           }
         />
       </View>

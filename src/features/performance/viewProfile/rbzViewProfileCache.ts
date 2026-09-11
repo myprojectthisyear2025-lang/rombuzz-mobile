@@ -23,7 +23,6 @@ const VIEW_PROFILE_CACHE_MAX_AGE_MS = 90 * 60 * 1000;
 
 type CachedViewProfileBundle = {
   profile: any;
-  stories: any[];
   savedAt?: number;
 };
 
@@ -212,24 +211,10 @@ function removeUndefinedFields(input: any) {
   return out;
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  return Promise.race([
-    promise.catch(() => fallback),
-    new Promise<T>((resolve) => {
-      timer = setTimeout(() => resolve(fallback), ms);
-    }),
-  ]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
-
 export async function writeCachedViewProfileFromUser(
   rawUser: any,
   options: {
     matched?: boolean;
-    stories?: any[];
   } = {}
 ) {
   const user = pickProfileUser(rawUser);
@@ -259,11 +244,6 @@ export async function writeCachedViewProfileFromUser(
           ? options.matched
           : !!existing?.profile?.matched,
     },
-    stories: Array.isArray(options.stories)
-      ? options.stories
-      : Array.isArray(existing?.stories)
-      ? existing.stories
-      : [],
     savedAt: Date.now(),
   };
 
@@ -286,27 +266,11 @@ export async function fetchFreshViewProfile(userId: string) {
     throw new Error("Profile unavailable");
   }
 
-  const cached = await readCachedViewProfile(userId).catch(() => null);
-
-  // Stories are nice-to-have. They must never hold View Profile hostage.
-  const storiesData = await withTimeout<any>(
-    rbzApiJson<any>(`/stories/${encodedUserId}`),
-    650,
-    null
-  );
-
-  const stories = Array.isArray(storiesData?.stories)
-    ? storiesData.stories
-    : Array.isArray(cached?.stories)
-    ? cached.stories
-    : [];
-
   const bundle: CachedViewProfileBundle = {
     profile: {
       ...profileData,
       matched: !!profileData?.matched,
     },
-    stories,
     savedAt: Date.now(),
   };
 

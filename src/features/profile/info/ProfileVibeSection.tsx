@@ -1,20 +1,20 @@
 /**
- * Path: src/features/profile/info/sections/ProfileVibeSection.tsx
+ * Path: src/features/profile/info/ProfileVibeSection.tsx
  * Purpose: Displays and edits Vibe Tags, Likes, and Dislikes using responsive chips.
  * Used by: src/components/profile/ProfileInfoTab.tsx.
  */
 
 import React from "react";
 
-import ProfileInfoChipField from "../ProfileInfoChipField";
-import ProfileInfoSection from "../ProfileInfoSection";
-import ProfileVibeChoiceGrid from "../ProfileVibeChoiceGrid";
+import ProfileInfoChipField from "./ProfileInfoChipField";
+import ProfileInfoSection from "./ProfileInfoSection";
+import ProfileVibeChoiceGrid from "./ProfileVibeChoiceGrid";
 
 import {
-    DISLIKE_OPTIONS,
-    LIKE_OPTIONS,
-    VIBE_TAG_OPTIONS,
-} from "../ProfileVibeOptions";
+  DISLIKE_OPTIONS,
+  LIKE_OPTIONS,
+  VIBE_TAG_OPTIONS,
+} from "./ProfileVibeOptions";
 
 type Props = {
   form: any;
@@ -127,7 +127,12 @@ export default function ProfileVibeSection({
           selected={safeArray(
             form?.[activeField]
           )}
-          onToggle={(value) =>
+          tone={
+            activeField === "likes"
+              ? "positive"
+              : "negative"
+          }
+          onToggle={(value: string) =>
             toggleValue(
               activeField,
               value

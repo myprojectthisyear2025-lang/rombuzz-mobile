@@ -16,10 +16,12 @@
  * ============================================================================
  */
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { getDirectStreamThumbnailUrl } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { getDirectStreamThumbnailUrl } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
 
 const GRID_COLUMNS = 3;
 const GRID_GAP = 7;
@@ -230,53 +232,110 @@ export default function ViewProfileGallery({
   onOpenPhoto,
   onOpenReel,
 }: Props) {
+  const { colors } = useRomBuzzTheme();
   const [gridWidth, setGridWidth] = React.useState(0);
 
   const measuredGridSize =
     gridWidth > 0
-      ? Math.floor((gridWidth - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS)
+      ? Math.floor(
+          (gridWidth - GRID_GAP * (GRID_COLUMNS - 1)) /
+            GRID_COLUMNS
+        )
       : Math.floor(gridSize * 0.72);
 
   return (
-    <View style={styles.galleryCard}>
-      <View style={styles.galleryHeader}>
-        <View style={styles.galleryTitleRow}>
-          <Ionicons name="images" size={20} color={RBZ.c2} />
-          <Text style={styles.cardTitle}>Gallery</Text>
-        </View>
-
-        <View style={styles.galleryTabs}>
-          <Pressable
-            onPress={() => onTabChange("photos")}
-            style={[styles.tab, tab === "photos" && styles.activeTab]}
-          >
-            <Text style={[styles.tabText, tab === "photos" && styles.activeTabText]}>
-              Photos ({photos.length})
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => onTabChange("reels")}
-            style={[styles.tab, tab === "reels" && styles.activeTab]}
-          >
-            <Text style={[styles.tabText, tab === "reels" && styles.activeTabText]}>
-              Reels ({reels.length})
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <Text style={styles.galleryHint}>
-        {tab === "photos"
-          ? "Shared photos for vibes and moments"
-          : "Reels showing personality and interests"}
+    <View
+      style={[
+        styles.galleryCard,
+        {
+          borderTopColor:
+            colors.border,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.sectionTitle,
+          {
+            color:
+              colors.textMuted,
+          },
+        ]}
+      >
+        Gallery
       </Text>
 
-         {tab === "photos" ? (
+      <View
+        style={[
+          styles.galleryTabs,
+          {
+            borderBottomColor:
+              colors.border,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() =>
+            onTabChange("photos")
+          }
+          style={[
+            styles.tab,
+            tab === "photos" && {
+              borderBottomColor:
+                colors.brand,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              {
+                color:
+                  tab === "photos"
+                    ? colors.text
+                    : colors.textMuted,
+              },
+            ]}
+          >
+            Photos ({photos.length})
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() =>
+            onTabChange("reels")
+          }
+          style={[
+            styles.tab,
+            tab === "reels" && {
+              borderBottomColor:
+                colors.brand,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              {
+                color:
+                  tab === "reels"
+                    ? colors.text
+                    : colors.textMuted,
+              },
+            ]}
+          >
+            Reels ({reels.length})
+          </Text>
+        </Pressable>
+      </View>
+
+      {tab === "photos" ? (
         photos.length > 0 ? (
           <View
             style={styles.gridContainer}
-            onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+            onLayout={(e) =>
+              setGridWidth(e.nativeEvent.layout.width)
+            }
           >
             <MediaGrid
               items={photos}
@@ -287,14 +346,31 @@ export default function ViewProfileGallery({
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <Ionicons name="images-outline" size={48} color={RBZ.line} />
-            <Text style={styles.emptyText}>No photos shared yet</Text>
+            <Ionicons
+              name="images-outline"
+              size={38}
+              color={colors.iconMuted}
+            />
+
+            <Text
+              style={[
+                styles.emptyText,
+                {
+                  color:
+                    colors.textMuted,
+                },
+              ]}
+            >
+              No photos shared yet
+            </Text>
           </View>
         )
-       ) : reels.length > 0 ? (
+      ) : reels.length > 0 ? (
         <View
           style={styles.gridContainer}
-          onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+          onLayout={(e) =>
+            setGridWidth(e.nativeEvent.layout.width)
+          }
         >
           <MediaGrid
             items={reels}
@@ -305,9 +381,24 @@ export default function ViewProfileGallery({
         </View>
       ) : (
         <View style={styles.emptyState}>
-          <Ionicons name="videocam-outline" size={48} color={RBZ.line} />
-          <Text style={styles.emptyText}>No reels shared yet</Text>
-        </View>
+          <Ionicons
+            name="videocam-outline"
+            size={38}
+            color={colors.iconMuted}
+          />
+
+          <Text
+            style={[
+              styles.emptyText,
+              {
+                color:
+                  colors.textMuted,
+                },
+              ]}
+            >
+              No reels shared yet
+            </Text>
+          </View>
       )}
     </View>
   );
@@ -316,57 +407,42 @@ export default function ViewProfileGallery({
 const styles = StyleSheet.create({
   galleryCard: {
     marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 20,
-    backgroundColor: RBZ.cardBg,
-    borderRadius: 20,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "rgba(17,24,39,0.08)",
+    marginBottom: 6,
+    paddingTop: 7,
+    borderTopWidth:
+      StyleSheet.hairlineWidth,
   },
-  galleryHeader: {
-    marginBottom: 12,
+
+  sectionTitle: {
+    marginBottom: 6,
+    fontFamily:
+      RBZFont.bold,
+    fontSize: 11,
+    letterSpacing: 0.65,
+    textTransform: "uppercase",
   },
-  galleryTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: RBZ.ink,
-  },
+
   galleryTabs: {
     flexDirection: "row",
-    backgroundColor: "rgba(17,24,39,0.04)",
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
+    borderBottomWidth:
+      StyleSheet.hairlineWidth,
+    marginBottom: 7,
   },
+
   tab: {
-    flex: 1,
+    minWidth: 88,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 8,
     alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor:
+      "transparent",
   },
-  activeTab: {
-    backgroundColor: RBZ.c2,
-  },
+
   tabText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: RBZ.muted,
-  },
-  activeTabText: {
-    color: RBZ.white,
-  },
-  galleryHint: {
-    fontSize: 13,
-    color: RBZ.muted,
-    marginBottom: 16,
-    lineHeight: 18,
+    fontFamily:
+      RBZFont.semiBold,
+    fontSize: 12.5,
   },
    gridContainer: {
     width: "100%",
@@ -380,7 +456,7 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     aspectRatio: 1,
-    borderRadius: 12,
+    borderRadius: 9,
     overflow: "hidden",
     backgroundColor: "#000",
     marginBottom: GRID_GAP,
@@ -442,12 +518,12 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 40,
+    paddingVertical: 30,
   },
   emptyText: {
-    fontSize: 14,
-    color: RBZ.muted,
-    fontWeight: "600",
-    marginTop: 12,
+    marginTop: 9,
+    fontFamily:
+      RBZFont.medium,
+    fontSize: 13,
   },
 });

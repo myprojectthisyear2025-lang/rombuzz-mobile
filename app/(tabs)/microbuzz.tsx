@@ -30,6 +30,27 @@ import MicroBuzzHeader from "@/src/features/microbuzz/MicroBuzzHeader";
 import MicroBuzzIncomingBuzz from "@/src/features/microbuzz/MicroBuzzIncomingBuzz";
 import MicroBuzzPresenceCard from "@/src/features/microbuzz/MicroBuzzPresenceCard";
 import MicroBuzzRadar from "@/src/features/microbuzz/MicroBuzzRadar";
+import MicroBuzzUserActionsMenu from "@/src/features/microbuzz/MicroBuzzUserActionsMenu";
+
+import {
+  blockRomBuzzUser,
+  ignoreMicroBuzzSessionUser,
+} from "@/src/features/microbuzz/microBuzzApi";
+
+import {
+  loadMicroBuzzDefaultGender,
+} from "@/src/features/microbuzz/microBuzzGender";
+
+import {
+  buzzRequestName,
+  normalizeBuzzRequest,
+  type MicroBuzzGender,
+  type MicroBuzzReportTarget,
+} from "@/src/features/microbuzz/microBuzzTypes";
+
+import {
+  useMicroBuzzQueue,
+} from "@/src/features/microbuzz/useMicroBuzzQueue";
 
 import { API_BASE } from "@/src/config/api";
 import { getSocket } from "@/src/lib/socket";
@@ -103,7 +124,7 @@ const STATUS_MESSAGES = {
   ],
   activating: [
     "Finding your signal",
-    "Preparing your presence",
+    "Preparing your signal",
     "Scanning the area",
     "Almost there",
   ],
@@ -127,13 +148,16 @@ const TIPS = [
   "People around you will appear in real time",
   "Stay live - someone may pop up any second",
   "You're only shown to people you wanna see",
-  "If you both Buzz each other → instant match ⚡",
+  "Send a Buzz - they can accept or reject it ⚡",
   "The closer they are, the warmer their glow",
 ];
 
-// Web parity timing
+// Fast radar refresh without hammering GPS every 2 seconds.
 const TICK_MS = 2000;
-const RADIUS_KM = __DEV__ ? 0.75 : 0.1;
+const PRESENCE_REFRESH_MS = 5000;
+
+// MicroBuzz is always a true 100m local zone.
+const RADIUS_KM = 0.1;
 
 // Backend deletes MicroBuzz selfies from R2 after 5 minutes.
 // Refresh a little early so active users do not show broken images.
@@ -144,23 +168,6 @@ type NearbyUser = {
   name?: string;
   selfieUrl: string;
   distanceMeters?: number;
-};
-
-type BuzzRequestPayload = {
-  fromId: string;
-  firstName?: string;
-  lastName?: string;
-  dob?: string;
-  selfieUrl?: string;
-};
-
-type MicroBuzzReportTarget = {
-  id: string;
-  name?: string;
-  selfieUrl?: string;
-  distanceMeters?: number;
-  source: "mobile_microbuzz_incoming_buzz" | "mobile_microbuzz_nearby_preview";
-  context: "incoming_buzz_request" | "nearby_selfie_preview";
 };
 
 async function getToken() {
@@ -178,6 +185,21 @@ async function getUserId() {
   }
 }
 
+async function getUserFirstName() {
+  try {
+    const raw = await SecureStore.getItemAsync("RBZ_USER");
+    if (!raw) return "";
+
+    const u = JSON.parse(raw);
+
+    return String(
+      u?.firstName || ""
+    ).trim();
+  } catch {
+    return "";
+  }
+}
+
 function getAge(dob?: string) {
   if (!dob) return "";
   const d = new Date(dob);
@@ -190,10 +212,6 @@ function metersLabel(m?: number) {
   if (!m && m !== 0) return "";
   if (m < 1000) return `${Math.round(m)}m`;
   return `${(m / 1000).toFixed(1)}km`;
-}
-
-function buzzRequestName(req?: BuzzRequestPayload | null) {
-  return [req?.firstName, req?.lastName].filter(Boolean).join(" ").trim() || "MicroBuzz user";
 }
 
 export default function MicroBuzzScreen() {
@@ -232,6 +250,7 @@ export default function MicroBuzzScreen() {
   const [mySelfieLocalUri, setMySelfieLocalUri] = useState<string>("");
   const [previewImageUri, setPreviewImageUri] = useState<string>("");
   const [selfieUrl, setSelfieUrl] = useState<string>("");
+  const [myFirstName, setMyFirstName] = useState("You");
   const [isActive, setIsActive] = useState(false);
   const [busy, setBusy] = useState<string>("");
   const [liveStartTime, setLiveStartTime] = useState<Date | null>(null);
@@ -245,16 +264,44 @@ export default function MicroBuzzScreen() {
   const [selfiePreviewOpen, setSelfiePreviewOpen] = useState(false);
   const cameraRef = useRef<CameraView>(null as any);
 
-   // Buzz popup
-  const [buzzReq, setBuzzReq] = useState<BuzzRequestPayload | null>(null);
-  const [toast, setToast] = useState<{ title: string; sub?: string } | null>(null);
+  // Incoming Buzz queue
+  const {
+    current: buzzReq,
+    pendingCount: buzzPendingCount,
+    load: loadIncomingBuzz,
+    enqueue: enqueueBuzzRequest,
+    remove: removeBuzzRequest,
+    clear: clearBuzzQueue,
+  } = useMicroBuzzQueue();
 
-  // Reporting
-  const [incomingReportMenuOpen, setIncomingReportMenuOpen] = useState(false);
-  const [previewReportMenuOpen, setPreviewReportMenuOpen] = useState(false);
-  const [previewReportUser, setPreviewReportUser] = useState<MicroBuzzReportTarget | null>(null);
-  const [reportSheetOpen, setReportSheetOpen] = useState(false);
-  const [reportTarget, setReportTarget] = useState<MicroBuzzReportTarget | null>(null);
+  const [toast, setToast] =
+    useState<{
+      title: string;
+      sub?: string;
+    } | null>(null);
+
+  // Session-only radar gender override
+  const [radarGender, setRadarGender] =
+    useState<MicroBuzzGender>("everyone");
+
+  const radarGenderRef =
+    useRef<MicroBuzzGender>("everyone");
+
+  const defaultRadarGenderRef =
+    useRef<MicroBuzzGender>("everyone");
+
+  // Reporting / user actions
+  const [actionMenuTarget, setActionMenuTarget] =
+    useState<MicroBuzzReportTarget | null>(null);
+
+  const [previewReportUser, setPreviewReportUser] =
+    useState<MicroBuzzReportTarget | null>(null);
+
+  const [reportSheetOpen, setReportSheetOpen] =
+    useState(false);
+
+  const [reportTarget, setReportTarget] =
+    useState<MicroBuzzReportTarget | null>(null);
 
   const [matchOverlay, setMatchOverlay] = useState<{
     id: string;
@@ -268,6 +315,12 @@ export default function MicroBuzzScreen() {
   const selfieUrlRef = useRef<string>("");
   const selfieUploadedAtRef = useRef<number>(0);
 
+  const tickInFlightRef =
+    useRef(false);
+
+  const lastPresenceRefreshAtRef =
+    useRef(0);
+
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
@@ -279,6 +332,53 @@ export default function MicroBuzzScreen() {
   useEffect(() => {
     selfieUrlRef.current = selfieUrl;
   }, [selfieUrl]);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      const firstName =
+        await getUserFirstName();
+
+      if (
+        alive &&
+        firstName
+      ) {
+        setMyFirstName(
+          firstName
+        );
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      const next =
+        await loadMicroBuzzDefaultGender();
+
+      if (!alive) return;
+
+      defaultRadarGenderRef.current =
+        next;
+
+      radarGenderRef.current =
+        next;
+
+      setRadarGender(
+        next
+      );
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Permission helpers
   async function syncCurrentLocation() {
@@ -590,16 +690,35 @@ export default function MicroBuzzScreen() {
   async function scanNearby() {
     if (!isActiveRef.current) return;
 
-    const c = coordsRef.current;
+    const c =
+      coordsRef.current;
+
     if (!c) return;
 
     try {
-      const q = `?lat=${encodeURIComponent(c.lat)}&lng=${encodeURIComponent(c.lng)}&radius=${RADIUS_KM}`;
-      const res = await apiFetch(`/microbuzz/nearby${q}`);
-      const data = await res.json().catch(() => null);
+      const q =
+        `?lat=${encodeURIComponent(c.lat)}` +
+        `&lng=${encodeURIComponent(c.lng)}` +
+        `&radius=${RADIUS_KM}` +
+        `&gender=${encodeURIComponent(
+          radarGenderRef.current
+        )}`;
+
+      const res =
+        await apiFetch(
+          `/microbuzz/nearby${q}`
+        );
+
+      const data =
+        await res
+          .json()
+          .catch(() => null);
+
       if (!res.ok) return;
 
-      const list: NearbyUser[] = data?.users || [];
+      const list: NearbyUser[] =
+        data?.users || [];
+
       setNearby(list);
     } catch {
       // silent
@@ -607,18 +726,58 @@ export default function MicroBuzzScreen() {
   }
 
   async function tickOnce() {
-    if (!isActiveRef.current) return;
-    await refreshLocation();
-    await heartbeatActivate();
-    await scanNearby();
+    if (
+      !isActiveRef.current ||
+      tickInFlightRef.current
+    ) {
+      return;
+    }
+
+    tickInFlightRef.current =
+      true;
+
+    try {
+      const now =
+        Date.now();
+
+      const shouldRefreshPresence =
+        !coordsRef.current ||
+        now -
+          lastPresenceRefreshAtRef.current >=
+          PRESENCE_REFRESH_MS;
+
+      if (shouldRefreshPresence) {
+        const next =
+          await refreshLocation();
+
+        if (!next) return;
+
+        lastPresenceRefreshAtRef.current =
+          Date.now();
+
+        await Promise.all([
+          heartbeatActivate(),
+          scanNearby(),
+        ]);
+
+        return;
+      }
+
+      await scanNearby();
+    } finally {
+      tickInFlightRef.current =
+        false;
+    }
   }
 
   async function startScanLoop() {
     stopScanLoop();
     await tickOnce();
-    scanTimerRef.current = setInterval(() => {
-      tickOnce();
-    }, TICK_MS);
+
+    scanTimerRef.current =
+      setInterval(() => {
+        void tickOnce();
+      }, TICK_MS);
   }
 
   function stopScanLoop() {
@@ -626,65 +785,160 @@ export default function MicroBuzzScreen() {
     scanTimerRef.current = null;
   }
 
-  // Socket setup
+   // Socket setup
   useEffect(() => {
     let mounted = true;
+    let socketRef: any = null;
+
+    const onConnect =
+      async () => {
+        if (
+          !mounted ||
+          !socketRef
+        ) {
+          return;
+        }
+
+        const uid =
+          await getUserId();
+
+        if (uid) {
+          socketRef.emit(
+            "user:register",
+            uid
+          );
+        }
+
+        await loadIncomingBuzz();
+      };
+
+    const onBuzzRequest =
+      (data: any) => {
+        if (!mounted) return;
+
+        const request =
+          normalizeBuzzRequest(
+            data
+          );
+
+        if (!request) return;
+
+        Haptics.notificationAsync(
+          Haptics
+            .NotificationFeedbackType
+            .Success
+        );
+
+        enqueueBuzzRequest(
+          request
+        );
+      };
+
+    const onMatch =
+      (data: any) => {
+        if (
+          !mounted ||
+          !data?.otherUserId
+        ) {
+          return;
+        }
+
+        removeBuzzRequest(
+          String(
+            data.otherUserId
+          )
+        );
+
+        setMatchOverlay({
+          id:
+            String(
+              data.otherUserId
+            ),
+
+          firstName:
+            data.otherName,
+
+          selfieUrl:
+            data.selfieUrl,
+        });
+      };
+
+    const onMicroBuzzUpdate =
+      () => {
+        if (
+          !mounted ||
+          !isActiveRef.current
+        ) {
+          return;
+        }
+
+        void scanNearby();
+      };
 
     (async () => {
-      const token = await getToken();
-      if (!token) return;
+      const token =
+        await getToken();
 
-      const s = await getSocket();
+      if (
+        !token ||
+        !mounted
+      ) {
+        return;
+      }
 
-      s.on("connect", async () => {
-        if (!mounted) return;
-        const uid = await getUserId();
-        if (uid) s.emit("user:register", uid);
-      });
+      socketRef =
+        await getSocket();
 
-      s.on("buzz_request", (data: any) => {
-        if (!mounted || !data?.fromId) return;
-        
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        
-        const fullName = (data.name || "").trim();
-        const parts = fullName.split(" ");
+      if (!mounted) return;
 
-        const safe: BuzzRequestPayload = {
-          fromId: data.fromId,
-          firstName: parts[0] || "Someone",
-          lastName: parts.slice(1).join(" "),
-          selfieUrl: data.selfieUrl,
-        };
+      socketRef.on(
+        "connect",
+        onConnect
+      );
 
-        setBuzzReq(safe);
-      });
+      socketRef.on(
+        "buzz_request",
+        onBuzzRequest
+      );
 
-      s.on("match", (data: any) => {
-        if (!mounted) return;
-        setBuzzReq(null);
-        setMatchOverlay({
-          id: String(data.otherUserId),
-          firstName: data.otherName,
-          selfieUrl: data.selfieUrl,
-        });
-      });
+      socketRef.on(
+        "match",
+        onMatch
+      );
 
-      s.on("microbuzz_update", () => {
-        if (!mounted || !isActiveRef.current) return;
-        scanNearby();
-      });
+      socketRef.on(
+        "microbuzz_update",
+        onMicroBuzzUpdate
+      );
 
-      return () => {
-        s.off("connect");
-        s.off("buzz_request");
-        s.off("match");
-        s.off("microbuzz_update");
-      };
+      // getSocket() might already be connected.
+      await onConnect();
     })();
 
     return () => {
       mounted = false;
+
+      if (!socketRef) return;
+
+      socketRef.off(
+        "connect",
+        onConnect
+      );
+
+      socketRef.off(
+        "buzz_request",
+        onBuzzRequest
+      );
+
+      socketRef.off(
+        "match",
+        onMatch
+      );
+
+      socketRef.off(
+        "microbuzz_update",
+        onMicroBuzzUpdate
+      );
     };
   }, []);
 
@@ -723,7 +977,7 @@ export default function MicroBuzzScreen() {
       setLiveStartTime(new Date());
 
       setBusy("");
-      setToast({ title: "You're Live ⚡", sub: "Your presence is visible now" });
+      setToast({ title: "You're Live ⚡", sub: "Your signal is live now" });
       setTimeout(() => setToast(null), 1800);
 
       await startScanLoop();
@@ -745,6 +999,18 @@ export default function MicroBuzzScreen() {
     isActiveRef.current = false;
     setLiveStartTime(null);
 
+    clearBuzzQueue();
+
+    const defaultGender =
+      defaultRadarGenderRef.current;
+
+    radarGenderRef.current =
+      defaultGender;
+
+    setRadarGender(
+      defaultGender
+    );
+
     try {
       await apiFetch("/microbuzz/deactivate", { method: "POST" });
     } catch {
@@ -758,30 +1024,113 @@ export default function MicroBuzzScreen() {
 
   async function handleBuzz(toId: string) {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setBusy("Buzzing…");
-      
-      const res = await apiFetch("/microbuzz/buzz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toId }),
-      });
-      
-      const data = await res.json().catch(() => null);
+      Haptics.impactAsync(
+        Haptics
+          .ImpactFeedbackStyle
+          .Heavy
+      );
 
-      if (!res.ok) throw new Error(data?.error || "Buzz failed");
+      setBusy("Buzzing…");
+
+      const res =
+        await apiFetch(
+          "/microbuzz/buzz",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                toId,
+              }),
+          }
+        );
+
+      const data =
+        await res
+          .json()
+          .catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error ||
+            "Buzz failed"
+        );
+      }
+
+      if (
+        data?.requiresConfirm
+      ) {
+        const request =
+          normalizeBuzzRequest(
+            data?.request
+          );
+
+        if (request) {
+          enqueueBuzzRequest(
+            request,
+            true
+          );
+
+          return;
+        }
+      }
 
       if (data?.matched) {
-        setToast({ title: "Instant Match ⚡", sub: "Opening the door…" });
-      } else if (data?.alreadyLiked) {
-        setToast({ title: "Already buzzed", sub: "Wait for them to buzz back" });
+        setMatchOverlay({
+          id:
+            String(
+              data?.otherUserId ||
+                toId
+            ),
+
+          firstName:
+            data?.otherName,
+
+          selfieUrl:
+            data?.selfieUrl,
+        });
+      } else if (
+        data?.alreadyLiked
+      ) {
+        setToast({
+          title:
+            "Buzz already sent",
+
+          sub:
+            "Waiting for their answer",
+        });
       } else {
-        setToast({ title: "Buzz sent 👋", sub: "If they buzz back → match" });
+        setToast({
+          title:
+            "Buzz sent 👋",
+
+          sub:
+            "They can accept or reject it",
+        });
       }
-      setTimeout(() => setToast(null), 2200);
+
+      setTimeout(
+        () => setToast(null),
+        2200
+      );
     } catch (e: any) {
-      setToast({ title: "Buzz failed", sub: e?.message || "Try again" });
-      setTimeout(() => setToast(null), 2200);
+      setToast({
+        title: "Buzz failed",
+
+        sub:
+          e?.message ||
+          "Try again",
+      });
+
+      setTimeout(
+        () => setToast(null),
+        2200
+      );
     } finally {
       setBusy("");
     }
@@ -1007,67 +1356,357 @@ export default function MicroBuzzScreen() {
     );
   }
 
-  async function ignoreIncomingBuzz() {
+     function handleRadarGenderChange(
+    next: MicroBuzzGender
+  ) {
+    radarGenderRef.current =
+      next;
+
+    setRadarGender(
+      next
+    );
+
+    if (
+      isActiveRef.current
+    ) {
+      void scanNearby();
+    }
+  }
+
+  function closePreviewForUser(
+    targetId: string
+  ) {
+    if (
+      previewReportUser?.id !==
+      targetId
+    ) {
+      return;
+    }
+
+    setSelfiePreviewOpen(
+      false
+    );
+
+    setPreviewImageUri(
+      ""
+    );
+
+    setPreviewReportUser(
+      null
+    );
+  }
+
+  function openUserActions(
+    target:
+      MicroBuzzReportTarget
+  ) {
+    Haptics.impactAsync(
+      Haptics
+        .ImpactFeedbackStyle
+        .Light
+    );
+
+    setActionMenuTarget(
+      target
+    );
+  }
+
+  function reportMicroBuzzUser(
+    target:
+      MicroBuzzReportTarget
+  ) {
+    setActionMenuTarget(
+      null
+    );
+
+    setReportTarget(
+      target
+    );
+
+    setReportSheetOpen(
+      true
+    );
+  }
+
+  async function ignoreMicroBuzzUser(
+    target:
+      MicroBuzzReportTarget
+  ) {
     try {
       setBusy(
         "Ignoring…"
       );
 
-      await apiFetch(
-        "/microbuzz/buzz",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body:
-            JSON.stringify({
-              toId:
-                buzzReq?.fromId,
-
-              confirm:
-                "ignore",
-            }),
-        }
+      await ignoreMicroBuzzSessionUser(
+        target.id
       );
-    } catch {}
 
-    setBusy("");
-    setBuzzReq(null);
+      removeBuzzRequest(
+        target.id
+      );
+
+      setNearby(
+        (prev) =>
+          prev.filter(
+            (user) =>
+              user.id !==
+              target.id
+          )
+      );
+
+      closePreviewForUser(
+        target.id
+      );
+
+      setActionMenuTarget(
+        null
+      );
+    } catch (e: any) {
+      setToast({
+        title:
+          "Ignore failed",
+
+        sub:
+          e?.message ||
+          "Try again",
+      });
+
+      setTimeout(
+        () =>
+          setToast(null),
+        2200
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function blockMicroBuzzUser(
+    target:
+      MicroBuzzReportTarget
+  ) {
+    try {
+      setBusy(
+        "Blocking…"
+      );
+
+      await blockRomBuzzUser(
+        target.id
+      );
+
+      removeBuzzRequest(
+        target.id
+      );
+
+      setNearby(
+        (prev) =>
+          prev.filter(
+            (user) =>
+              user.id !==
+              target.id
+          )
+      );
+
+      closePreviewForUser(
+        target.id
+      );
+
+      setActionMenuTarget(
+        null
+      );
+
+      setToast({
+        title:
+          "User blocked",
+
+        sub:
+          "They are blocked across RomBuzz",
+      });
+
+      setTimeout(
+        () =>
+          setToast(null),
+        2200
+      );
+    } catch (e: any) {
+      setToast({
+        title:
+          "Block failed",
+
+        sub:
+          e?.message ||
+          "Try again",
+      });
+
+      setTimeout(
+        () =>
+          setToast(null),
+        2200
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function rejectIncomingBuzz() {
+    const fromId =
+      buzzReq?.fromId;
+
+    if (!fromId) return;
+
+    try {
+      setBusy(
+        "Declining…"
+      );
+
+      const res =
+        await apiFetch(
+          "/microbuzz/buzz",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                toId:
+                  fromId,
+
+                confirm:
+                  false,
+              }),
+          }
+        );
+
+      const data =
+        await res
+          .json()
+          .catch(
+            () => null
+          );
+
+      if (
+        !res.ok &&
+        res.status !== 409
+      ) {
+        throw new Error(
+          data?.error ||
+            "Could not decline Buzz"
+        );
+      }
+
+      removeBuzzRequest(
+        fromId
+      );
+    } catch (e: any) {
+      setToast({
+        title:
+          "Could not decline",
+
+        sub:
+          e?.message ||
+          "Try again",
+      });
+
+      setTimeout(
+        () =>
+          setToast(null),
+        2200
+      );
+    } finally {
+      setBusy("");
+    }
   }
 
   async function acceptIncomingBuzz() {
+    const fromId =
+      buzzReq?.fromId;
+
+    if (!fromId) return;
+
     try {
       setBusy(
         "Accepting…"
       );
 
-      await apiFetch(
-        "/microbuzz/buzz",
-        {
-          method: "POST",
+      const res =
+        await apiFetch(
+          "/microbuzz/buzz",
+          {
+            method: "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-          body:
-            JSON.stringify({
-              toId:
-                buzzReq?.fromId,
+            body:
+              JSON.stringify({
+                toId:
+                  fromId,
 
-              confirm: true,
-            }),
-        }
+                confirm:
+                  true,
+              }),
+          }
+        );
+
+      const data =
+        await res
+          .json()
+          .catch(
+            () => null
+          );
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error ||
+            "Could not accept Buzz"
+        );
+      }
+
+      removeBuzzRequest(
+        fromId
       );
-    } catch {}
 
-    setBusy("");
-    setBuzzReq(null);
+      if (
+        data?.matched
+      ) {
+        setMatchOverlay({
+          id:
+            String(
+              data?.otherUserId ||
+                fromId
+            ),
+
+          firstName:
+            data?.otherName,
+
+          selfieUrl:
+            data?.selfieUrl,
+        });
+      }
+    } catch (e: any) {
+      setToast({
+        title:
+          "Accept failed",
+
+        sub:
+          e?.message ||
+          "Try again",
+      });
+
+      setTimeout(
+        () =>
+          setToast(null),
+        2200
+      );
+    } finally {
+      setBusy("");
+    }
   }
 
   return (
@@ -1102,8 +1741,8 @@ export default function MicroBuzzScreen() {
           locationGranted={
             locGranted
           }
-          cameraGranted={
-            !!camPerm?.granted
+          radarGender={
+            radarGender
           }
           isActive={
             isActive
@@ -1114,8 +1753,8 @@ export default function MicroBuzzScreen() {
           onLocationPress={
             handleLocationControl
           }
-          onCameraPress={
-            openPresenceCamera
+          onRadarGenderChange={
+            handleRadarGenderChange
           }
         />
 
@@ -1137,6 +1776,9 @@ export default function MicroBuzzScreen() {
           <MicroBuzzPresenceCard
             selfieUri={
               mySelfieLocalUri
+            }
+            firstName={
+              myFirstName
             }
             isActive={
               isActive
@@ -1356,6 +1998,13 @@ export default function MicroBuzzScreen() {
                 )
               : ""
           }
+          waitingCount={
+            Math.max(
+              0,
+              buzzPendingCount -
+                1
+            )
+          }
           onAvatarPress={() => {
             if (
               !buzzReq?.selfieUrl
@@ -1396,134 +2045,79 @@ export default function MicroBuzzScreen() {
           onAccept={
             acceptIncomingBuzz
           }
-          onNotNow={() =>
-            setBuzzReq(null)
+          onReject={
+            rejectIncomingBuzz
           }
-          onIgnore={
-            ignoreIncomingBuzz
-          }
-          onReport={() => {
-            Haptics.impactAsync(
-              Haptics
-                .ImpactFeedbackStyle
-                .Light
-            );
+          onMenu={() => {
+            if (
+              !buzzReq?.fromId
+            ) {
+              return;
+            }
 
-            setIncomingReportMenuOpen(
-              true
-            );
+            openUserActions({
+              id:
+                String(
+                  buzzReq.fromId
+                ),
+
+              name:
+                buzzRequestName(
+                  buzzReq
+                ),
+
+              selfieUrl:
+                buzzReq.selfieUrl,
+
+              source:
+                "mobile_microbuzz_incoming_buzz",
+
+              context:
+                "incoming_buzz_request",
+            });
           }}
         />
 
-        {/* Incoming Buzz Report Menu */}
-        <Modal
-          visible={incomingReportMenuOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setIncomingReportMenuOpen(false)}
-        >
-          <Pressable
-            style={[
-              styles.microReportMenuOverlay,
-              {
-                backgroundColor:
-                  colors.overlay,
-              },
-            ]}
-            onPress={() =>
-              setIncomingReportMenuOpen(
-                false
-              )
+        <MicroBuzzUserActionsMenu
+          visible={
+            !!actionMenuTarget
+          }
+          name={
+            actionMenuTarget?.name
+          }
+          onClose={() =>
+            setActionMenuTarget(
+              null
+            )
+          }
+          onReport={() => {
+            if (
+              actionMenuTarget
+            ) {
+              reportMicroBuzzUser(
+                actionMenuTarget
+              );
             }
-          >
-            <Pressable
-              style={[
-                styles.microReportMenuCard,
-                {
-                  backgroundColor:
-                    colors.surfaceRaised,
-
-                  borderColor:
-                    colors.border,
-                },
-              ]}
-              onPress={() => {}}
-            >
-              <Pressable
-                style={styles.microReportMenuItem}
-                onPress={() => {
-                  if (!buzzReq?.fromId) return;
-
-                  setReportTarget({
-                    id: String(buzzReq.fromId),
-                    name: buzzRequestName(buzzReq),
-                    selfieUrl: buzzReq.selfieUrl,
-                    source: "mobile_microbuzz_incoming_buzz",
-                    context: "incoming_buzz_request",
-                  });
-                  setIncomingReportMenuOpen(false);
-                  setBuzzReq(null);
-                  setReportSheetOpen(true);
-                }}
-              >
-                <View
-                  style={[
-                    styles.microReportIconBubble,
-                    {
-                      backgroundColor:
-                        colors.brandSoft,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name="flag-outline"
-                    size={18}
-                    color={
-                      colors.brand
-                    }
-                  />
-                </View>
-
-                <View
-                  style={
-                    styles.microReportTextWrap
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.microReportTitle,
-                      {
-                        color:
-                          colors.text,
-                      },
-                    ]}
-                  >
-                    Report
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.microReportSubtitle,
-                      {
-                        color:
-                          colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    Report this incoming buzz
-                  </Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={styles.microReportCancelButton}
-                onPress={() => setIncomingReportMenuOpen(false)}
-              >
-                <Text style={styles.microReportCancelText}>Cancel</Text>
-              </Pressable>
-            </Pressable>
-          </Pressable>
-        </Modal>
+          }}
+          onIgnore={() => {
+            if (
+              actionMenuTarget
+            ) {
+              void ignoreMicroBuzzUser(
+                actionMenuTarget
+              );
+            }
+          }}
+          onBlock={() => {
+            if (
+              actionMenuTarget
+            ) {
+              void blockMicroBuzzUser(
+                actionMenuTarget
+              );
+            }
+          }}
+        />
 
         {reportTarget ? (
           <RBZReportSheet
@@ -1565,81 +2159,69 @@ export default function MicroBuzzScreen() {
         ) : null}
 
         {/* Selfie Preview Modal */}
-        <Modal visible={selfiePreviewOpen} transparent animationType="fade">
+        <Modal
+          visible={
+            selfiePreviewOpen
+          }
+          transparent
+          animationType="fade"
+        >
           <Pressable
-            style={styles.previewOverlay}
+            style={
+              styles.previewOverlay
+            }
             onPress={() => {
-              setSelfiePreviewOpen(false);
-              setPreviewImageUri("");
-              setPreviewReportMenuOpen(false);
-              setPreviewReportUser(null);
+              setSelfiePreviewOpen(
+                false
+              );
+
+              setPreviewImageUri(
+                ""
+              );
+
+              setPreviewReportUser(
+                null
+              );
             }}
           >
             {previewReportUser ? (
               <Pressable
-                style={[styles.previewMenuButton, { top: insets.top + 14 }]}
+                style={[
+                  styles.previewMenuButton,
+                  {
+                    top:
+                      insets.top +
+                      14,
+                  },
+                ]}
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setPreviewReportMenuOpen(true);
+                  openUserActions(
+                    previewReportUser
+                  );
                 }}
                 hitSlop={10}
               >
-                <Ionicons name="ellipsis-vertical" size={22} color={RBZ.white} />
+                <Ionicons
+                  name="ellipsis-vertical"
+                  size={22}
+                  color={
+                    RBZ.white
+                  }
+                />
               </Pressable>
             ) : null}
 
             <Image
-              source={{ uri: previewImageUri }}
-              style={[styles.previewImage, styles.unmirror]}
+              source={{
+                uri:
+                  previewImageUri,
+              }}
+              style={[
+                styles.previewImage,
+                styles.unmirror,
+              ]}
               resizeMode="contain"
             />
-          </Pressable>
-        </Modal>
-
-        {/* Preview Report Menu */}
-        <Modal
-          visible={previewReportMenuOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setPreviewReportMenuOpen(false)}
-        >
-          <Pressable
-            style={styles.microReportMenuOverlay}
-            onPress={() => setPreviewReportMenuOpen(false)}
-          >
-            <Pressable style={styles.microReportMenuCard} onPress={() => {}}>
-              <Pressable
-                style={styles.microReportMenuItem}
-                onPress={() => {
-                  if (!previewReportUser) return;
-
-                  setReportTarget(previewReportUser);
-                  setPreviewReportMenuOpen(false);
-                  setSelfiePreviewOpen(false);
-                  setPreviewImageUri("");
-                  setPreviewReportUser(null);
-                  setReportSheetOpen(true);
-                }}
-              >
-                <View style={styles.microReportIconBubble}>
-                  <Ionicons name="flag-outline" size={18} color={RBZ.c2} />
-                </View>
-
-                <View style={styles.microReportTextWrap}>
-                  <Text style={styles.microReportTitle}>Report</Text>
-                  <Text style={styles.microReportSubtitle}>
-                    Report this MicroBuzz profile
-                  </Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={styles.microReportCancelButton}
-                onPress={() => setPreviewReportMenuOpen(false)}
-              >
-                <Text style={styles.microReportCancelText}>Cancel</Text>
-              </Pressable>
-            </Pressable>
           </Pressable>
         </Modal>
 
@@ -1694,7 +2276,7 @@ export default function MicroBuzzScreen() {
                     },
                   ]}
                 >
-                  Your Presence Selfie
+                  MicroBuzz Selfie
                 </Text>
 
                 <Pressable
@@ -1797,6 +2379,7 @@ export default function MicroBuzzScreen() {
                             quality: 0.8,
                             skipProcessing: true,
                             mirror: false,
+                            shutterSound: false,
                           });
 
                           if (pic?.uri) {
@@ -1843,7 +2426,22 @@ export default function MicroBuzzScreen() {
         <MatchCelebrateOverlay
           visible={!!matchOverlay}
           matchUser={matchOverlay}
-          onDone={() => setMatchOverlay(null)}
+          myAvatar={
+            mySelfieLocalUri
+          }
+          pendingCount={
+            buzzPendingCount
+          }
+          onDone={() =>
+            setMatchOverlay(
+              null
+            )
+          }
+          onStay={() =>
+            setMatchOverlay(
+              null
+            )
+          }
         />
       </View>
     </View>

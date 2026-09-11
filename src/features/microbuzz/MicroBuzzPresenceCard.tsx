@@ -25,6 +25,7 @@ import {
 
 type Props = {
   selfieUri: string;
+  firstName: string;
   isActive: boolean;
   liveDuration: number;
   radiusMeters: number;
@@ -38,6 +39,7 @@ type Props = {
 
 export default function MicroBuzzPresenceCard({
   selfieUri,
+  firstName,
   isActive,
   liveDuration,
   radiusMeters,
@@ -121,6 +123,7 @@ export default function MicroBuzzPresenceCard({
           style={styles.titleRow}
         >
           <Text
+            numberOfLines={1}
             style={[
               styles.title,
               {
@@ -129,23 +132,8 @@ export default function MicroBuzzPresenceCard({
               },
             ]}
           >
-            Your presence
+            {firstName || "You"}
           </Text>
-
-          <Pressable
-            onPress={
-              onSelfiePress
-            }
-            hitSlop={8}
-          >
-            <Ionicons
-              name="camera-outline"
-              size={17}
-              color={
-                colors.iconMuted
-              }
-            />
-          </Pressable>
         </View>
 
         <Text
@@ -294,12 +282,10 @@ const styles =
     titleRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent:
-        "space-between",
-      gap: 6,
     },
 
     title: {
+      flexShrink: 1,
       fontSize: 13.5,
       fontFamily:
         RBZFont.bold,

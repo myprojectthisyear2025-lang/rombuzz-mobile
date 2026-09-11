@@ -7,19 +7,14 @@
  * ============================================================================
  */
 
-import { lookingForLabelFromValue } from "@/src/constants/lookingFor";
-import { zodiacDisplayValue } from "@/src/constants/profileBeliefs";
-import { relationshipStyleLabelFromValue } from "@/src/constants/relationshipStyles";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
-import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -36,18 +31,25 @@ import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import RBZVideoViewer, {
   type RBZVideoViewerItem,
 } from "@/src/components/media/RBZVideoViewer";
-import BuzzPokeCard, {
+import {
   type BuzzPokeMeta,
 } from "@/src/components/profile/BuzzPokeCard";
 import ViewProfileGallery from "@/src/components/profile/ViewProfileGallery";
 import ViewProfileMediaActions from "@/src/components/profile/ViewProfileMediaActions";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import {
   fetchFreshViewProfile,
   mergeStableViewProfile,
   readCachedViewProfile,
 } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
+import ViewProfileHero from "@/src/features/viewProfile/hero/ViewProfileHero";
+import ViewProfileDetailsInfo from "@/src/features/viewProfile/info/ViewProfileDetailsInfo";
+import ViewProfileIntroInfo from "@/src/features/viewProfile/info/ViewProfileIntroInfo";
+import ViewProfileLifestyleInfo from "@/src/features/viewProfile/info/ViewProfileLifestyleInfo";
+import ViewProfilePersonalityInfo from "@/src/features/viewProfile/info/ViewProfilePersonalityInfo";
 
 const RBZ = {
   c1: "#b1123c",
@@ -68,9 +70,6 @@ const RBZ = {
   error: "#ef4444",
   warning: "#f59e0b",
 };
-
-// v1 release: Stories stay implemented, but are hidden from users.
-const STORIES_V1_ENABLED = false;
 
 type MediaItem = {
   id: string;
@@ -376,51 +375,10 @@ async function resolveStreamPlayback(streamUid: string) {
     };
   }
 }
-// ---------------------------------------------------------------------------
-// PROFILE INFO HELPERS (supports string / array formats from backend)
-// ---------------------------------------------------------------------------
-const toTitle = (s: any) => {
-  const t = String(s || "").trim();
-  if (!t) return "";
-  return t.charAt(0).toUpperCase() + t.slice(1);
-};
-
-const asArray = (v: any): string[] => {
-  if (Array.isArray(v)) {
-    return v
-      .flat()
-      .filter(Boolean)
-      .map((x) => String(x).trim())
-      .filter(Boolean);
-  }
-
-  if (typeof v === "string") {
-    const t = v.trim();
-    if (!t) return [];
-
-    // ✅ split by comma OR newline OR bullet OR pipe
-    const parts = t
-      .split(/,|\n|•|\||·/g)
-      .map((x) => x.trim())
-      .filter(Boolean);
-
-    // if splitting didn't really split, keep original as single item
-    return parts.length > 1 ? parts : [t];
-  }
-
-  return [];
-};
-
-
-const hasAny = (...vals: any[]) => {
-  return vals.some((v) => {
-    if (Array.isArray(v)) return v.length > 0;
-    return String(v || "").trim().length > 0;
-  });
-};
 
 export default function ViewProfile() {
-   const router = useRouter();
+  const router = useRouter();
+  const { colors } = useRomBuzzTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const params = useLocalSearchParams<{
@@ -459,7 +417,6 @@ export default function ViewProfile() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [matched, setMatched] = useState(false);
-  const [stories, setStories] = useState<any[]>([]);
   const [buzzMeta, setBuzzMeta] = useState<BuzzPokeMeta>({
     count: 0,
     lastBuzz: null,
@@ -469,8 +426,6 @@ export default function ViewProfile() {
   const profileRef = useRef<ProfileResponse | null>(null);
   const requestSeqRef = useRef(0);
   const hydratedCacheForRef = useRef("");
-
-  const hasStory = STORIES_V1_ENABLED && stories.length > 0;
 
    // voice intro
    const soundRef = useRef<Audio.Sound | null>(null);
@@ -663,7 +618,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   // DATA LOADING
   // ---------------------------------------------------------------------------
   const applyProfileBundle = useCallback(
-    (bundle: { profile: ProfileResponse; stories: any[] }) => {
+    (bundle: { profile: ProfileResponse }) => {
       const nextProfile = mergeStableViewProfile(
         profileRef.current,
         bundle.profile
@@ -674,7 +629,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
       setProfile(nextProfile);
       setUser(nextProfile.user);
       setMatched(!!nextProfile.matched);
-      setStories(Array.isArray(bundle.stories) ? bundle.stories : []);
       setVoiceDurationSec(Number(nextProfile?.user?.voiceDurationSec || 0));
     },
     []
@@ -700,7 +654,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         setProfile(null);
         setUser(null);
         setMatched(false);
-        setStories([]);
         setVoiceDurationSec(0);
       }
 
@@ -725,7 +678,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
 
             applyProfileBundle({
               profile: cached.profile,
-              stories: cached.stories,
             });
 
             setLoading(false);
@@ -740,7 +692,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
 
         applyProfileBundle({
           profile: fresh.profile,
-          stories: fresh.stories,
         });
       } catch (e: any) {
         const currentVisibleId = String(profileRef.current?.user?.id || "");
@@ -1073,12 +1024,42 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   // ---------------------------------------------------------------------------
   if (loading && !user) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={RBZ.c2} />
-        <Text style={[styles.unavailableText, { marginTop: 14 }]}>
+      <View
+        style={[
+          styles.loadingContainer,
+          {
+            paddingTop: insets.top,
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        <ActivityIndicator
+          size="large"
+          color={colors.brand}
+        />
+
+        <Text
+          style={[
+            styles.unavailableText,
+            {
+              marginTop: 14,
+              color: colors.text,
+            },
+          ]}
+        >
           Loading profile
         </Text>
-        <Text style={styles.unavailableSubtext}>
+
+        <Text
+          style={[
+            styles.unavailableSubtext,
+            {
+              color:
+                colors.textMuted,
+            },
+          ]}
+        >
           Getting the latest profile details...
         </Text>
       </View>
@@ -1087,11 +1068,56 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
 
   if (!user) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
-        <Text style={styles.unavailableText}>Profile unavailable</Text>
-        <Text style={styles.unavailableSubtext}>This profile could not be loaded.</Text>
-        <Pressable onPress={handleGoBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>Go back</Text>
+      <View
+        style={[
+          styles.loadingContainer,
+          {
+            paddingTop: insets.top,
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.unavailableText,
+            {
+              color: colors.text,
+            },
+          ]}
+        >
+          Profile unavailable
+        </Text>
+
+        <Text
+          style={[
+            styles.unavailableSubtext,
+            {
+              color:
+                colors.textMuted,
+            },
+          ]}
+        >
+          This profile could not be loaded.
+        </Text>
+
+        <Pressable
+          onPress={handleGoBack}
+          style={[
+            styles.backButton,
+            {
+              backgroundColor:
+                colors.brand,
+            },
+          ]}
+        >
+          <Text
+            style={
+              styles.backButtonText
+            }
+          >
+            Go back
+          </Text>
         </Pressable>
       </View>
     );
@@ -1105,25 +1131,63 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   // MAIN UI
   // ---------------------------------------------------------------------------
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor:
+            colors.background,
+        },
+      ]}
+    >
       {/* Header */}
-      <LinearGradient
-        colors={[RBZ.c2, RBZ.c3]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingTop: insets.top + 12 }]}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + 6,
+            backgroundColor: colors.background,
+            borderBottomColor: colors.border,
+          },
+        ]}
       >
-        <Pressable onPress={handleGoBack} style={styles.backButtonHeader}>
-          <Ionicons name="arrow-back" size={22} color={RBZ.white} />
+        <Pressable
+          onPress={handleGoBack}
+          style={styles.backButtonHeader}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={24}
+            color={colors.icon}
+          />
         </Pressable>
-        
-           <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>View Profile</Text>
-          <Text style={styles.headerSubtitle}>Matched Connection</Text>
+
+        <Text
+          style={[
+            styles.headerTitle,
+            { color: colors.text },
+          ]}
+        >
+          Profile
+        </Text>
+
+        <View
+          ref={menuBtnRef}
+          collapsable={false}
+          style={styles.headerRight}
+        >
+          <Pressable
+            onPress={openMenu}
+            style={styles.headerMenuButton}
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={20}
+              color={colors.icon}
+            />
+          </Pressable>
         </View>
-        
-        <View style={styles.headerRight} />
-      </LinearGradient>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -1131,671 +1195,70 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           <RefreshControl
             refreshing={refreshing}
             onRefresh={refreshProfile}
-            tintColor={RBZ.c3}
+            tintColor={colors.brand}
           />
         }
         contentContainerStyle={{
           paddingBottom: insets.bottom + 120,
         }}
       >
-        {/* Profile Hero */}
-        <View style={styles.heroSection}>
-          <Pressable
-            onPress={() => {
-              if (!hasStory) {
-                Alert.alert("Story", "No active story right now.");
-                return;
-              }
-              Alert.alert("Story", "Stories feature coming soon!");
-            }}
-            style={styles.avatarContainer}
-          >
-            <LinearGradient
-              colors={hasStory ? [RBZ.c2, RBZ.c3, RBZ.c4] : ['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.1)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.storyRing}
-            >
-              <View style={styles.avatarInner}>
-                <Image 
-                  source={{ uri: user.avatar || "https://i.pravatar.cc/300?img=12" }} 
-                  style={styles.avatar} 
-                />
-                <View style={[
-                  styles.statusDot,
-                  { backgroundColor: user?.online ? RBZ.success : RBZ.offline }
-                ]} />
-              </View>
-            </LinearGradient>
-          </Pressable>
+        <ViewProfileHero
+          userId={userId}
+          avatar={user?.avatar}
+          fullName={fullName}
+          age={age}
+          city={user?.city}
+          online={user?.online}
+          distanceText={distanceText}
+          matched={viewingAsMatched}
+          buzzMeta={buzzMeta}
+          onBuzzMetaChange={setBuzzMeta}
+          onChat={() => {
+            router.push({
+              pathname: "/chat/[peerId]" as any,
+              params: {
+                peerId: userId,
+                name: fullName,
+                avatar: user.avatar || "",
+              },
+            });
+          }}
+        />
 
-                  <View style={styles.nameContainer}>
-            <View style={styles.nameRow}>
-              <Text style={styles.name}>{fullName}</Text>
-              {age !== null && (
-                <Text style={styles.age}>, {age}</Text>
-              )}
-              {distanceText ? (
-                <Text style={styles.distanceText}> • {distanceText}</Text>
-              ) : null}
-            </View>
+        <ViewProfileIntroInfo
+          bio={user?.bio}
+          voiceUrl={voiceUrl}
+          voiceDurationSec={voiceDurationSec}
+          playing={playing}
+          onPressVoice={playVoice}
+        />
 
-            {viewingAsMatched ? (
-              <View style={styles.buzzMetaRow}>
-                <View style={styles.buzzMetaChip}>
-                  <Ionicons name="flash" size={12} color={RBZ.c2} />
-                  <Text style={styles.buzzMetaCount}>
-                    {Number(buzzMeta?.count || 0)} streak
-                  </Text>
-                </View>
-
-                <Text style={styles.buzzMetaTime}>
-                  {buzzMeta?.lastBuzzLabel || "No buzz yet"}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Action Row */}
-          <View style={styles.actionRow}>
-            <BuzzPokeCard
-              userId={userId}
-              matched={viewingAsMatched}
-              onMetaChange={setBuzzMeta}
-            />
-
-            <Pressable
-              onPress={() => {
-                router.push({
-                  pathname: "/chat/[peerId]" as any,
-                  params: {
-                    peerId: userId,
-                    name: fullName,
-                    avatar: user.avatar || "",
-                  },
-                });
-              }}
-              style={[styles.actionButton, styles.chatButton]}
-            >
-              <Ionicons name="chatbubble-ellipses" size={20} color={RBZ.c2} />
-              <Text style={styles.chatButtonText}>Chat</Text>
-            </Pressable>
-
-            {/* 3-dot Menu Button (opens a Modal overlay so it never goes under About) */}
-            <View style={styles.menuContainer}>
-              <View ref={menuBtnRef} collapsable={false}>
-                <Pressable onPress={openMenu} style={styles.menuButton}>
-                  <Ionicons name="ellipsis-vertical" size={20} color={RBZ.muted} />
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* About Section */}
-        {user?.bio ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="document-text" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>About</Text>
-            </View>
-            <Text style={styles.cardContent}>{user.bio}</Text>
-          </View>
-        ) : null}
-
-              {/* Voice Intro */}
-        {voiceUrl ? (
-          <View style={styles.card}>
-            <Text style={styles.subSectionTitle}>Voice Intro</Text>
-
-            <Pressable onPress={playVoice} style={styles.voiceButton}>
-              <Ionicons
-                name={playing ? "pause-circle" : "play-circle"}
-                size={22}
-                color={playing ? RBZ.success : RBZ.c2}
-              />
-              <Text style={styles.voiceButtonText}>
-                {playing ? "Pause Voice Intro" : "Play Voice Intro"}
-              </Text>
-            </Pressable>
-
-            <Text style={{ marginTop: 10, fontSize: 13, color: RBZ.muted }}>
-              {voiceDurationSec > 0 ? `Duration: ${voiceDurationSec}s` : "Voice intro available"}
-            </Text>
-          </View>
-        ) : null}
-
-   {/* Gallery */}
+        {/* Gallery */}
         <ViewProfileGallery
           tab={tab}
           onTabChange={setTab}
           photos={photos}
           reels={reels}
           gridSize={gridSize}
-          onOpenPhoto={(_, index) => openImageViewer(photos, index)}
-          onOpenReel={(_, index) => openVideoViewer(reels, index)}
+          onOpenPhoto={(_, index) =>
+            openImageViewer(photos, index)
+          }
+          onOpenReel={(_, index) =>
+            openVideoViewer(reels, index)
+          }
         />
 
-        {/* Profile Details */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Ionicons name="information-circle" size={18} color={RBZ.c2} />
-            <Text style={styles.cardTitle}>Details</Text>
-          </View>
-          <View style={styles.detailsGrid}>
-            {user?.city ? (
-              <View style={styles.detailItem}>
-                <Ionicons name="location" size={14} color={RBZ.muted} />
-                <Text style={styles.detailLabel}>City</Text>
-                <Text style={styles.detailValue}>{user.city}</Text>
-              </View>
-            ) : null}
+        <ViewProfileDetailsInfo
+          user={user}
+        />
 
-            {user?.gender ? (
-              <View style={styles.detailItem}>
-                <Ionicons name="person" size={14} color={RBZ.muted} />
-                <Text style={styles.detailLabel}>Gender</Text>
-                <Text style={styles.detailValue}>{user.gender}</Text>
-              </View>
-            ) : null}
+        <ViewProfileLifestyleInfo
+          user={user}
+        />
 
-            {user?.orientation ? (
-              <View style={styles.detailItem}>
-                <Ionicons name="heart" size={14} color={RBZ.muted} />
-                <Text style={styles.detailLabel}>Orientation</Text>
-                <Text style={styles.detailValue}>{user.orientation}</Text>
-              </View>
-            ) : null}
-
-            {user?.lookingFor ? (
-              <View style={styles.detailItem}>
-                <Ionicons name="search" size={14} color={RBZ.muted} />
-                <Text style={styles.detailLabel}>Looking For</Text>
-                <Text style={styles.detailValue}>
-                  {lookingForLabelFromValue(user.lookingFor)}
-                </Text>
-              </View>
-            ) : null}
-
-            {user?.height ? (
-              <View style={styles.detailItem}>
-                <Ionicons name="resize" size={14} color={RBZ.muted} />
-                <Text style={styles.detailLabel}>Height</Text>
-                <Text style={styles.detailValue}>{user.height}</Text>
-              </View>
-            ) : null}
-          </View>
-
-        </View>
-
-        {/* ------------------------------------------------------------------- */}
-        {/* ✅ PROFILE INFO (from ProfileInfoTab) — show only if filled */}
-        {/* ------------------------------------------------------------------- */}
-
-        {/* BASICS (extra) */}
-        {hasAny(user?.pronouns, user?.country, user?.hometown, user?.relationshipStyle) ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="sparkles" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Basics</Text>
-            </View>
-
-            <View style={styles.infoRows}>
-              {user?.pronouns ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="chatbubbles" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Pronouns</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.pronouns)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.country ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="flag" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Country</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.country)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.hometown ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="home" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Hometown</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.hometown)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.relationshipStyle ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="heart-half" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Relationship style</Text>
-                    <Text style={styles.infoValue}>
-                      {relationshipStyleLabelFromValue(
-                        user.relationshipStyle
-                      )}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* BODY & BASICS */}
-        {hasAny(user?.bodyType, user?.fitnessLevel) ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="body" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Body & Basics</Text>
-            </View>
-
-            <View style={styles.pillGrid}>
-              {user?.bodyType ? (
-                <View style={styles.pill}>
-                  <Ionicons name="person" size={12} color={RBZ.c2} />
-                  <Text style={styles.pillText}>{toTitle(user.bodyType)}</Text>
-                </View>
-              ) : null}
-
-              {user?.fitnessLevel ? (
-                <View style={styles.pill}>
-                  <Ionicons name="fitness" size={12} color={RBZ.c2} />
-                  <Text style={styles.pillText}>{toTitle(user.fitnessLevel)}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* LIFESTYLE */}
-        {hasAny(
-          user?.smoking,
-          user?.drinking,
-          user?.workoutFrequency,
-          user?.diet,
-          user?.sleepSchedule,
-          user?.petsPreference,
-          user?.travelVibes
-        ) ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="leaf" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Lifestyle</Text>
-            </View>
-
-            <View style={styles.infoRows}>
-              {user?.smoking ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="flame" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Smoking</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.smoking)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.drinking ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="wine" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Drinking</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.drinking)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.workoutFrequency ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="barbell" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Workout</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.workoutFrequency)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.diet ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="restaurant" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Diet</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.diet)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.sleepSchedule ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="moon" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Sleep</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.sleepSchedule)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.petsPreference ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="paw" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Pets</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.petsPreference)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-                       {Array.isArray(user?.travelVibes) &&
-              user.travelVibes.length > 0 ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="airplane" size={14} color={RBZ.c2} />
-                  </View>
-
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Travel Vibe</Text>
-
-                    <View style={[styles.pillGrid, { marginTop: 8 }]}>
-                      {user.travelVibes.slice(0, 5).map((vibe) => (
-                        <View key={vibe} style={styles.pill}>
-                          <Ionicons
-                            name="navigate"
-                            size={12}
-                            color={RBZ.c2}
-                          />
-                          <Text style={styles.pillText}>
-                            {vibe}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* BACKGROUND */}
-        {hasAny(user?.educationLevel, user?.school, user?.jobTitle, user?.company, user?.languages) ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="school" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Background</Text>
-            </View>
-
-            <View style={styles.infoRows}>
-              {user?.educationLevel ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="ribbon" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Education</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.educationLevel)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.school ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="library" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>School</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.school)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.jobTitle ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="briefcase" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Job title</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.jobTitle)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.company ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="business" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Company</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.company)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {asArray(user?.languages).slice(0, 5).length > 0 ? (
-                <View style={styles.chipsWrapSoft}>
-                  {asArray(user.languages)
-                    .slice(0, 5)
-                    .map((lang, idx) => (
-                      <View key={`${lang}-${idx}`} style={styles.softChip}>
-                        <Ionicons name="language" size={12} color={RBZ.c2} />
-                        <Text style={styles.softChipText}>{toTitle(lang)}</Text>
-                      </View>
-                    ))}
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* BELIEFS */}
-        {hasAny(user?.religion, user?.politicalViews, user?.zodiac) ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="aperture" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Beliefs</Text>
-            </View>
-
-            <View style={styles.infoRows}>
-              {user?.religion ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="sparkles" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Religion</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.religion)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.politicalViews ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="globe" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Political views</Text>
-                    <Text style={styles.infoValue}>{toTitle(user.politicalViews)}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {user?.zodiac ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoIconBubble}>
-                    <Ionicons name="planet" size={14} color={RBZ.c2} />
-                  </View>
-                  <View style={styles.infoRowMid}>
-                    <Text style={styles.infoLabel}>Zodiac</Text>
-                    <Text style={styles.infoValue}>
-                      {zodiacDisplayValue(user.zodiac)}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* FAVORITES */}
-        {hasAny(user?.favoriteMusic, user?.favoriteMovies) ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="heart" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Favorites</Text>
-            </View>
-
-            {asArray(user?.favoriteMusic).length > 0 ? (
-              <>
-                <Text style={styles.subSectionTitle}>Music</Text>
-                <View style={styles.chipsWrapSoft}>
-                  {asArray(user.favoriteMusic).map((x, idx) => (
-                    <View key={`fm-${x}-${idx}`} style={styles.softChip}>
-                      <Ionicons name="musical-notes" size={12} color={RBZ.c2} />
-                      <Text style={styles.softChipText}>{x}</Text>
-                    </View>
-                  ))}
-                </View>
-              </>
-            ) : null}
-
-            {asArray(user?.favoriteMovies).length > 0 ? (
-              <>
-                <Text style={styles.subSectionTitle}>Movies</Text>
-                <View style={styles.chipsWrapSoft}>
-                  {asArray(user.favoriteMovies).map((x, idx) => (
-                    <View key={`mv-${x}-${idx}`} style={styles.softChip}>
-                      <Ionicons name="film" size={12} color={RBZ.c2} />
-                      <Text style={styles.softChipText}>{x}</Text>
-                    </View>
-                  ))}
-                </View>
-              </>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* VIBE TAGS (optional bonus if present) */}
-        {asArray(user?.vibeTags).length > 0 ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="happy" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Vibes</Text>
-            </View>
-            <View style={styles.pillGrid}>
-              {asArray(user.vibeTags).map((tag, idx) => (
-                <View key={`vb-${tag}-${idx}`} style={styles.pill}>
-                  <Ionicons name="sparkles" size={12} color={RBZ.c2} />
-                  <Text style={styles.pillText}>{tag}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-
-        {/* Interests */}
-        {user?.interests && user.interests.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="star" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Interests</Text>
-            </View>
-            <View style={styles.chipsContainer}>
-              {user.interests.map((interest, idx) => (
-                <LinearGradient
-                  key={`${interest}-${idx}`}
-                  colors={['rgba(216,52,95,0.1)', 'rgba(233,72,106,0.05)']}
-                  style={styles.chip}
-                >
-                  <Ionicons name="star" size={12} color={RBZ.c2} />
-                  <Text style={styles.chipText}>{interest}</Text>
-                </LinearGradient>
-              ))}
-            </View>
-          </View>
-        )}
-          {/* Likes & Dislikes */}
-                 {(user?.likes || user?.dislikes) && (
-            <View style={styles.likesSection}>
-              {user?.likes ? (
-                <View style={styles.likeItem}>
-                  <Ionicons name="thumbs-up" size={14} color={RBZ.success} />
-                  <Text style={styles.likeLabel}>Likes</Text>
-                 <View style={styles.chipsWrapSoft}>
-                  {asArray(user.likes).map((x, idx) => (
-                    <View key={`like-${x}-${idx}`} style={styles.softChip}>
-                      <Ionicons name="thumbs-up" size={12} color={RBZ.success} />
-                      <Text style={styles.softChipText}>{x}</Text>
-                    </View>
-                  ))}
-                </View>
-                </View>
-              ) : null}
-
-              {user?.dislikes ? (
-                <View style={styles.likeItem}>
-                  <Ionicons name="thumbs-down" size={14} color={RBZ.error} />
-                  <Text style={styles.likeLabel}>Dislikes</Text>
-                  <View style={styles.chipsWrapSoft}>
-                    {asArray(user.dislikes).map((x, idx) => (
-                      <View key={`dislike-${x}-${idx}`} style={styles.softChip}>
-                        <Ionicons name="thumbs-down" size={12} color={RBZ.error} />
-                        <Text style={styles.softChipText}>{x}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          )}
-
-        {/* Hobbies */}
-        {user?.hobbies && user.hobbies.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="game-controller" size={18} color={RBZ.c2} />
-              <Text style={styles.cardTitle}>Hobbies</Text>
-            </View>
-            <View style={styles.chipsContainer}>
-              {user.hobbies.map((hobby, idx) => (
-                <View key={`${hobby}-${idx}`} style={styles.hobbyChip}>
-                  <Ionicons name="checkmark-circle" size={12} color={RBZ.c3} />
-                  <Text style={styles.hobbyChipText}>{hobby}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
+        <ViewProfilePersonalityInfo
+          user={user}
+        />
       </ScrollView>
 
       {/* ✅ 3-dot menu overlay (always above About/Details/etc) */}
@@ -1838,7 +1301,14 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               <Text
                 style={[
                   styles.menuItemText,
-                  profile?.blocked && { color: RBZ.success },
+                  {
+                    color:
+                      colors.text,
+                  },
+                  profile?.blocked && {
+                    color:
+                      RBZ.success,
+                  },
                 ]}
               >
                 {blockLoading ? "Processing..." : profile?.blocked ? "Unblock" : "Block"}
@@ -1850,10 +1320,29 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
                 setShowMenu(false);
                 setReportSheetVisible(true);
               }}
-              style={styles.menuItem}
+              style={[
+                styles.menuItem,
+                {
+                  borderBottomColor:
+                    colors.border,
+                },
+              ]}
             >
-              <Ionicons name="warning" size={16} color={RBZ.warning} />
-              <Text style={styles.menuItemText}>
+              <Ionicons
+                name="warning"
+                size={16}
+                color={RBZ.warning}
+              />
+
+              <Text
+                style={[
+                  styles.menuItemText,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
                 Report
               </Text>
             </Pressable>
@@ -1993,44 +1482,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    minHeight: 52,
+    paddingHorizontal: 10,
+    paddingBottom: 6,
+
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    elevation: 4,
-    shadowColor: RBZ.c2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
+    justifyContent:
+      "space-between",
+
+    borderBottomWidth:
+      StyleSheet.hairlineWidth,
   },
+
   backButtonHeader: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
   },
-  headerCenter: {
-    alignItems: "center",
-  },
+
   headerTitle: {
-    color: RBZ.white,
-    fontSize: 18,
-    fontWeight: "900",
+    fontFamily:
+      RBZFont.bold,
+
+    fontSize: 16,
   },
-  headerSubtitle: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 2,
-  },
+
   headerRight: {
-    width: 40,
-    alignItems: "flex-end",
+    width: 42,
+    height: 42,
+  },
+
+  headerMenuButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+
+    alignItems: "center",
+    justifyContent: "center",
   },
   streakBadge: {
     flexDirection: "row",
@@ -2063,14 +1555,6 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginBottom: 16,
-  },
-  storyRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 4,
   },
   avatarInner: {
     width: 112,

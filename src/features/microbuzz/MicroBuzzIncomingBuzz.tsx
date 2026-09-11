@@ -1,60 +1,217 @@
 /**
  * Path: src/features/microbuzz/MicroBuzzIncomingBuzz.tsx
- * Purpose: Centered incoming Buzz popup that overlays the MicroBuzz radar without changing Buzz actions.
- * Used by: app/(tabs)/microbuzz.tsx
+ * Purpose: Swipeable incoming Buzz card with Accept / Reject controls.
  */
 
-import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import {
+  Ionicons,
+} from "@expo/vector-icons";
+
+import React, {
+  useMemo,
+  useRef,
+} from "react";
 
 import {
-    Image,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Animated,
+  Image,
+  Modal,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import {
-    useRomBuzzTheme,
+  useRomBuzzTheme,
 } from "@/src/design/RomBuzzThemeProvider";
 
 import {
-    RBZFont,
+  RBZFont,
 } from "@/src/design/rombuzzTypography";
 
 type Props = {
   visible: boolean;
   selfieUrl?: string;
   name: string;
-  age: string | number;
-  onAvatarPress: () => void;
-  onAccept: () => void;
-  onNotNow: () => void;
-  onIgnore: () => void;
-  onReport: () => void;
+  age:
+    | string
+    | number;
+  waitingCount: number;
+  onAvatarPress:
+    () => void;
+  onAccept:
+    () => void;
+  onReject:
+    () => void;
+  onMenu:
+    () => void;
 };
+
+const SWIPE_DISTANCE = 82;
 
 export default function MicroBuzzIncomingBuzz({
   visible,
   selfieUrl,
   name,
   age,
+  waitingCount,
   onAvatarPress,
   onAccept,
-  onNotNow,
-  onIgnore,
-  onReport,
+  onReject,
+  onMenu,
 }: Props) {
   const {
     colors,
     isDark,
-  } = useRomBuzzTheme();
+  } =
+    useRomBuzzTheme();
+
+  const pan =
+    useRef(
+      new Animated.ValueXY()
+    ).current;
+
+  const responder =
+    useMemo(
+      () =>
+        PanResponder.create({
+          onMoveShouldSetPanResponder:
+            (_, g) =>
+              Math.abs(g.dx) >
+                8 &&
+              Math.abs(g.dx) >
+                Math.abs(g.dy),
+
+          onPanResponderMove:
+            Animated.event(
+              [
+                null,
+                {
+                  dx:
+                    pan.x,
+                },
+              ],
+              {
+                useNativeDriver:
+                  false,
+              }
+            ),
+
+          onPanResponderRelease:
+            (_, g) => {
+              const accept =
+                g.dx >=
+                SWIPE_DISTANCE;
+
+              const reject =
+                g.dx <=
+                -SWIPE_DISTANCE;
+
+              if (
+                !accept &&
+                !reject
+              ) {
+                Animated.spring(
+                  pan,
+                  {
+                    toValue: {
+                      x: 0,
+                      y: 0,
+                    },
+
+                    useNativeDriver:
+                      false,
+                  }
+                ).start();
+
+                return;
+              }
+
+              Animated.timing(
+                pan,
+                {
+                  toValue: {
+                    x:
+                      accept
+                        ? 420
+                        : -420,
+
+                    y: 0,
+                  },
+
+                  duration: 180,
+
+                  useNativeDriver:
+                    false,
+                }
+              ).start(() => {
+                pan.setValue({
+                  x: 0,
+                  y: 0,
+                });
+
+                accept
+                  ? onAccept()
+                  : onReject();
+              });
+            },
+        }),
+      [
+        onAccept,
+        onReject,
+        pan,
+      ]
+    );
+
+  const rotate =
+    pan.x.interpolate({
+      inputRange:
+        [-180, 0, 180],
+
+      outputRange:
+        [
+          "-7deg",
+          "0deg",
+          "7deg",
+        ],
+
+      extrapolate:
+        "clamp",
+    });
+
+  const yesOpacity =
+    pan.x.interpolate({
+      inputRange:
+        [20, 90],
+
+      outputRange:
+        [0, 1],
+
+      extrapolate:
+        "clamp",
+    });
+
+  const noOpacity =
+    pan.x.interpolate({
+      inputRange:
+        [-90, -20],
+
+      outputRange:
+        [1, 0],
+
+      extrapolate:
+        "clamp",
+    });
+
+  if (!visible) {
+    return null;
+  }
 
   return (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="fade"
     >
@@ -69,7 +226,8 @@ export default function MicroBuzzIncomingBuzz({
           },
         ]}
       >
-        <View
+        <Animated.View
+          {...responder.panHandlers}
           style={[
             styles.card,
             {
@@ -78,29 +236,85 @@ export default function MicroBuzzIncomingBuzz({
 
               borderColor:
                 colors.borderStrong,
+
+              transform: [
+                {
+                  translateX:
+                    pan.x,
+                },
+                {
+                  rotate,
+                },
+              ],
             },
           ]}
         >
+          <Animated.Text
+            style={[
+              styles.acceptStamp,
+              {
+                opacity:
+                  yesOpacity,
+
+                color:
+                  colors.brand,
+              },
+            ]}
+          >
+            ACCEPT
+          </Animated.Text>
+
+          <Animated.Text
+            style={[
+              styles.rejectStamp,
+              {
+                opacity:
+                  noOpacity,
+              },
+            ]}
+          >
+            REJECT
+          </Animated.Text>
+
+          <Pressable
+            onPress={onMenu}
+            hitSlop={10}
+            style={
+              styles.menu
+            }
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={19}
+              color={
+                colors.iconMuted
+              }
+            />
+          </Pressable>
+
           <Pressable
             onPress={
               onAvatarPress
             }
-            disabled={!selfieUrl}
-            style={
-              styles.avatarButton
+            disabled={
+              !selfieUrl
             }
           >
             {selfieUrl ? (
               <Image
                 source={{
-                  uri: selfieUrl,
+                  uri:
+                    selfieUrl,
                 }}
-                style={styles.avatar}
+                style={
+                  styles.avatar
+                }
               />
             ) : (
               <View
                 style={[
-                  styles.avatarFallback,
+                  styles.avatar,
+                  styles.fallback,
                   {
                     backgroundColor:
                       colors.surfaceMuted,
@@ -109,7 +323,7 @@ export default function MicroBuzzIncomingBuzz({
               >
                 <Ionicons
                   name="person"
-                  size={24}
+                  size={28}
                   color={
                     colors.iconMuted
                   }
@@ -118,175 +332,154 @@ export default function MicroBuzzIncomingBuzz({
             )}
           </Pressable>
 
-          <View
-            style={styles.content}
+          <Text
+            style={[
+              styles.eyebrow,
+              {
+                color:
+                  colors.brand,
+              },
+            ]}
           >
-            <View
-              style={
-                styles.eyebrowRow
-              }
+            INCOMING BUZZ
+          </Text>
+
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.name,
+              {
+                color:
+                  colors.text,
+              },
+            ]}
+          >
+            {name}
+            {age !== ""
+              ? `, ${age}`
+              : ""}
+          </Text>
+
+          <Text
+            style={[
+              styles.sub,
+              {
+                color:
+                  colors.textSecondary,
+              },
+            ]}
+          >
+            Wants to match nearby
+          </Text>
+
+          {waitingCount >
+          0 ? (
+            <Text
+              style={[
+                styles.waiting,
+                {
+                  color:
+                    colors.textMuted,
+                },
+              ]}
             >
-              <View
-                style={[
-                  styles.signalDot,
-                  {
-                    backgroundColor:
-                      colors.brand,
-                  },
-                ]}
+              {waitingCount} more
+              Buzz
+              {waitingCount === 1
+                ? ""
+                : "es"}{" "}
+              waiting
+            </Text>
+          ) : null}
+
+          <View
+            style={
+              styles.actions
+            }
+          >
+            <Pressable
+              onPress={
+                onReject
+              }
+              style={[
+                styles.secondary,
+                {
+                  borderColor:
+                    colors.border,
+
+                  backgroundColor:
+                    colors.surfaceMuted,
+                },
+              ]}
+            >
+              <Ionicons
+                name="close"
+                size={17}
+                color={
+                  colors.text
+                }
               />
 
               <Text
                 style={[
-                  styles.eyebrow,
+                  styles.secondaryText,
                   {
                     color:
-                      colors.brand,
+                      colors.text,
                   },
                 ]}
               >
-                Incoming Buzz
+                Reject
               </Text>
-            </View>
+            </Pressable>
 
-            <Text
-              numberOfLines={1}
+            <Pressable
+              onPress={
+                onAccept
+              }
               style={[
-                styles.name,
+                styles.accept,
                 {
-                  color:
-                    colors.text,
+                  backgroundColor:
+                    colors.brand,
                 },
               ]}
             >
-              {name}
-              {age !== ""
-                ? `, ${age}`
-                : ""}
-            </Text>
-
-            <Text
-              style={[
-                styles.sub,
-                {
-                  color:
-                    colors.textSecondary,
-                },
-              ]}
-            >
-              Wants to connect nearby
-            </Text>
-
-            <View
-              style={styles.actions}
-            >
-              <Pressable
-                onPress={onAccept}
-                style={({
-                  pressed,
-                }) => [
-                  styles.accept,
-                  {
-                    backgroundColor:
-                      colors.brand,
-                  },
-                  pressed &&
-                    styles.pressed,
-                ]}
-              >
-                <Ionicons
-                  name="heart"
-                  size={15}
-                  color={
-                    colors.white
-                  }
-                />
-
-                <Text
-                  style={[
-                    styles.acceptText,
-                    {
-                      color:
-                        colors.white,
-                    },
-                  ]}
-                >
-                  Accept
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={
-                  onNotNow
+              <Ionicons
+                name="heart"
+                size={16}
+                color={
+                  colors.white
                 }
-                style={({
-                  pressed,
-                }) => [
-                  styles.secondary,
-                  {
-                    backgroundColor:
-                      colors.surfaceMuted,
+              />
 
-                    borderColor:
-                      colors.border,
+              <Text
+                style={[
+                  styles.acceptText,
+                  {
+                    color:
+                      colors.white,
                   },
-                  pressed &&
-                    styles.pressed,
                 ]}
               >
-                <Text
-                  style={[
-                    styles.secondaryText,
-                    {
-                      color:
-                        colors.text,
-                    },
-                  ]}
-                >
-                  Not now
-                </Text>
-              </Pressable>
-            </View>
+                Accept
+              </Text>
+            </Pressable>
           </View>
 
-          <View
-            style={
-              styles.utilityActions
-            }
+          <Text
+            style={[
+              styles.swipeHint,
+              {
+                color:
+                  colors.textMuted,
+              },
+            ]}
           >
-            <Pressable
-              onPress={onReport}
-              hitSlop={8}
-              style={
-                styles.utilityButton
-              }
-            >
-              <Ionicons
-                name="ellipsis-vertical"
-                size={19}
-                color={
-                  colors.iconMuted
-                }
-              />
-            </Pressable>
-
-            <Pressable
-              onPress={onIgnore}
-              hitSlop={8}
-              style={
-                styles.utilityButton
-              }
-            >
-              <Ionicons
-                name="close"
-                size={20}
-                color={
-                  colors.iconMuted
-                }
-              />
-            </Pressable>
-          </View>
-        </View>
+            Swipe left to reject ·
+            right to accept
+          </Text>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -297,131 +490,152 @@ const styles =
     overlay: {
       flex: 1,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
       paddingHorizontal: 24,
-      paddingTop: 72,
+      paddingTop: 64,
     },
 
     card: {
       width: "100%",
       maxWidth: 360,
-      minHeight: 156,
-      borderRadius: 24,
+      borderRadius: 26,
       borderWidth: 1,
-      padding: 14,
-      flexDirection: "row",
-      gap: 12,
+      padding: 16,
+      alignItems: "center",
+      overflow: "hidden",
     },
 
-    avatarButton: {
-      width: 86,
-      alignSelf: "stretch",
+    menu: {
+      position: "absolute",
+      right: 12,
+      top: 12,
+      width: 34,
+      height: 34,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      zIndex: 5,
     },
 
     avatar: {
-      width: 86,
-      height: 114,
-      borderRadius: 18,
+      width: 92,
+      height: 112,
+      borderRadius: 20,
     },
 
-    avatarFallback: {
-      width: 86,
-      height: 114,
-      borderRadius: 18,
+    fallback: {
       alignItems: "center",
-      justifyContent: "center",
-    },
-
-    content: {
-      flex: 1,
-      paddingTop: 3,
-      minWidth: 0,
-    },
-
-    eyebrowRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-    },
-
-    signalDot: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
+      justifyContent:
+        "center",
     },
 
     eyebrow: {
+      marginTop: 11,
       fontSize: 10.5,
+      letterSpacing: 1,
       fontFamily:
         RBZFont.bold,
     },
 
     name: {
-      marginTop: 6,
-      fontSize: 17,
+      marginTop: 4,
+      fontSize: 19,
       fontFamily:
         RBZFont.extraBold,
     },
 
     sub: {
       marginTop: 2,
-      fontSize: 10.5,
+      fontSize: 11,
       fontFamily:
         RBZFont.medium,
     },
 
+    waiting: {
+      marginTop: 7,
+      fontSize: 10.5,
+      fontFamily:
+        RBZFont.semiBold,
+    },
+
     actions: {
-      flexDirection: "row",
-      gap: 7,
       marginTop: 15,
+      width: "100%",
+      flexDirection: "row",
+      gap: 9,
     },
 
     accept: {
       flex: 1,
-      minHeight: 39,
-      borderRadius: 14,
+      minHeight: 44,
+      borderRadius: 15,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
       gap: 6,
-    },
-
-    acceptText: {
-      fontSize: 11.5,
-      fontFamily:
-        RBZFont.semiBold,
     },
 
     secondary: {
       flex: 1,
-      minHeight: 39,
-      borderRadius: 14,
+      minHeight: 44,
+      borderRadius: 15,
       borderWidth: 1,
+      flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
+      gap: 6,
+    },
+
+    acceptText: {
+      fontSize: 12.5,
+      fontFamily:
+        RBZFont.bold,
     },
 
     secondaryText: {
-      fontSize: 11.5,
+      fontSize: 12.5,
       fontFamily:
-        RBZFont.semiBold,
+        RBZFont.bold,
     },
 
-    utilityActions: {
+    swipeHint: {
+      marginTop: 10,
+      fontSize: 9.5,
+      fontFamily:
+        RBZFont.medium,
+    },
+
+    acceptStamp: {
       position: "absolute",
-      right: 8,
-      top: 7,
-      flexDirection: "row",
+      left: 18,
+      top: 22,
+      fontSize: 14,
+      fontFamily:
+        RBZFont.extraBold,
+      transform: [
+        {
+          rotate:
+            "-8deg",
+        },
+      ],
     },
 
-    utilityButton: {
-      width: 30,
-      height: 30,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
-    pressed: {
-      opacity: 0.66,
+    rejectStamp: {
+      position: "absolute",
+      right: 48,
+      top: 22,
+      fontSize: 14,
+      color: "#E5484D",
+      fontFamily:
+        RBZFont.extraBold,
+      transform: [
+        {
+          rotate:
+            "8deg",
+        },
+      ],
     },
   });

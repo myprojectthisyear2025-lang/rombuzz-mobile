@@ -1,21 +1,23 @@
 /**
  * ============================================================================
  * 📁 File: src/components/buzz/PaidBuzzConfirmSheet.tsx
- * 🎯 Purpose: Confirmation sheet before spending BuzzCoin on paid Buzzes
+ * 🎯 Purpose: Premium confirmation showcase before spending BuzzCoin
  *
  * Used by:
  * - src/components/profile/BuzzPokeCard.tsx
  *
  * What this does:
- * - Shows Buzz price.
- * - Shows user spendable balance.
- * - Lets user cancel or send.
+ * - Showcases the selected Premium Buzz as a desirable experience.
+ * - Shows Buzz price and spendable balance.
  * - Lets user remember the paid Buzz for this match.
- * - Shows Buy BuzzCoin option when balance is not enough.
+ * - Lets user cancel, send, or buy BuzzCoin when balance is insufficient.
+ * - Does NOT change any Buzz/payment behavior.
  * ============================================================================
  */
 
 import { formatBuzzPrice, type BuzzType } from "@/src/config/buzzTypes";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
@@ -23,20 +25,12 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const RBZ = {
-  c2: "#d8345f",
-  white: "#ffffff",
-  ink: "#111827",
-  muted: "#6b7280",
-  soft: "#f7f7fb",
-  line: "rgba(17,24,39,0.10)",
-};
 
 type Props = {
   visible: boolean;
@@ -62,12 +56,23 @@ export default function PaidBuzzConfirmSheet({
   onBuyBuzzCoin,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { colors } = useRomBuzzTheme();
 
   const notEnough =
     !!buzzType &&
     buzzType.isPaid &&
     spendableBalance !== null &&
     spendableBalance < buzzType.price;
+
+  const shortfall =
+    buzzType && spendableBalance !== null
+      ? Math.max(0, buzzType.price - spendableBalance)
+      : 0;
+
+  const balanceLabel =
+    spendableBalance === null
+      ? "Unavailable"
+      : `${spendableBalance} BC`;
 
   return (
     <Modal
@@ -79,101 +84,293 @@ export default function PaidBuzzConfirmSheet({
       }}
     >
       <Pressable
-        style={styles.modalBackdrop}
+        style={styles.backdrop}
         onPress={() => {
           if (!sending) onCancel();
         }}
       >
         <Pressable
-          style={[
-            styles.confirmCard,
-            { marginBottom: Math.max(26, insets.bottom + 18) },
-          ]}
           onPress={() => {}}
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.background,
+              paddingBottom: Math.max(16, insets.bottom + 10),
+            },
+          ]}
         >
           {buzzType ? (
-            <>
-              <LinearGradient colors={buzzType.gradient as any} style={styles.confirmHero}>
-                <Text style={styles.confirmEmoji}>{buzzType.emoji}</Text>
-              </LinearGradient>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.content}
+            >
+              <View
+                style={[
+                  styles.handle,
+                  {
+                    backgroundColor: colors.borderStrong,
+                  },
+                ]}
+              />
 
-              <Text style={styles.confirmTitle}>
-                {notEnough ? "Not enough BuzzCoin" : buzzType.confirmTitle}
-              </Text>
+              <LinearGradient
+                colors={buzzType.gradient as any}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.hero}
+              >
+                <View style={styles.heroShade} />
 
-              <Text style={styles.confirmBody}>
-                {notEnough
-                  ? `${buzzType.label} costs ${buzzType.price} BC. Add BuzzCoin to send this premium Buzz.`
-                  : buzzType.confirmBody}
-              </Text>
+                <View style={styles.heroTop}>
+                  <View style={styles.premiumBadge}>
+                    <Ionicons
+                      name="sparkles"
+                      size={11}
+                      color="#ffffff"
+                    />
 
-              <View style={styles.costBox}>
-                <View>
-                  <Text style={styles.costLabel}>Cost</Text>
-                  <Text style={styles.costValue}>{formatBuzzPrice(buzzType)}</Text>
+                    <Text style={styles.premiumBadgeText}>
+                      PREMIUM BUZZ
+                    </Text>
+                  </View>
+
+                  <View style={styles.priceBadge}>
+                    <Text style={styles.priceBadgeText}>
+                      {formatBuzzPrice(buzzType)}
+                    </Text>
+                  </View>
                 </View>
 
-                <View style={styles.costDivider} />
+                <View style={styles.emojiGlow}>
+                  <Text style={styles.heroEmoji}>
+                    {buzzType.emoji}
+                  </Text>
+                </View>
 
-                <View>
-                  <Text style={styles.costLabel}>Balance</Text>
-                  <Text style={styles.costValue}>
-                    {spendableBalance === null ? "..." : `${spendableBalance} BC`}
+                <Text style={styles.heroTitle}>
+                  {buzzType.label}
+                </Text>
+
+                <Text style={styles.heroDescription}>
+                  {buzzType.description}
+                </Text>
+              </LinearGradient>
+
+              <View style={styles.section}>
+                <Text
+                  style={[
+                    styles.sectionEyebrow,
+                    {
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
+                  THE MOMENT
+                </Text>
+
+                <Text
+                  style={[
+                    styles.sectionBody,
+                    {
+                      color: colors.textSecondary,
+                    },
+                  ]}
+                >
+                  {notEnough
+                    ? `You need ${shortfall} more BC to send this experience.`
+                    : buzzType.confirmBody}
+                </Text>
+              </View>
+
+
+
+              <View
+                style={[
+                  styles.walletCard,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={styles.walletColumn}>
+                  <Text
+                    style={[
+                      styles.walletLabel,
+                      {
+                        color: colors.textMuted,
+                      },
+                    ]}
+                  >
+                    This Buzz
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.walletValue,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  >
+                    {formatBuzzPrice(buzzType)}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.walletDivider,
+                    {
+                      backgroundColor: colors.border,
+                    },
+                  ]}
+                />
+
+                <View style={styles.walletColumn}>
+                  <Text
+                    style={[
+                      styles.walletLabel,
+                      {
+                        color: colors.textMuted,
+                      },
+                    ]}
+                  >
+                    Your balance
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.walletValue,
+                      {
+                        color: notEnough
+                          ? "#D86A62"
+                          : colors.text,
+                      },
+                    ]}
+                  >
+                    {balanceLabel}
                   </Text>
                 </View>
               </View>
 
               {!notEnough ? (
                 <Pressable
-                  onPress={() => onRememberChoiceChange(!rememberChoice)}
-                  style={styles.rememberRow}
+                  onPress={() =>
+                    onRememberChoiceChange(!rememberChoice)
+                  }
+                  style={[
+                    styles.rememberRow,
+                    {
+                      backgroundColor: colors.surfaceRaised,
+                      borderColor: rememberChoice
+                        ? colors.brand
+                        : colors.border,
+                    },
+                  ]}
                 >
                   <View
                     style={[
                       styles.checkbox,
-                      rememberChoice && styles.checkboxChecked,
+                      {
+                        backgroundColor: rememberChoice
+                          ? colors.brand
+                          : colors.background,
+
+                        borderColor: rememberChoice
+                          ? colors.brand
+                          : colors.borderStrong,
+                      },
                     ]}
                   >
                     {rememberChoice ? (
-                      <Ionicons name="checkmark" size={14} color={RBZ.white} />
+                      <Ionicons
+                        name="checkmark"
+                        size={14}
+                        color="#ffffff"
+                      />
                     ) : null}
                   </View>
 
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rememberTitle}>
-                      Remember {buzzType.label} for this match
+                  <View style={styles.rememberCopy}>
+                    <Text
+                      style={[
+                        styles.rememberTitle,
+                        {
+                          color: colors.text,
+                        },
+                      ]}
+                    >
+                      Remember {buzzType.shortLabel} Buzz for this match
                     </Text>
-                    <Text style={styles.rememberSub}>
-                      Next tap sends instantly without asking again.
+
+                    <Text
+                      style={[
+                        styles.rememberSub,
+                        {
+                          color: colors.textMuted,
+                        },
+                      ]}
+                    >
+                      Next tap sends it instantly to this match.
                     </Text>
                   </View>
                 </Pressable>
               ) : null}
 
-              <View style={styles.confirmActions}>
-                <Pressable
-                  onPress={onCancel}
-                  disabled={sending}
-                  style={[styles.confirmButton, styles.cancelButton]}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={notEnough ? onBuyBuzzCoin : onSend}
-                  disabled={sending}
-                  style={[styles.confirmButton, styles.sendButton]}
+              <Pressable
+                disabled={sending}
+                onPress={notEnough ? onBuyBuzzCoin : onSend}
+                style={({ pressed }) => [
+                  styles.ctaWrap,
+                  pressed && !sending
+                    ? styles.pressed
+                    : null,
+                ]}
+              >
+                <LinearGradient
+                  colors={buzzType.gradient as any}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.cta}
                 >
                   {sending ? (
-                    <ActivityIndicator size="small" color={RBZ.white} />
+                    <ActivityIndicator
+                      size="small"
+                      color="#ffffff"
+                    />
                   ) : (
-                    <Text style={styles.sendButtonText}>
-                      {notEnough ? "Buy BuzzCoin" : "Send"}
-                    </Text>
+                    <>
+                      <Text style={styles.ctaText}>
+                        {notEnough
+                          ? "Get BuzzCoin"
+                          : `Send ${buzzType.shortLabel} Buzz`}
+                      </Text>
+
+                      <Text style={styles.ctaEmoji}>
+                        {buzzType.emoji}
+                      </Text>
+                    </>
                   )}
-                </Pressable>
-              </View>
-            </>
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                onPress={onCancel}
+                disabled={sending}
+                style={styles.cancelButton}
+              >
+                <Text
+                  style={[
+                    styles.cancelText,
+                    {
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
+                  Not now
+                </Text>
+              </Pressable>
+            </ScrollView>
           ) : null}
         </Pressable>
       </Pressable>
@@ -182,139 +379,243 @@ export default function PaidBuzzConfirmSheet({
 }
 
 const styles = StyleSheet.create({
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(17,24,39,0.45)",
-    justifyContent: "flex-end",
+ backdrop: {
+  flex: 1,
+  backgroundColor: "rgba(5,8,15,0.68)",
+  justifyContent: "center",
+},
+
+ sheet: {
+  maxHeight: "78%",
+  marginHorizontal: 20,
+  borderRadius: 24,
+  overflow: "hidden",
+},
+
+  content: {
+    paddingHorizontal: 12,
+    paddingTop: 7,
   },
-  confirmCard: {
-    marginHorizontal: 16,
-    borderRadius: 28,
-    backgroundColor: RBZ.white,
-    padding: 18,
-    alignItems: "center",
-  },
-  confirmHero: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    alignItems: "center",
-    justifyContent: "center",
+
+  handle: {
+    width: 38,
+    height: 4,
+    borderRadius: 999,
+    alignSelf: "center",
     marginBottom: 12,
   },
-  confirmEmoji: {
-    fontSize: 38,
+
+hero: {
+  minHeight: 172,
+  borderRadius: 20,
+  padding: 13,
+  overflow: "hidden",
+  alignItems: "center",
+},
+
+  heroShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(8,10,18,0.15)",
   },
-  confirmTitle: {
-    color: RBZ.ink,
-    fontSize: 21,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  confirmBody: {
-    marginTop: 6,
-    color: RBZ.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
-    lineHeight: 19,
-  },
-  costBox: {
+
+  heroTop: {
     width: "100%",
-    marginTop: 16,
-    borderRadius: 18,
-    backgroundColor: RBZ.soft,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    padding: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  premiumBadge: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.16)",
   },
-  costLabel: {
-    color: RBZ.muted,
+
+  premiumBadgeText: {
+    color: "#ffffff",
+    fontFamily: RBZFont.bold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+  },
+
+  priceBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(10,12,20,0.24)",
+  },
+
+  priceBadgeText: {
+    color: "#ffffff",
+    fontFamily: RBZFont.bold,
     fontSize: 11,
-    fontWeight: "800",
-    textAlign: "center",
   },
-  costValue: {
-    marginTop: 2,
-    color: RBZ.ink,
-    fontSize: 17,
-    fontWeight: "900",
-    textAlign: "center",
+
+emojiGlow: {
+  width: 62,
+  height: 62,
+  marginTop: 6,
+  borderRadius: 31,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "rgba(255,255,255,0.18)",
+  borderWidth: 1,
+  borderColor: "rgba(255,255,255,0.28)",
+},
+
+heroEmoji: {
+  fontSize: 34,
+},
+
+heroTitle: {
+  marginTop: 7,
+  color: "#ffffff",
+  fontFamily: RBZFont.extraBold,
+  fontSize: 20,
+  textAlign: "center",
+},
+
+heroDescription: {
+  maxWidth: 270,
+  marginTop: 3,
+  color: "rgba(255,255,255,0.88)",
+  fontFamily: RBZFont.medium,
+  fontSize: 11.5,
+  lineHeight: 16,
+  textAlign: "center",
+},
+
+ section: {
+  paddingHorizontal: 2,
+  paddingTop: 11,
+},
+
+  sectionEyebrow: {
+    fontFamily: RBZFont.bold,
+    fontSize: 9.5,
+    letterSpacing: 0.8,
   },
-  costDivider: {
-    width: 1,
-    height: 34,
-    backgroundColor: RBZ.line,
+
+  sectionTitle: {
+    marginTop: 3,
+    fontFamily: RBZFont.bold,
+    fontSize: 18,
   },
-  rememberRow: {
-    width: "100%",
-    marginTop: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(216,52,95,0.16)",
-    backgroundColor: "rgba(216,52,95,0.04)",
-    padding: 13,
-    flexDirection: "row",
+
+  sectionBody: {
+    marginTop: 5,
+    fontFamily: RBZFont.medium,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+
+ walletCard: {
+  marginTop: 8,
+  borderRadius: 14,
+  borderWidth: StyleSheet.hairlineWidth,
+  paddingVertical: 9,
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+  walletColumn: {
+    flex: 1,
     alignItems: "center",
-    gap: 11,
   },
+
+  walletLabel: {
+    fontFamily: RBZFont.medium,
+    fontSize: 10.5,
+  },
+
+  walletValue: {
+    marginTop: 3,
+    fontFamily: RBZFont.bold,
+    fontSize: 16,
+  },
+
+  walletDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 32,
+  },
+
+ rememberRow: {
+  marginTop: 8,
+  borderRadius: 14,
+  borderWidth: StyleSheet.hairlineWidth,
+  padding: 9,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 9,
+},
+
   checkbox: {
     width: 24,
     height: 24,
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "rgba(216,52,95,0.35)",
+    borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: RBZ.white,
   },
-  checkboxChecked: {
-    backgroundColor: RBZ.c2,
-    borderColor: RBZ.c2,
+
+  rememberCopy: {
+    flex: 1,
   },
+
   rememberTitle: {
-    color: RBZ.ink,
-    fontSize: 13,
-    fontWeight: "900",
+    fontFamily: RBZFont.semiBold,
+    fontSize: 12.5,
   },
+
   rememberSub: {
     marginTop: 2,
-    color: RBZ.muted,
-    fontSize: 11,
-    fontWeight: "600",
+    fontFamily: RBZFont.medium,
+    fontSize: 10.5,
+    lineHeight: 15,
   },
-  confirmActions: {
-    width: "100%",
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
+
+ ctaWrap: {
+  width: "100%",
+  marginTop: 11,
+  borderRadius: 14,
+  overflow: "hidden",
+},
+
+cta: {
+  minHeight: 46,
+  paddingHorizontal: 16,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+},
+
+  ctaText: {
+    color: "#ffffff",
+    fontFamily: RBZFont.bold,
+    fontSize: 14.5,
   },
-  confirmButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 16,
+
+  ctaEmoji: {
+    fontSize: 17,
+  },
+
+  cancelButton: {
+    minHeight: 40,
     alignItems: "center",
     justifyContent: "center",
   },
-  cancelButton: {
-    backgroundColor: "rgba(17,24,39,0.06)",
-    borderWidth: 1,
-    borderColor: RBZ.line,
+
+  cancelText: {
+    fontFamily: RBZFont.semiBold,
+    fontSize: 12.5,
   },
-  cancelButtonText: {
-    color: RBZ.ink,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  sendButton: {
-    backgroundColor: RBZ.c2,
-  },
-  sendButtonText: {
-    color: RBZ.white,
-    fontSize: 14,
-    fontWeight: "900",
+
+  pressed: {
+    opacity: 0.82,
   },
 });

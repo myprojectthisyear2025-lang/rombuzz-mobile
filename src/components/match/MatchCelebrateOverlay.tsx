@@ -1,78 +1,194 @@
 /**
- * ============================================================
- * 📁 File: src/components/match/MatchCelebrateOverlay.tsx
- * 💖 Purpose: Mobile "It's a Match" celebration overlay
- *
- * Triggered by parent via:
- *   <MatchCelebrateOverlay visible matchUser onDone />
- *
- * Behavior:
- *  - Full-screen modal overlay
- *  - Floating hearts animation
- *  - Auto redirect after 3.5s
- * ============================================================
+ * Path: src/components/match/MatchCelebrateOverlay.tsx
+ * Purpose: Match celebration animation, auto-chat timer, and Stay in MicroBuzz control.
  */
 
-import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import React, { useEffect, useRef } from "react";
 import {
-    Animated,
-    Image,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  useRouter,
+} from "expo-router";
+
+import React, {
+  useEffect,
+  useRef,
+} from "react";
+
+import {
+  Animated,
+  Modal,
+  StyleSheet,
+  View,
 } from "react-native";
 
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-};
+import MatchCelebrateBurst from "./MatchCelebrateBurst";
+import MatchCelebrateCard from "./MatchCelebrateCard";
+
+const AUTO_CHAT_MS = 3500;
 
 type Props = {
   visible: boolean;
+
   matchUser: {
     id: string;
     firstName?: string;
     selfieUrl?: string;
     avatar?: string;
   } | null;
-  onDone: () => void;
+
+  myAvatar?: string;
+
+  pendingCount?: number;
+
+  onDone:
+    () => void;
+
+  onStay?:
+    () => void;
 };
 
 export default function MatchCelebrateOverlay({
   visible,
   matchUser,
+  myAvatar,
+  pendingCount = 0,
   onDone,
+  onStay,
 }: Props) {
-  const router = useRouter();
-  const fade = useRef(new Animated.Value(0)).current;
+  const router =
+    useRouter();
+
+  const fade =
+    useRef(
+      new Animated.Value(0)
+    ).current;
+
+  const scale =
+    useRef(
+      new Animated.Value(0.9)
+    ).current;
+
+  const doneRef =
+    useRef(onDone);
+
+  const stayRef =
+    useRef(onStay);
+
+  const finishedRef =
+    useRef(false);
+
+  doneRef.current =
+    onDone;
+
+  stayRef.current =
+    onStay;
+
+  function openChat() {
+    if (
+      !matchUser?.id ||
+      finishedRef.current
+    ) {
+      return;
+    }
+
+    finishedRef.current =
+      true;
+
+    doneRef.current();
+
+    router.push(
+      `/chat/${matchUser.id}`
+    );
+  }
+
+  function stayHere() {
+    if (
+      finishedRef.current
+    ) {
+      return;
+    }
+
+    finishedRef.current =
+      true;
+
+    if (
+      stayRef.current
+    ) {
+      stayRef.current();
+    } else {
+      doneRef.current();
+    }
+  }
 
   useEffect(() => {
-    if (!visible) return;
+    if (
+      !visible ||
+      !matchUser?.id
+    ) {
+      return;
+    }
 
-    Animated.timing(fade, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    finishedRef.current =
+      false;
 
-    const t = setTimeout(() => {
-      if (matchUser?.id) {
-        onDone();
-        router.push(`/chat/${matchUser.id}`);
-      }
-    }, 3500);
+    fade.setValue(0);
+    scale.setValue(0.9);
 
-    return () => clearTimeout(t);
-  }, [visible]);
+    Animated.parallel([
+      Animated.timing(
+        fade,
+        {
+          toValue: 1,
+          duration: 240,
+          useNativeDriver:
+            true,
+        }
+      ),
 
-  if (!visible || !matchUser) return null;
+      Animated.spring(
+        scale,
+        {
+          toValue: 1,
+          tension: 62,
+          friction: 7,
+          useNativeDriver:
+            true,
+        }
+      ),
+    ]).start();
+
+    const timer =
+      setTimeout(() => {
+        if (
+          finishedRef.current
+        ) {
+          return;
+        }
+
+        finishedRef.current =
+          true;
+
+        doneRef.current();
+
+        router.push(
+          `/chat/${matchUser.id}`
+        );
+      }, AUTO_CHAT_MS);
+
+    return () =>
+      clearTimeout(timer);
+  }, [
+    fade,
+    matchUser?.id,
+    router,
+    scale,
+    visible,
+  ]);
+
+  if (
+    !visible ||
+    !matchUser
+  ) {
+    return null;
+  }
 
   const avatar =
     matchUser.avatar ||
@@ -80,125 +196,92 @@ export default function MatchCelebrateOverlay({
     "https://i.pravatar.cc/300";
 
   return (
-    <Modal visible transparent animationType="fade">
-      <View style={styles.wrap}>
-        <Animated.View style={[styles.dim, { opacity: fade }]} />
+    <Modal
+      visible
+      transparent
+      animationType="none"
+    >
+      <View
+        style={
+          styles.root
+        }
+      >
+        <Animated.View
+          style={[
+            styles.dim,
+            {
+              opacity:
+                fade,
+            },
+          ]}
+        />
 
-        {/* Floating hearts */}
-        <View style={styles.hearts}>
-          {Array.from({ length: 14 }).map((_, i) => (
-            <Text key={i} style={styles.heart}>❤️</Text>
-          ))}
-        </View>
+        <MatchCelebrateBurst
+          visible={
+            visible
+          }
+        />
 
-        <Animated.View style={[styles.card, { opacity: fade }]}>
-          <LinearGradient
-            colors={[RBZ.c1, RBZ.c4]}
-            style={styles.cardInner}
-          >
-            <Text style={styles.small}>ROMBUZZ MATCH</Text>
-            <Text style={styles.title}>It’s a Match 💞</Text>
+        <Animated.View
+          style={[
+            styles.cardWrap,
+            {
+              opacity:
+                fade,
 
-            <Text style={styles.sub}>
-              You & {matchUser.firstName || "your match"} liked each other
-            </Text>
-
-            <View style={styles.avatars}>
-              <Image
-                source={{ uri: avatar }}
-                style={styles.avatar}
-              />
-            </View>
-
-            <Text style={styles.hint}>
-              Opening your private chat…
-            </Text>
-
-            <Pressable
-              onPress={() => {
-                onDone();
-                router.push(`/chat/${matchUser.id}`);
-              }}
-              style={styles.btn}
-            >
-              <Text style={styles.btnText}>Chat now</Text>
-            </Pressable>
-          </LinearGradient>
+              transform: [
+                {
+                  scale,
+                },
+              ],
+            },
+          ]}
+        >
+          <MatchCelebrateCard
+            firstName={
+              matchUser.firstName
+            }
+            matchAvatar={
+              avatar
+            }
+            myAvatar={
+              myAvatar
+            }
+            pendingCount={
+              pendingCount
+            }
+            onChat={
+              openChat
+            }
+            onStay={
+              stayHere
+            }
+          />
         </Animated.View>
       </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  dim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.75)",
-  },
-  hearts: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  heart: {
-    position: "absolute",
-    fontSize: 24,
-    opacity: 0.4,
-  },
-  card: {
-    width: "86%",
-    borderRadius: 28,
-    overflow: "hidden",
-  },
-  cardInner: {
-    padding: 24,
-    alignItems: "center",
-  },
-  small: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 11,
-    letterSpacing: 2,
-    marginBottom: 6,
-    fontWeight: "900",
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: "900",
-    color: RBZ.white,
-  },
-  sub: {
-    color: RBZ.white,
-    marginTop: 8,
-    textAlign: "center",
-  },
-  avatars: {
-    marginVertical: 18,
-  },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 3,
-    borderColor: RBZ.white,
-  },
-  hint: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 12,
-    marginBottom: 14,
-  },
-  btn: {
-    backgroundColor: RBZ.white,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 999,
-  },
-  btnText: {
-    color: RBZ.c1,
-    fontWeight: "900",
-  },
-});
+const styles =
+  StyleSheet.create({
+    root: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      paddingHorizontal: 22,
+    },
+
+    dim: {
+      ...StyleSheet.absoluteFillObject,
+
+      backgroundColor:
+        "rgba(5,5,9,0.78)",
+    },
+
+    cardWrap: {
+      width: "100%",
+      maxWidth: 380,
+    },
+  });
