@@ -151,7 +151,7 @@ const verifyRes = await fetch(`${API_BASE}/auth/verify-code`, {
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(data.user));
     }
 
-router.replace("/(tabs)/homepage");
+router.replace("/(tabs)/(root)/homepage");
   } catch (err) {
     console.error("register error:", err);
     setError("Network error. Please try again.");

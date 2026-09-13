@@ -197,7 +197,7 @@ export function useLoginController() {
       return;
     }
 
-    router.replace("/(tabs)/homepage");
+    router.replace("/(tabs)/(root)/homepage");
   };
 
   const handleLogin = async () => {

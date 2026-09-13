@@ -626,7 +626,7 @@ export default function RegisterFullScreen() {
       });
 
       // ✅ Account is created. Send user directly to the Tabs homepage.
-      router.replace("/(tabs)/homepage");
+      router.replace("/(tabs)/(root)/homepage");
 
     } catch (e: any) {
       setError(

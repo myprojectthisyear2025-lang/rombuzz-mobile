@@ -20,29 +20,28 @@ import PremiumBuzzReceiverOverlay, {
 } from "@/src/components/buzz/PremiumBuzzReceiverOverlay";
 import { API_BASE } from "@/src/config/api";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
-import { RBZFont } from "@/src/design/rombuzzTypography";
 import FirstSignupTour from "@/src/features/onboarding/FirstSignupTour";
 import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
 import { getSocket, onNotification } from "@/src/lib/socket";
+import RootBottomBar, {
+  type RootTabName,
+} from "@/src/navigation/RootBottomBar";
 import { rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 import { rbzStartupWarmup } from "@/src/performance/startup/rbzStartupWarmup";
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Tabs, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   AppState,
   DeviceEventEmitter,
   Dimensions,
-  Image,
-  Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
-import { PanGestureHandler, State } from "react-native-gesture-handler";
+//import { PanGestureHandler } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /* ============================================================
@@ -154,10 +153,13 @@ export default function TabLayout() {
     useState(false);
 
   /* -------------------------------
-     ROUTE AWARE SWIPE ENABLE
+     ROUTE AWARE TAB DETECTION
   -------------------------------- */
 
-  const tabName = segments?.[1] ?? null;
+  const tabName =
+    segments?.[1] === "(root)"
+      ? segments?.[2] ?? null
+      : segments?.[1] ?? null;
 
   // ✅ Batch 2 startup warmup:
   // This runs after layout mounts and never blocks tab rendering.
@@ -502,16 +504,54 @@ export default function TabLayout() {
 
 
    // ✅ Server-accurate unread: do NOT auto-reset when leaving Chat tab.
-  useEffect(() => {
-    const curr = tabName ? String(tabName) : null;
-    prevTabRef.current = curr;
+   useEffect(() => {
+    const curr =
+      tabName
+        ? String(tabName)
+        : null;
+
+    prevTabRef.current =
+      curr;
   }, [segments?.join("/")]);
+
   const isRootTab =
     segments?.[0] === "(tabs)" &&
-    segments.length === 2 &&
-    TAB_ORDER.includes(tabName as any);
+    segments?.[1] === "(root)" &&
+    TAB_ORDER.includes(
+      tabName as any
+    );
 
-  const currentIndex = TAB_ORDER.indexOf(tabName as any);
+  const navigateRootTab =
+    useCallback(
+      (
+        nextTab:
+          RootTabName
+      ) => {
+        if (!nextTab) return;
+
+        if (
+          isRootTab &&
+          tabName === nextTab
+        ) {
+          return;
+        }
+
+        Haptics.impactAsync(
+          Haptics
+            .ImpactFeedbackStyle
+            .Light
+        ).catch(() => {});
+
+        router.push(
+          `/(tabs)/(root)/${nextTab}` as any
+        );
+      },
+      [
+        isRootTab,
+        router,
+        tabName,
+      ]
+    );
 
   /* -------------------------------
      PROFILE DATA
@@ -776,364 +816,127 @@ export default function TabLayout() {
     };
   }, []);
 
-  /* -------------------------------
+   /* -------------------------------
      NOTIFICATION SHAKE (UNCHANGED)
   -------------------------------- */
 
   const shake = useRef(new Animated.Value(0)).current;
 
 
-  /* -------------------------------
-     SWIPE HANDLER (NO ANIMATION)
-  -------------------------------- */
-
-  const onSwipeEnd = ({ nativeEvent }: any) => {
-    if (!isRootTab) return;
-    if (nativeEvent.state !== State.END) return;
-
-    const { translationX, velocityX } = nativeEvent;
-
-    const distanceOK = Math.abs(translationX) > SCREEN_WIDTH * 0.22;
-    const velocityOK = Math.abs(velocityX) > 900;
-
-    if (!distanceOK && !velocityOK) return;
-
-    // Swipe left → next
-    if (translationX < 0 && currentIndex < TAB_ORDER.length - 1) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      router.push(`/(tabs)/${TAB_ORDER[currentIndex + 1]}`);
-      return;
-    }
-
-    // Swipe right → prev
-    if (translationX > 0 && currentIndex > 0) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      router.push(`/(tabs)/${TAB_ORDER[currentIndex - 1]}`);
-    }
-  };
-
   /* ============================================================
      TABS UI
+     - Five main tabs live inside the native swipe pager.
+     - Bottom RomBuzz navigation remains persistent here.
+     - Hidden routes remain in the parent tabs exactly as before.
   ============================================================ */
 
- const TabsContent = (
- <Tabs
-initialRouteName="homepage"
-screenOptions={{
-  headerShown: false,
-  tabBarShowLabel: true,
-
-  tabBarActiveTintColor:
-    colors.brand,
-
-  tabBarInactiveTintColor:
-    colors.iconMuted,
-
-  tabBarLabelStyle: {
-    fontSize: 10,
-    lineHeight: 13,
-    fontFamily: RBZFont.bold,
-    marginTop: 1,
-    textAlign: "center",
-    width: "100%",
-  },
-
-  tabBarItemStyle: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: 2,
-  },
-
-  // ✅keep tabs mounted so heavy screens render instantly on return
-
-  tabBarStyle:
-    tabName === "microbuzz"
-      ? {
-          display: "none",
-        }
-      : {
-          backgroundColor:
-            colors.tabBar,
-
-          borderTopColor:
-            colors.tabBarBorder,
-
-          borderTopWidth:
-            StyleSheet.hairlineWidth,
-
-          height:
-            62 +
-            insets.bottom,
-
-          paddingBottom:
-            Math.max(
-              insets.bottom,
-              6
-            ),
-
-          paddingTop: 6,
-          elevation: 0,
-          shadowOpacity: 0,
-        },
-}}
->
-
-       <Tabs.Screen
-      name="homepage"
-      options={{
-        title: "Home",
-
-        tabBarIcon: ({ focused }) => (
-          <TabIconWrap active={focused}>
-            <Ionicons
-              name={
-                focused
-                  ? "home"
-                  : "home-outline"
-              }
-              size={24}
-              color={
-                tabIconColor(focused)
-              }
-            />
-          </TabIconWrap>
-        ),
-      }}
-    />
-
-    <Tabs.Screen
-      name="letsbuzz"
-      options={{
-        title: "Let’sBuzz",
-
-        tabBarIcon: ({ focused }) => (
-          <TabIconWrap active={focused}>
-            <Ionicons
-              name={
-                focused
-                  ? "radio"
-                  : "radio-outline"
-              }
-              size={24}
-              color={
-                tabIconColor(focused)
-              }
-            />
-          </TabIconWrap>
-        ),
-      }}
-    />
-
-    <Tabs.Screen
-      name="social-stats"
-      options={{
-        title: "Social",
-
-        tabBarIcon: ({ focused }) => (
-          <TabIconWrap active={focused}>
-            <Ionicons
-              name={
-                focused
-                  ? "flame"
-                  : "flame-outline"
-              }
-              size={24}
-              color={
-                tabIconColor(focused)
-              }
-            />
-          </TabIconWrap>
-        ),
-      }}
-    />
-
-    <Tabs.Screen
-      name="chat"
-      options={{
-        title: "Chat",
-
-        // ✅ Do NOT clear unread when user only opens the Chat tab.
-        // Per-person unread badges must stay visible in the chat list.
-        // Unread clears only when the actual conversation thread is opened.
-        tabBarButton: (props: any) => (
-          <Pressable
-            {...props}
-            onPress={(e) => {
-              props?.onPress?.(e);
-            }}
+  const TabsContent = (
+    <Tabs
+      initialRouteName="(root)"
+      tabBar={() =>
+        tabName === "microbuzz" ? null : (
+          <RootBottomBar
+            activeTab={
+              TAB_ORDER.includes(
+                tabName as any
+              )
+                ? tabName
+                : null
+            }
+            chatUnreadTotal={
+              chatUnreadTotal
+            }
+            chatPulse={
+              chatPulse
+            }
+            profilePhoto={
+              profilePhoto
+            }
+            profileCompletion={
+              profileCompletion
+            }
+            onNavigate={
+              navigateRootTab
+            }
           />
-        ),
-
-        tabBarIcon: ({ focused }) => (
-          <TabIconWrap active={focused}>
-            <View
-              style={{
-                position: "relative",
-              }}
-            >
-              {chatUnreadTotal > 0 && (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    styles.chatPulseRing,
-                    {
-                      borderColor:
-                        colors.brand,
-
-                      opacity:
-                        chatPulse.interpolate(
-                          {
-                            inputRange:
-                              [0, 1],
-
-                            outputRange:
-                              [0, 0.55],
-                          }
-                        ),
-
-                      transform: [
-                        {
-                          scale:
-                            chatPulse.interpolate(
-                              {
-                                inputRange:
-                                  [0, 1],
-
-                                outputRange:
-                                  [1, 1.42],
-                              }
-                            ),
-                        },
-                      ],
-                    },
-                  ]}
-                />
-              )}
-
-              <Animated.View
-                style={{
-                  transform:
-                    chatUnreadTotal > 0
-                      ? [
-                          {
-                            scale:
-                              chatPulse.interpolate(
-                                {
-                                  inputRange:
-                                    [0, 1],
-
-                                  outputRange:
-                                    [1, 1.08],
-                                }
-                              ),
-                          },
-                        ]
-                      : [
-                          {
-                            scale: 1,
-                          },
-                        ],
-                }}
-              >
-                <Ionicons
-                  name={
-                    focused
-                      ? "chatbubble-ellipses"
-                      : "chatbubble-ellipses-outline"
-                  }
-                  size={24}
-                  color={
-                    tabIconColor(
-                      focused
-                    )
-                  }
-                />
-              </Animated.View>
-
-              <Badge
-                count={
-                  chatUnreadTotal
-                }
-              />
-            </View>
-          </TabIconWrap>
-        ),
+        )
+      }
+      screenOptions={{
+        headerShown: false,
       }}
-    />
-
-    <Tabs.Screen
-      name="profile"
-      options={{
-        title: "Profile",
-
-        tabBarIcon: ({ focused }) => {
-          const ring =
-            focused
-              ? 2
-              : profileCompletion >=
-                  0.85
-                ? 2
-                : 1;
-
-          return (
-            <TabIconWrap
-              active={focused}
-            >
-              <View
-                style={[
-                  styles.avatarRing,
-                  {
-                    borderWidth:
-                      ring,
-
-                    borderColor:
-                      focused
-                        ? colors.brand
-                        : colors.borderStrong,
-
-                    backgroundColor:
-                      colors.surfaceMuted,
-                  },
-                ]}
-              >
-                {profilePhoto ? (
-                  <Image
-                    source={{
-                      uri:
-                        profilePhoto,
-                    }}
-                    style={
-                      styles.avatarImg
-                    }
-                  />
-                ) : (
-                  <Ionicons
-                    name="person"
-                    size={22}
-                    color={
-                      tabIconColor(
-                        focused
-                      )
-                    }
-                  />
-                )}
-              </View>
-            </TabIconWrap>
-          );
-        },
-      }}
-    />
+    >
+      {/* ROOT SWIPE PAGER */}
+      <Tabs.Screen
+        name="(root)"
+        options={{
+          headerShown: false,
+          title: "RomBuzz",
+        }}
+      />
 
       {/* HIDDEN ROUTES */}
-      <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="discover" options={{ href: null }} />
-      <Tabs.Screen name="microbuzz" options={{ href: null }} />
-      <Tabs.Screen name="filter" options={{ href: null }} />
-      <Tabs.Screen name="upgrade" options={{ href: null }} />
-      <Tabs.Screen name="settings" options={{ href: null }} />
-      <Tabs.Screen name="user/[id]" options={{ href: null }} />
-      <Tabs.Screen name="discover-profile" options={{ href: null }} />
-      <Tabs.Screen name="view-profile" options={{ href: null }} />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="discover"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="microbuzz"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="filter"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="upgrade"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="user/[id]"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="discover-profile"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="view-profile"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 
@@ -1152,8 +955,6 @@ screenOptions={{
     />
   );
 
-  // ❌ No swipe outside root tabs
-if (!isRootTab) {
   return (
     <View
       style={{
@@ -1163,33 +964,13 @@ if (!isRootTab) {
       }}
     >
       {TabsContent}
+
       {PremiumBuzzOverlayNode}
+
       <IncomingCallOverlay />
+
       <FirstSignupTour />
     </View>
-  );
-}
-
-// ✅ Swipe only on root tabs
-return (
-  <PanGestureHandler
-    onHandlerStateChange={onSwipeEnd}
-    activeOffsetX={[-18, 18]}
-    failOffsetY={[-12, 12]}
-  >
-    <View
-      style={{
-        flex: 1,
-        backgroundColor:
-          colors.background,
-      }}
-    >
-      {TabsContent}
-        {PremiumBuzzOverlayNode}
-        <IncomingCallOverlay />
-        <FirstSignupTour />
-      </View>
-    </PanGestureHandler>
   );
 }
 

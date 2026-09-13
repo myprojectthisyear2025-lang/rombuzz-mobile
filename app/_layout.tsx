@@ -271,7 +271,7 @@ function RootLayout() {
       if (onboardingPending) {
         router.replace("/auth/register-full");
       } else if (loggedIn) {
-        router.replace("/(tabs)/homepage");
+        router.replace("/(tabs)/(root)/homepage");
       } else {
         router.replace("/auth/login");
       }
@@ -317,7 +317,7 @@ function RootLayout() {
 
     if (loggedIn === true) {
       if (current === "start" || current.startsWith("auth")) {
-        router.replace("/(tabs)/homepage");
+        router.replace("/(tabs)/(root)/homepage");
       }
     }
   }, [
