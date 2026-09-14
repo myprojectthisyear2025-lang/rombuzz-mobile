@@ -22,8 +22,13 @@ import LetsBuzzReelsFullscreen from "@/src/components/letsbuzz/LetsBuzzReelsFull
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   DeviceEventEmitter,
   Pressable,
@@ -66,7 +71,7 @@ function HeaderExpandButton({
 
 export default function LetsBuzzScreen() {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle } = useRomBuzzTheme();
+  const { colors, isDark } = useRomBuzzTheme();
 
   const {
     post,
@@ -122,6 +127,18 @@ export default function LetsBuzzScreen() {
       }
     };
   }, [tab, reelsFullscreen]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setReelsFullscreen(false);
+
+        DeviceEventEmitter.emit("rbz:letsbuzz:fullscreen", {
+          active: false,
+        });
+      };
+    }, [])
+  );
 
   const TabBar = useMemo(() => {
     return (
@@ -244,8 +261,9 @@ export default function LetsBuzzScreen() {
       ]}
     >
       <StatusBar
-        barStyle={statusBarStyle}
+        barStyle={isDark ? "light-content" : "dark-content"}
         backgroundColor={colors.background}
+        translucent={false}
         hidden={false}
       />
 

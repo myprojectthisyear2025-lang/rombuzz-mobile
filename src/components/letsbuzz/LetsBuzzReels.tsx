@@ -19,7 +19,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ResizeMode, Video } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -39,6 +39,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getGiftSummary, type GiftSummaryResponse } from "@/src/api/gifts";
 import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
@@ -209,6 +210,7 @@ export default function LetsBuzzReels({
   fullscreen = false,
 }: LetsBuzzReelsProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { colors } = useRomBuzzTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const listRef = useRef<FlatList<BuzzPost>>(null);
@@ -246,9 +248,39 @@ export default function LetsBuzzReels({
     };
   }, [reelViewport.height, reelViewport.width]);
 
+  const reelOverlayPosition = useMemo(() => {
+    const frameBottomGap = Math.max(
+      0,
+      Math.round(
+        (reelViewport.height - reelFrame.height) / 2
+      )
+    );
+
+    const safeBottom = fullscreen
+      ? insets.bottom
+      : 0;
+
+    const anchorBottom = Math.max(
+      frameBottomGap,
+      safeBottom
+    );
+
+    return {
+      fadeBottom: frameBottomGap,
+      infoBottom: anchorBottom + 0,
+      actionsBottom: anchorBottom + 96,
+    };
+  }, [
+    fullscreen,
+    insets.bottom,
+    reelFrame.height,
+    reelViewport.height,
+  ]);
+
   const videoRefs = useRef<Record<string, any>>({});
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [screenFocused, setScreenFocused] = useState(false);
   const [resolvedStreamUrls, setResolvedStreamUrls] = useState<Record<string, string>>({});
 
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -257,7 +289,7 @@ export default function LetsBuzzReels({
   const commentCountByPostRef = useRef<Record<string, number>>({});
   const [, forceCommentCountsRerender] = useState(0);
 
-    const [giftPickerOpen, setGiftPickerOpen] = useState(false);
+  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
   const [giftTotal, setGiftTotal] = useState<Record<string, number>>({});
   const [giftInsightsOpen, setGiftInsightsOpen] = useState(false);
   const [giftSummary, setGiftSummary] = useState<GiftSummaryResponse | null>(null);
@@ -303,6 +335,29 @@ export default function LetsBuzzReels({
       router.push(`/view-profile?userId=${post.userId}` as any);
     },
     [router]
+  );
+
+  const pauseAllVideos = useCallback(() => {
+    Object.values(videoRefs.current).forEach((videoRef) => {
+      try {
+        const pauseTask = videoRef?.pauseAsync?.();
+
+        if (pauseTask && typeof pauseTask.catch === "function") {
+          pauseTask.catch(() => {});
+        }
+      } catch {}
+    });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+
+      return () => {
+        setScreenFocused(false);
+        pauseAllVideos();
+      };
+    }, [pauseAllVideos])
   );
 
   const resolveReelPlaybackUrl = useCallback(
@@ -949,12 +1004,13 @@ export default function LetsBuzzReels({
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      <StatusBar
-        hidden={fullscreen}
-        barStyle="light-content"
-        translucent
-        backgroundColor="transparent"
-      />
+      {fullscreen ? (
+        <StatusBar
+          hidden
+          translucent
+          backgroundColor="transparent"
+        />
+      ) : null}
 
       <View
         style={styles.reelsContainer}
@@ -1060,7 +1116,7 @@ export default function LetsBuzzReels({
                       source={{ uri: playableUrl }}
                       style={styles.video}
                       resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay={isActive && !paused}
+                      shouldPlay={isActive && screenFocused && !paused}
                       isLooping
                       isMuted={muted}
                       useNativeControls={false}
@@ -1179,6 +1235,7 @@ export default function LetsBuzzReels({
                   14,
                   (reelViewport.width - reelFrame.width) / 2 + 14
                 ),
+                bottom: reelOverlayPosition.actionsBottom,
               },
             ]}
           >
@@ -1267,11 +1324,38 @@ export default function LetsBuzzReels({
 
           <LinearGradient
             colors={["transparent", "rgba(0,0,0,0.85)"]}
-            style={styles.bottomFade}
+            style={[
+              styles.bottomFade,
+              {
+                bottom: reelOverlayPosition.fadeBottom,
+              },
+            ]}
             pointerEvents="box-none"
           >
-            <View style={styles.bottomInfo} pointerEvents="box-none">
+            <View
+              style={[
+                styles.bottomInfo,
+                {
+                  bottom:
+                    reelOverlayPosition.infoBottom -
+                    reelOverlayPosition.fadeBottom,
+                },
+              ]}
+              pointerEvents="box-none"
+            >
               <View style={styles.userInfo} pointerEvents="box-none">
+                <Pressable
+                  onPress={() => openOwnerProfile(currentReel)}
+                  hitSlop={10}
+                  style={styles.nameRowBottom}
+                >
+                  <Image
+                    source={{ uri: getOwnerAvatar(currentReel.user) }}
+                    style={styles.nameAvatar}
+                  />
+                  <Text style={styles.username}>{fullName}</Text>
+                </Pressable>
+
                 {!!currentReel.text?.trim() ? (
                   <View style={styles.captionViewport}>
                     <ScrollView
@@ -1287,23 +1371,6 @@ export default function LetsBuzzReels({
                     </ScrollView>
                   </View>
                 ) : null}
-
-                <Pressable
-                  onPress={() => openOwnerProfile(currentReel)}
-                  hitSlop={10}
-                  style={[
-                    styles.nameRowBottom,
-                    currentReel.text?.trim()
-                      ? styles.nameRowWithCaption
-                      : styles.nameRowWithoutCaption,
-                  ]}
-                >
-                  <Image
-                    source={{ uri: getOwnerAvatar(currentReel.user) }}
-                    style={styles.nameAvatar}
-                  />
-                  <Text style={styles.username}>{fullName}</Text>
-                </Pressable>
               </View>
             </View>
           </LinearGradient>
@@ -1557,7 +1624,6 @@ function createStyles(colors: RomBuzzColors) {
 
   rightActions: {
     position: "absolute",
-    bottom: 72,
     alignItems: "center",
     gap: 14,
     zIndex: 30,
@@ -1696,44 +1762,43 @@ function createStyles(colors: RomBuzzColors) {
       position: "absolute",
       left: 0,
       right: 0,
-      bottom: 0,
-      height: 220,
+      height: 240,
     },
 
-  bottomInfo: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingRight: 88,
-    paddingBottom: 42,
-  },
+    bottomInfo: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      height: 78,
+      paddingHorizontal: 16,
+      paddingRight: 88,
+    },
 
-  userInfo: {
-    gap: 8,
-  },
+    userInfo: {
+      height: 78,
+      gap: 1,
+      justifyContent: "flex-start",
+    },
 
-  captionViewport: {
-    height: 82,
-    width: "100%",
-  },
+    captionViewport: {
+      width: "100%",
+      maxHeight: 48,
+      minHeight: 20,
+      overflow: "hidden",
+    },
 
-  captionScrollContent: {
-    paddingBottom: 4,
-  },
+    captionScrollContent: {
+      paddingRight: 4,
+      paddingBottom: 2,
+    },
 
-  nameRowBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 8,
-  },
-
-  nameRowWithCaption: {
-    marginTop: 8,
-  },
-
-  nameRowWithoutCaption: {
-    marginTop: 95,
-  },
+    nameRowBottom: {
+      height: 26,
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: 8,
+    },
 
     nameAvatar: {
       width: 26,

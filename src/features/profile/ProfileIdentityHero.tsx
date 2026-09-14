@@ -8,7 +8,6 @@ import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { StatusBar } from "expo-status-bar";
 import React from "react";
 import {
   Image,
@@ -66,14 +65,25 @@ export default function ProfileIdentityHero({
     age !== null ? `${fullName}, ${age}` : fullName;
 
   return (
-    <View style={styles.root}>
-      <StatusBar
-        style="light"
-        translucent
-        backgroundColor="transparent"
-      />
-
-      <View style={[styles.hero, { height: heroHeight }]}>
+    <View
+      style={[
+        styles.root,
+        {
+          paddingTop: safeTop,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.hero,
+          {
+            height: Math.max(
+              0,
+              heroHeight - safeTop
+            ),
+          },
+        ]}
+      >
         <Pressable
           onPress={onAvatarPress}
           style={StyleSheet.absoluteFill}
@@ -108,10 +118,10 @@ export default function ProfileIdentityHero({
           />
         </Pressable>
 
-        <View
+         <View
           style={[
             styles.topActions,
-            { top: safeTop + 10 },
+            { top: 10 },
           ]}
         >
           <HeroAction

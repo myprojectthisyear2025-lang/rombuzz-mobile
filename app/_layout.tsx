@@ -11,6 +11,7 @@
 
 import { Sentry } from "@/src/monitoring/sentry";
 
+import RomBuzzSystemStatusBar from "@/src/components/system/RomBuzzSystemStatusBar";
 import { API_BASE } from "@/src/config/api";
 import {
   RomBuzzThemeProvider,
@@ -30,7 +31,6 @@ import {
 import Constants from "expo-constants";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { StatusBar } from "expo-status-bar";
 import React, {
   useEffect,
   useMemo,
@@ -499,10 +499,7 @@ function RootLayout() {
   ) {
     return (
       <ThemeProvider value={navigationTheme}>
-        <StatusBar
-          style={isDark ? "light" : "dark"}
-          backgroundColor={colors.background}
-        />
+        <RomBuzzSystemStatusBar />
       </ThemeProvider>
     );
   }
@@ -539,10 +536,7 @@ function RootLayout() {
           <ActiveVideoCallMiniBubble />
         </VideoCallProvider>
 
-        <StatusBar
-          style={isDark ? "light" : "dark"}
-          backgroundColor={colors.background}
-        />
+        <RomBuzzSystemStatusBar />
       </ThemeProvider>
     </GestureHandlerRootView>
   );

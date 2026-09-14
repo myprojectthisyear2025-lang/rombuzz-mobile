@@ -847,7 +847,10 @@ export default function TabLayout() {
     <Tabs
       initialRouteName="(root)"
       tabBar={() =>
-        tabName === "microbuzz" || letsBuzzFullscreen ? null : (
+        (
+          tabName === "microbuzz" ||
+          (tabName === "letsbuzz" && letsBuzzFullscreen)
+        ) ? null : (
           <RootBottomBar
             activeTab={
               TAB_ORDER.includes(
