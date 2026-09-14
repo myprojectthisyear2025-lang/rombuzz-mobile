@@ -29,6 +29,9 @@ import RBZImageViewer, {
   type RBZImageViewerItem,
 } from "@/src/components/media/RBZImageViewer";
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import {
   preloadLetsBuzzFeedImages,
   readCachedLetsBuzzFeed,
@@ -65,25 +68,6 @@ type BuzzPost = {
   commentsCount?: number;
 };
 
-/* -------------------------------------------------------------------------- */
-/* Theme - Clean modern palette */
-/* -------------------------------------------------------------------------- */
-const COLORS = {
-  primary: "#FF385C",
-  background: "#FFFFFF",
-  surface: "#F8F9FA",
-  card: "#FFFFFF",
-  text: {
-    primary: "#1A1A1A",
-    secondary: "#666876",
-    tertiary: "#8E94A7",
-    light: "#FFFFFF",
-  },
-  border: "#E9ECEF",
-  overlay: "rgba(0,0,0,0.02)",
-  shadow: "#000000",
-};
-
 const SPACING = {
   xs: 4,
   sm: 8,
@@ -94,13 +78,13 @@ const SPACING = {
 };
 
 const TYPOGRAPHY = {
-  h1: { fontSize: 28, fontWeight: "700" as const, lineHeight: 34 },
-  h2: { fontSize: 22, fontWeight: "700" as const, lineHeight: 28 },
-  h3: { fontSize: 18, fontWeight: "600" as const, lineHeight: 24 },
-  body1: { fontSize: 16, fontWeight: "400" as const, lineHeight: 22 },
-  body2: { fontSize: 14, fontWeight: "400" as const, lineHeight: 20 },
-  caption: { fontSize: 12, fontWeight: "500" as const, lineHeight: 16 },
-  button: { fontSize: 14, fontWeight: "600" as const, lineHeight: 20 },
+  h1: { fontSize: 28, fontFamily: RBZFont.bold, lineHeight: 34 },
+  h2: { fontSize: 22, fontFamily: RBZFont.bold, lineHeight: 28 },
+  h3: { fontSize: 18, fontFamily: RBZFont.semiBold, lineHeight: 24 },
+  body1: { fontSize: 16, fontFamily: RBZFont.regular, lineHeight: 22 },
+  body2: { fontSize: 14, fontFamily: RBZFont.regular, lineHeight: 20 },
+  caption: { fontSize: 12, fontFamily: RBZFont.medium, lineHeight: 16 },
+  button: { fontSize: 14, fontFamily: RBZFont.semiBold, lineHeight: 20 },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -214,6 +198,11 @@ export default function LetsBuzzPosts({
   replyId,
 }: LetsBuzzPostsProps) {
   const router = useRouter();
+  const { colors } = useRomBuzzTheme();
+  const styles = useMemo(
+    () => createStyles(colors),
+    [colors]
+  );
 
   const listRef = useRef<FlatList<BuzzPost>>(null);
 
@@ -455,8 +444,11 @@ export default function LetsBuzzPosts({
   const renderPost = ({ item }: { item: BuzzPost }) => {
     const u: BuzzUser = item.user || {};
     const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || "User";
-    const avatarUrl = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=FF385C&color=fff&size=100`;
-    const timestamp = formatTimestamp(item.createdAt);
+const avatarUrl =
+  u.avatar ||
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    fullName
+  )}&background=F52E64&color=fff&size=100`;    const timestamp = formatTimestamp(item.createdAt);
     const giftTotal = giftTotalByPostRef.current[item.id] ?? 0;
     const commentCount = getKnownCommentCount(item.id) || item.commentsCount || 0;
 
@@ -484,8 +476,12 @@ export default function LetsBuzzPosts({
               setPostMenuOpen(true);
             }}
           >
-            <Ionicons name="ellipsis-horizontal" size={20} color={COLORS.text.tertiary} />
-          </TouchableOpacity>
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={colors.textMuted}
+            />    
+      </TouchableOpacity>
         </View>
 
         {/* Caption */}
@@ -519,8 +515,12 @@ export default function LetsBuzzPosts({
             delayLongPress={350}
             activeOpacity={0.7}
           >
-            <Ionicons name="gift-outline" size={22} color={COLORS.text.secondary} />
-            <Text style={styles.actionText}>
+              <Ionicons
+                name="gift-outline"
+                size={22}
+                color={colors.textSecondary}
+              />     
+             <Text style={styles.actionText}>
               Gift {giftTotal > 0 ? `· ${giftTotal}` : ""}
             </Text>
           </TouchableOpacity>
@@ -530,8 +530,13 @@ export default function LetsBuzzPosts({
             onPress={() => openComments(item)}
             activeOpacity={0.7}
           >
-            <Ionicons name="chatbubble-outline" size={21} color={COLORS.text.secondary} />
-            <Text style={styles.actionText}>
+          <Ionicons
+            name="chatbubble-outline"
+            size={21}
+            color={colors.textSecondary}
+          />
+        
+          <Text style={styles.actionText}>
               Comment{commentCount > 0 ? ` · ${commentCount}` : ""}
             </Text>
           </TouchableOpacity>
@@ -541,8 +546,12 @@ export default function LetsBuzzPosts({
             onPress={() => shareToOwner(item)}
             activeOpacity={0.7}
           >
-            <Ionicons name="paper-plane-outline" size={21} color={COLORS.text.secondary} />
-            <Text style={styles.actionText}>Share</Text>
+          <Ionicons
+            name="paper-plane-outline"
+            size={21}
+            color={colors.textSecondary}
+          />   
+         <Text style={styles.actionText}>Share</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -552,7 +561,10 @@ export default function LetsBuzzPosts({
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator
+            size="large"
+            color={colors.brand}
+          />
         <Text style={styles.loadingText}>Loading posts…</Text>
       </View>
     );
@@ -562,8 +574,12 @@ export default function LetsBuzzPosts({
     return (
       <View style={styles.centerContainer}>
         <View style={styles.emptyIconContainer}>
-          <Ionicons name="images-outline" size={48} color={COLORS.text.tertiary} />
-        </View>
+        <Ionicons
+          name="images-outline"
+          size={48}
+          color={colors.textMuted}
+        />    
+    </View>
         <Text style={styles.emptyTitle}>No posts yet</Text>
         <Text style={styles.emptyText}>
           Posts from your matches will appear here
@@ -596,12 +612,12 @@ export default function LetsBuzzPosts({
           }, 350);
         }}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-            colors={[COLORS.primary]}
-          />
+      <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.brand}
+          colors={[colors.brand]}
+        />
         }
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -638,8 +654,12 @@ export default function LetsBuzzPosts({
               }}
             >
               <View style={styles.postMenuIconBubble}>
-                <Ionicons name="flag-outline" size={18} color={COLORS.primary} />
-              </View>
+          <Ionicons
+            name="flag-outline"
+            size={18}
+            color={colors.brand}
+          />    
+          </View>
 
               <View style={styles.postMenuTextWrap}>
                 <Text style={styles.postMenuTitle}>Report</Text>
@@ -680,203 +700,236 @@ export default function LetsBuzzPosts({
 /* -------------------------------------------------------------------------- */
 /* Styles */
 /* -------------------------------------------------------------------------- */
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-  },
-  centerContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: SPACING.xl,
-  },
-  loadingText: {
-    ...TYPOGRAPHY.body2,
-    color: COLORS.text.secondary,
-    marginTop: SPACING.lg,
-  },
-  emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.overlay,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: SPACING.lg,
-  },
-  emptyTitle: {
-    ...TYPOGRAPHY.h3,
-    color: COLORS.text.primary,
-    marginBottom: SPACING.sm,
-  },
-  emptyText: {
-    ...TYPOGRAPHY.body2,
-    color: COLORS.text.tertiary,
-    textAlign: "center",
-  },
-  listContent: {
-    paddingVertical: SPACING.lg,
-  },
-  separator: {
-    height: SPACING.lg,
-  },
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    marginHorizontal: SPACING.lg,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-    overflow: "hidden",
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: SPACING.lg,
-  },
-  userInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.surface,
-  },
-  userName: {
-    ...TYPOGRAPHY.body1,
-    fontWeight: "600",
-    color: COLORS.text.primary,
-    marginBottom: 2,
-  },
-  timestamp: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.text.tertiary,
-  },
-   moreButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  postMenuBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(17,24,39,0.32)",
-    justifyContent: "flex-end",
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.xl,
-  },
-  postMenuCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 22,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 14,
-  },
-  postMenuHandle: {
-    alignSelf: "center",
-    width: 42,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: COLORS.border,
-    marginBottom: SPACING.md,
-  },
-  postMenuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    paddingVertical: SPACING.md,
-  },
-  postMenuIconBubble: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,56,92,0.10)",
-  },
-  postMenuTextWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  postMenuTitle: {
-    ...TYPOGRAPHY.body1,
-    color: COLORS.text.primary,
-    fontWeight: "700",
-  },
-  postMenuSubtitle: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.text.tertiary,
-    marginTop: 2,
-  },
-  postMenuCancelButton: {
-    minHeight: 46,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  postMenuCancelText: {
-    ...TYPOGRAPHY.button,
-    color: COLORS.text.secondary,
-    fontWeight: "700",
-  },
-  caption: {
-    ...TYPOGRAPHY.body2,
-    color: COLORS.text.primary,
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-  },
-  mediaContainer: {
-    width: "100%",
-    aspectRatio: 1,
-    backgroundColor: COLORS.surface,
-  },
-  mediaPressed: {
-    opacity: 0.95,
-  },
-  media: {
-    width: "100%",
-    height: "100%",
-  },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    marginTop: SPACING.sm,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    borderRadius: 20,
-  },
-  actionText: {
-    ...TYPOGRAPHY.button,
-    color: COLORS.text.secondary,
-  },
-});
+function createStyles(colors: RomBuzzColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+
+    centerContainer: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.background,
+      paddingHorizontal: SPACING.xl,
+    },
+
+    loadingText: {
+      ...TYPOGRAPHY.body2,
+      color: colors.textSecondary,
+      marginTop: SPACING.lg,
+    },
+
+    emptyIconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.surfaceMuted,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: SPACING.lg,
+    },
+
+    emptyTitle: {
+      ...TYPOGRAPHY.h3,
+      color: colors.text,
+      marginBottom: SPACING.sm,
+    },
+
+    emptyText: {
+      ...TYPOGRAPHY.body2,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+
+    listContent: {
+      paddingVertical: SPACING.lg,
+    },
+
+    separator: {
+      height: SPACING.lg,
+    },
+
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      marginHorizontal: SPACING.lg,
+      shadowColor: "#000000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      elevation: 3,
+      overflow: "hidden",
+    },
+
+    cardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: SPACING.lg,
+    },
+
+    userInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.md,
+    },
+
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.surfaceMuted,
+    },
+
+    userName: {
+      ...TYPOGRAPHY.body1,
+      fontFamily: RBZFont.semiBold,
+      color: colors.text,
+      marginBottom: 2,
+    },
+
+    timestamp: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textMuted,
+    },
+
+    moreButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    postMenuBackdrop: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "flex-end",
+      paddingHorizontal: SPACING.lg,
+      paddingBottom: SPACING.xl,
+    },
+
+    postMenuCard: {
+      backgroundColor: colors.surfaceRaised,
+      borderRadius: 22,
+      paddingHorizontal: SPACING.lg,
+      paddingTop: SPACING.md,
+      paddingBottom: SPACING.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: "#000000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.16,
+      shadowRadius: 18,
+      elevation: 14,
+    },
+
+    postMenuHandle: {
+      alignSelf: "center",
+      width: 42,
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: colors.borderStrong,
+      marginBottom: SPACING.md,
+    },
+
+    postMenuItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.md,
+      paddingVertical: SPACING.md,
+    },
+
+    postMenuIconBubble: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.brandSoft,
+    },
+
+    postMenuTextWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
+
+    postMenuTitle: {
+      ...TYPOGRAPHY.body1,
+      color: colors.text,
+      fontFamily: RBZFont.bold,
+    },
+
+    postMenuSubtitle: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+
+    postMenuCancelButton: {
+      minHeight: 46,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: SPACING.sm,
+      backgroundColor: colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    postMenuCancelText: {
+      ...TYPOGRAPHY.button,
+      color: colors.textSecondary,
+      fontFamily: RBZFont.bold,
+    },
+
+    caption: {
+      ...TYPOGRAPHY.body2,
+      color: colors.text,
+      paddingHorizontal: SPACING.lg,
+      paddingBottom: SPACING.md,
+    },
+
+    mediaContainer: {
+      width: "100%",
+      aspectRatio: 1,
+      backgroundColor: colors.surfaceMuted,
+    },
+
+    mediaPressed: {
+      opacity: 0.95,
+    },
+
+    media: {
+      width: "100%",
+      height: "100%",
+    },
+
+    actionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-around",
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      marginTop: SPACING.sm,
+    },
+
+    actionButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.xs,
+      paddingVertical: SPACING.sm,
+      paddingHorizontal: SPACING.md,
+      borderRadius: 20,
+    },
+
+    actionText: {
+      ...TYPOGRAPHY.button,
+      color: colors.textSecondary,
+    },
+  });
+}

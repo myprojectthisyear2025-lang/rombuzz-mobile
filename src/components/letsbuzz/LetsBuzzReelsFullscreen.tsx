@@ -12,6 +12,7 @@
  */
 
 import LetsBuzzReels from "@/src/components/letsbuzz/LetsBuzzReels";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
@@ -28,11 +29,6 @@ type Props = {
   onClose: () => void;
 };
 
-const COLORS = {
-  black: "#000000",
-  primary: "#FF385C",
-};
-
 export default function LetsBuzzReelsFullscreen({
   targetPostId,
   targetType,
@@ -44,6 +40,7 @@ export default function LetsBuzzReelsFullscreen({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { colors } = useRomBuzzTheme();
 
   return (
     <View style={styles.container}>
@@ -55,6 +52,7 @@ export default function LetsBuzzReelsFullscreen({
         commentId={commentId}
         parentId={parentId}
         replyId={replyId}
+        fullscreen
       />
 
       <View
@@ -75,7 +73,11 @@ export default function LetsBuzzReelsFullscreen({
             pressed && styles.toggleButtonPressed,
           ]}
         >
-          <Ionicons name="contract-outline" size={20} color={COLORS.primary} />
+          <Ionicons
+            name="contract-outline"
+            size={20}
+            color={colors.brand}
+          />
         </Pressable>
       </View>
     </View>
@@ -85,7 +87,7 @@ export default function LetsBuzzReelsFullscreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.black,
+    backgroundColor: "#000000",
   },
 
   topRightWrap: {

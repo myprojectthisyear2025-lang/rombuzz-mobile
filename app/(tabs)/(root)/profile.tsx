@@ -563,7 +563,7 @@ const [editTarget, setEditTarget] = useState<ProfileEditTarget>(null);
 const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
 // Add Story modal
 const [addStoryOpen, setAddStoryOpen] = useState(false);
-   const [uploading, setUploading] = useState(false);
+const [uploading, setUploading] = useState(false);
 const hydratedOnceRef = useRef(false);
 const profilePerf = useCachedProfile();
 
@@ -1664,6 +1664,29 @@ setStoryOpen(true);
         onAddStory={() =>
           setAddStoryOpen(true)
         }
+        onPreview={() => {
+          const ownerId = String(
+            user?.id ||
+            user?._id ||
+            ""
+          );
+
+          if (!ownerId) {
+            return;
+          }
+
+          router.push({
+            pathname:
+              "/(tabs)/discover-profile" as any,
+            params: {
+              id: ownerId,
+              profilePreviewMode:
+                "before",
+              returnTo:
+                "/profile",
+            },
+          });
+        }}
         onWallet={() =>
           router.push(
             "../wallet" as any
@@ -1766,6 +1789,8 @@ setStoryOpen(true);
   />
 )}
 {tab === "notes" && <PrivateNotesTab />}
+
+
 
       {/* LOADING OVERLAY */}
       <Modal visible={uploading} transparent animationType="fade">

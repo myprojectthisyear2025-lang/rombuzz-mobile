@@ -19,10 +19,13 @@
 import LetsBuzzPosts from "@/src/components/letsbuzz/LetsBuzzPosts";
 import LetsBuzzReels from "@/src/components/letsbuzz/LetsBuzzReels";
 import LetsBuzzReelsFullscreen from "@/src/components/letsbuzz/LetsBuzzReelsFullscreen";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  DeviceEventEmitter,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -32,32 +35,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const COLORS = {
-  primary: "#FF385C",
-  background: "#FFFFFF",
-  surface: "#F8F9FA",
-  text: {
-    primary: "#1A1A1A",
-    secondary: "#666876",
-    tertiary: "#8E94A7",
-    light: "#FFFFFF",
-  },
-  border: "#E9ECEF",
-  tab: {
-    inactive: "#8E94A7",
-    active: "#FF385C",
-  },
-  white: "#FFFFFF",
-};
-
 type TabKey = "posts" | "reels";
 
 type HeaderExpandButtonProps = {
   visible: boolean;
   onPress: () => void;
+  color: string;
 };
 
-function HeaderExpandButton({ visible, onPress }: HeaderExpandButtonProps) {
+function HeaderExpandButton({
+  visible,
+  onPress,
+  color,
+}: HeaderExpandButtonProps) {
   if (!visible) return <View style={styles.headerActionPlaceholder} />;
 
   return (
@@ -69,13 +59,14 @@ function HeaderExpandButton({ visible, onPress }: HeaderExpandButtonProps) {
         pressed && styles.headerExpandButtonPressed,
       ]}
     >
-      <Ionicons name="expand-outline" size={20} color={COLORS.primary} />
+      <Ionicons name="expand-outline" size={20} color={color} />
     </Pressable>
   );
 }
 
 export default function LetsBuzzScreen() {
   const insets = useSafeAreaInsets();
+  const { colors, statusBarStyle } = useRomBuzzTheme();
 
   const {
     post,
@@ -116,60 +107,116 @@ export default function LetsBuzzScreen() {
     }
   }, [tab, reelsFullscreen]);
 
+  useEffect(() => {
+    const active = tab === "reels" && reelsFullscreen;
+
+    DeviceEventEmitter.emit("rbz:letsbuzz:fullscreen", {
+      active,
+    });
+
+    return () => {
+      if (active) {
+        DeviceEventEmitter.emit("rbz:letsbuzz:fullscreen", {
+          active: false,
+        });
+      }
+    };
+  }, [tab, reelsFullscreen]);
+
   const TabBar = useMemo(() => {
     return (
-      <View style={styles.tabSection}>
-        <View style={styles.tabContainer}>
+      <View
+        style={[
+          styles.tabSection,
+          {
+            backgroundColor: colors.background,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.tabContainer,
+            { backgroundColor: colors.background },
+          ]}
+        >
           <TouchableOpacity
             onPress={() => setTab("posts")}
             activeOpacity={0.7}
-            style={[styles.tabButton, tab === "posts" && styles.tabButtonActive]}
+            style={[
+              styles.tabButton,
+              tab === "posts" && styles.tabButtonActive,
+            ]}
           >
             <Ionicons
               name={tab === "posts" ? "newspaper" : "newspaper-outline"}
               size={22}
-              color={tab === "posts" ? COLORS.tab.active : COLORS.tab.inactive}
+              color={tab === "posts" ? colors.brand : colors.iconMuted}
             />
+
             <Text
               style={[
                 styles.tabText,
-                tab === "posts" && styles.tabTextActive,
+                { color: colors.textMuted },
+                tab === "posts" && [
+                  styles.tabTextActive,
+                  { color: colors.brand },
+                ],
               ]}
             >
               Posts
             </Text>
+
+            {tab === "posts" ? (
+              <View
+                style={[
+                  styles.activeIndicator,
+                  { backgroundColor: colors.brand },
+                ]}
+              />
+            ) : null}
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setTab("reels")}
             activeOpacity={0.7}
-            style={[styles.tabButton, tab === "reels" && styles.tabButtonActive]}
+            style={[
+              styles.tabButton,
+              tab === "reels" && styles.tabButtonActive,
+            ]}
           >
             <Ionicons
               name={tab === "reels" ? "play-circle" : "play-circle-outline"}
               size={22}
-              color={tab === "reels" ? COLORS.tab.active : COLORS.tab.inactive}
+              color={tab === "reels" ? colors.brand : colors.iconMuted}
             />
+
             <Text
               style={[
                 styles.tabText,
-                tab === "reels" && styles.tabTextActive,
+                { color: colors.textMuted },
+                tab === "reels" && [
+                  styles.tabTextActive,
+                  { color: colors.brand },
+                ],
               ]}
             >
               Reels
             </Text>
-          </TouchableOpacity>
 
-          <View
-            style={[
-              styles.activeIndicator,
-              { left: tab === "posts" ? "12.5%" : "62.5%" },
-            ]}
-          />
+            {tab === "reels" ? (
+              <View
+                style={[
+                  styles.activeIndicator,
+                  { backgroundColor: colors.brand },
+                ]}
+              />
+            ) : null}
+          </TouchableOpacity>
         </View>
       </View>
     );
-  }, [tab]);
+  }, [colors, tab]);
 
   if (tab === "reels" && reelsFullscreen) {
     return (
@@ -190,32 +237,53 @@ export default function LetsBuzzScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.background },
+      ]}
+    >
       <StatusBar
-        barStyle="dark-content"
-        backgroundColor={COLORS.background}
+        barStyle={statusBarStyle}
+        backgroundColor={colors.background}
         hidden={false}
       />
 
       <View
         style={[
           styles.header,
-          { paddingTop: insets.top + 10 },
+          {
+            paddingTop: insets.top + 4,
+            backgroundColor: colors.background,
+          },
         ]}
       >
         <View style={styles.headerRow}>
-          <Text style={styles.title}>Let'sBuzz</Text>
+          <Text
+            style={[
+              styles.title,
+              { color: colors.text },
+            ]}
+          >
+            Let'sBuzz
+          </Text>
 
           <HeaderExpandButton
             visible={tab === "reels"}
             onPress={() => setReelsFullscreen(true)}
+            color={colors.brand}
           />
         </View>
       </View>
 
       {TabBar}
 
-        <View style={styles.content}>
+      <View
+        style={[
+          styles.content,
+          { backgroundColor: colors.background },
+        ]}
+      >
         {tab === "posts" ? (
           <LetsBuzzPosts
             targetPostId={targetPostId}
@@ -245,7 +313,6 @@ export default function LetsBuzzScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
 
   fullscreenContainer: {
@@ -255,33 +322,31 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: 20,
-    paddingBottom: 10,
-    backgroundColor: COLORS.background,
+    paddingBottom: 4,
   },
 
   headerRow: {
-    minHeight: 38,
+    minHeight: 34,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
   title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: COLORS.primary,
-    letterSpacing: -0.5,
+    fontSize: 26,
+    fontFamily: RBZFont.extraBold,
+    letterSpacing: -0.4,
   },
 
   headerActionPlaceholder: {
-    width: 32,
-    height: 32,
+    width: 30,
+    height: 30,
   },
 
   headerExpandButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
@@ -292,16 +357,13 @@ const styles = StyleSheet.create({
   },
 
   tabSection: {
-    backgroundColor: COLORS.background,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
 
   tabContainer: {
     flexDirection: "row",
     paddingHorizontal: 20,
-    paddingBottom: 12,
-    backgroundColor: COLORS.background,
+    paddingBottom: 6,
     position: "relative",
   },
 
@@ -310,8 +372,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    gap: 8,
+    paddingVertical: 8,
+    gap: 7,
     borderRadius: 12,
   },
 
@@ -320,28 +382,24 @@ const styles = StyleSheet.create({
   },
 
   tabText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: COLORS.tab.inactive,
+    fontSize: 15,
+    fontFamily: RBZFont.semiBold,
   },
 
   tabTextActive: {
-    color: COLORS.tab.active,
-    fontWeight: "600",
+    fontFamily: RBZFont.semiBold,
   },
 
   activeIndicator: {
     position: "absolute",
-    bottom: 0,
-    width: 60,
+    bottom: -6,
+    alignSelf: "center",
+    width: 54,
     height: 3,
-    backgroundColor: COLORS.primary,
     borderRadius: 3,
-    transform: [{ translateX: -30 }],
   },
 
   content: {
     flex: 1,
-    backgroundColor: COLORS.surface,
   },
 });

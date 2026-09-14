@@ -32,6 +32,7 @@ type Props = {
   onAvatarPress: () => void;
   onChangeAvatar: () => void;
   onAddStory: () => void;
+  onPreview: () => void;
   onWallet: () => void;
   onSettings: () => void;
 };
@@ -49,6 +50,7 @@ export default function ProfileIdentityHero({
   onAvatarPress,
   onChangeAvatar,
   onAddStory,
+  onPreview,
   onWallet,
   onSettings,
 }: Props) {
@@ -112,6 +114,12 @@ export default function ProfileIdentityHero({
             { top: safeTop + 10 },
           ]}
         >
+          <HeroAction
+            icon="eye-outline"
+            label="Preview"
+            onPress={onPreview}
+          />
+
           <HeroAction
             icon="wallet-outline"
             label="Wallet"

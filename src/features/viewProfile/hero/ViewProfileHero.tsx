@@ -5,18 +5,18 @@
  */
 
 import BuzzPokeCard, {
-    type BuzzPokeMeta,
+  type BuzzPokeMeta,
 } from "@/src/components/profile/BuzzPokeCard";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
-    Image,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 type Props = {
@@ -28,6 +28,7 @@ type Props = {
   online?: boolean;
   distanceText?: string;
   matched: boolean;
+  previewMode?: boolean;
   buzzMeta: BuzzPokeMeta;
   onBuzzMetaChange: (meta: BuzzPokeMeta) => void;
   onChat: () => void;
@@ -42,6 +43,7 @@ export default function ViewProfileHero({
   online,
   distanceText,
   matched,
+  previewMode = false,
   buzzMeta,
   onBuzzMetaChange,
   onChat,
@@ -97,7 +99,7 @@ export default function ViewProfileHero({
               {displayName}
             </Text>
 
-            {matched ? (
+            {!previewMode && matched ? (
               <View
                 style={[
                   styles.streakBadge,
@@ -167,7 +169,8 @@ export default function ViewProfileHero({
           )}
 
           <View style={styles.secondaryMeta}>
-            {matched &&
+            {!previewMode &&
+            matched &&
             buzzMeta?.lastBuzzLabel ? (
               <Text
                 style={[
@@ -200,19 +203,20 @@ export default function ViewProfileHero({
         </View>
       </View>
 
-      <View style={styles.actions}>
-        <BuzzPokeCard
-          userId={userId}
-          matched={matched}
-          onMetaChange={
-            onBuzzMetaChange
-          }
-        />
+      {!previewMode && (
+        <View style={styles.actions}>
+          <BuzzPokeCard
+            userId={userId}
+            matched={matched}
+            onMetaChange={
+              onBuzzMetaChange
+            }
+          />
 
-        <Pressable
-          onPress={onChat}
-          style={({ pressed }) => [
-            styles.chatButton,
+          <Pressable
+            onPress={onChat}
+            style={({ pressed }) => [
+              styles.chatButton,
             {
               backgroundColor:
                 colors.surfaceMuted,
@@ -234,11 +238,12 @@ export default function ViewProfileHero({
               styles.chatText,
               { color: colors.text },
             ]}
-          >
-            Chat
-          </Text>
-        </Pressable>
-      </View>
+            >
+              Chat
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }

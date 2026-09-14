@@ -17,6 +17,9 @@
  */
 
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
+import { useNotificationThemeStyles } from "@/src/features/notifications/useNotificationThemeStyles";
 import { useCachedNotifications } from "@/src/features/performance/useCachedNotifications";
 import { getSocket, onNotification } from "@/src/lib/socket";
 import { rbzApiJson, rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
@@ -173,6 +176,9 @@ function getVisualNotificationType(n: NotificationItem): NotificationType {
 export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const fontsLoaded = useRomBuzzTypography();
+  const { colors } = useRomBuzzTheme();
+  const theme = useNotificationThemeStyles(fontsLoaded);
 
    const [token, setToken] = useState<string>("");
   const [currentUserId, setCurrentUserId] = useState<string>("");
@@ -490,49 +496,49 @@ export default function NotificationsScreen() {
     params.set("openInsights", "1");
     params.set("insightsTab", "gifts");
 
-    return `/(tabs)/profile?${params.toString()}`;
+    return `/(tabs)/(root)/profile?${params.toString()}`;
   };
 
   const buildPostHref = (n: NotificationItem) => {
     const postId = getNotificationPostId(n);
-    if (!postId) return "/(tabs)/letsbuzz";
+    if (!postId) return "/(tabs)/(root)/letsbuzz";
 
     const query = buildPostDeepLinkQuery(n);
     const ownerId = getNotificationOwnerId(n);
     const isAuthor = !!currentUserId && !!ownerId && String(ownerId) === String(currentUserId);
 
     if (isAuthor || n?.routeContext === "author_profile") {
-      return `/(tabs)/profile?${query}`;
+      return `/(tabs)/(root)/profile?${query}`;
     }
 
-    return `/(tabs)/letsbuzz?${query}`;
+    return `/(tabs)/(root)/letsbuzz?${query}`;
   };
 
   const normalizeHref = (raw?: string) => {
     if (!raw) return "/(tabs)/notifications";
 
-    let fixed = raw.trim();
+      let fixed = raw.trim();
     if (!fixed.startsWith("/")) fixed = "/" + fixed;
 
     // --- Translate legacy web-style routes to mobile routes ---
     // /discover  -> /(tabs)/discover
-    // /letsbuzz  -> /(tabs)/letsbuzz
+    // /letsbuzz  -> /(tabs)/(root)/letsbuzz
     // /notifications -> /(tabs)/notifications
     if (fixed === "/discover") fixed = "/(tabs)/discover";
-    if (fixed === "/letsbuzz") fixed = "/(tabs)/letsbuzz";
+    if (fixed === "/letsbuzz") fixed = "/(tabs)/(root)/letsbuzz";
     if (fixed === "/notifications") fixed = "/(tabs)/notifications";
 
     // /viewprofile/:id or /viewprofile/:id?post=123
     // In mobile:
     //  - profile: /view-profile?id=:id
-    //  - post:    /(tabs)/letsbuzz?post=123
+    //  - post:    /(tabs)/(root)/letsbuzz?post=123
     if (fixed.startsWith("/viewprofile/")) {
-      const withoutPrefix = fixed.replace("/viewprofile/", ""); // "USER?post=123" or "USER"
+      const withoutPrefix = fixed.replace("/viewprofile/", "");
       const [userPart, qs] = withoutPrefix.split("?");
       const params = new URLSearchParams(qs || "");
       const post = params.get("post");
 
-      if (post) return `/(tabs)/letsbuzz?post=${encodeURIComponent(post)}&openComments=1`;
+      if (post) return `/(tabs)/(root)/letsbuzz?post=${encodeURIComponent(post)}&openComments=1`;
       return `/view-profile?id=${encodeURIComponent(userPart)}`;
     }
 
@@ -614,7 +620,7 @@ export default function NotificationsScreen() {
         if (matched) return buildMatchedProfileHref(fromId);
         return buildDiscoverProfileHref(fromId);
       }
-      return "/(tabs)/letsbuzz";
+      return "/(tabs)/(root)/letsbuzz";
     }
 
     // gift/media_gift on gallery/profile media:
@@ -630,14 +636,14 @@ export default function NotificationsScreen() {
         return buildPostHref(n);
       }
 
-      return "/(tabs)/profile";
+      return "/(tabs)/(root)/profile";
     }
 
     // comment/reply -> exact post + open comments.
     // Author opens inside own Profile. Non-author opens inside LetsBuzz.
     if (type === "comment" || type === "reply") {
       if (postId) return buildPostHref(n);
-      return "/(tabs)/letsbuzz";
+      return "/(tabs)/(root)/letsbuzz";
     }
 
     // new_post -> show the specific post in LetsBuzz feed
@@ -648,13 +654,13 @@ export default function NotificationsScreen() {
         if (matched) return buildMatchedProfileHref(fromId);
         return buildDiscoverProfileHref(fromId);
       }
-      return "/(tabs)/letsbuzz";
+      return "/(tabs)/(root)/letsbuzz";
     }
 
     // share -> direct to the particular post that has been shared
     if (type === "share") {
       if (postId) return buildPostHref(n);
-      return "/(tabs)/letsbuzz";
+      return "/(tabs)/(root)/letsbuzz";
     }
 
     // reaction -> exact post + open comments/reactions area when possible.
@@ -689,63 +695,35 @@ export default function NotificationsScreen() {
   // ---------------------------
   // UI helpers
   // ---------------------------
-   const iconForType = (t: NotificationType) => {
-    switch (t) {
-      case "rombuzz":
-        return <FontAwesome5 name="bullhorn" size={15} color={C1} />;
-      case "buzz":
-        return <FontAwesome5 name="bolt" size={16} color={C1} />;
-         case "like":
-        return <FontAwesome5 name="heart" size={15} color={C2} />;
-      case "gift":
-      case "media_gift":
-        return <FontAwesome5 name="gift" size={15} color={C2} />;
-      case "comment":
-        return <FontAwesome5 name="comment-alt" size={15} color={C4} />;
-      case "reaction":
-        return <FontAwesome5 name="smile" size={15} color={C5} />;
-      case "match":
-        return <FontAwesome5 name="handshake" size={15} color={C1} />;
-      case "report":
-        return <MaterialIcons name="verified-user" size={17} color="#475569" />;
-      case "wingman":
-        return <FontAwesome5 name="robot" size={15} color={C3} />;
-      case "share":
-        return <FontAwesome5 name="share-alt" size={15} color={C2} />;
-      case "new_post":
-        return <FontAwesome5 name="plus-circle" size={15} color={C3} />;
-      default:
-        return <FontAwesome5 name="bell" size={15} color="#9ca3af" />;
-    }
-  };
+   const iconForType = (t: NotificationType, emphasized = false) => {
+    const iconColor = emphasized ? colors.brand : colors.iconMuted;
 
-      const leftBarColor = (t: NotificationType) => {
     switch (t) {
       case "rombuzz":
-        return C1;
+        return <FontAwesome5 name="bullhorn" size={15} color={iconColor} />;
       case "buzz":
-        return C1;
-        case "match":
-        return C1;
+        return <FontAwesome5 name="bolt" size={16} color={iconColor} />;
       case "like":
-        return C2;
+        return <FontAwesome5 name="heart" size={15} color={iconColor} />;
       case "gift":
       case "media_gift":
-        return C2;
+        return <FontAwesome5 name="gift" size={15} color={iconColor} />;
       case "comment":
-        return C4;
+        return <FontAwesome5 name="comment-alt" size={15} color={iconColor} />;
       case "reaction":
-        return C5;
-      case "new_post":
-        return C3;
-      case "share":
-        return C2;
+        return <FontAwesome5 name="smile" size={15} color={iconColor} />;
+      case "match":
+        return <FontAwesome5 name="handshake" size={15} color={iconColor} />;
       case "report":
-        return "#64748b";
+        return <MaterialIcons name="verified-user" size={17} color={iconColor} />;
       case "wingman":
-        return C3;
+        return <FontAwesome5 name="robot" size={15} color={iconColor} />;
+      case "share":
+        return <FontAwesome5 name="share-alt" size={15} color={iconColor} />;
+      case "new_post":
+        return <FontAwesome5 name="plus-circle" size={15} color={iconColor} />;
       default:
-        return "#9ca3af";
+        return <FontAwesome5 name="bell" size={15} color={iconColor} />;
     }
   };
 
@@ -774,25 +752,27 @@ export default function NotificationsScreen() {
   };
 
    return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, theme.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, theme.header]}>
         <View style={styles.headerContent}>
           <View>
-            <Text style={styles.title}>Notifications</Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.title, theme.title]}>Notifications</Text>
+            <Text style={[styles.subtitle, theme.subtitle]}>
               {unreadCounts.all || 0} unread • {notifications.length} total
             </Text>
           </View>
           
           {unreadCounts.all > 0 && (
             <TouchableOpacity 
-              style={styles.markAllButton} 
+              style={[styles.markAllButton, theme.markAllButton]} 
               onPress={markAllAsRead}
               activeOpacity={0.7}
             >
-              <MaterialIcons name="done-all" size={16} color={C1} />
-              <Text style={styles.markAllButtonText}>Mark all read</Text>
+              <MaterialIcons name="done-all" size={16} color={colors.brand} />
+              <Text style={[styles.markAllButtonText, theme.markAllButtonText]}>
+                Mark all read
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -802,7 +782,7 @@ export default function NotificationsScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.filtersContainer}
+        style={[styles.filtersContainer, theme.filtersContainer]}
         contentContainerStyle={styles.filtersContent}
       >
         {FILTERS.map((type) => {
@@ -814,15 +794,19 @@ export default function NotificationsScreen() {
               key={type}
               style={[
                 styles.filterChip,
+                theme.filterChip,
                 isActive && styles.filterChipActive,
-                { borderColor: isActive ? leftBarColor(type) : "#f1d2da" }
+                isActive && theme.filterChipActive,
+                { borderColor: isActive ? colors.brand : colors.border }
               ]}
               onPress={() => setFilter(type)}
               activeOpacity={0.8}
             >
               <Text style={[
                 styles.filterChipText,
-                isActive && styles.filterChipTextActive
+                theme.filterChipText,
+                isActive && styles.filterChipTextActive,
+                isActive && theme.filterChipTextActive
               ]}>
                 {labelForFilter(type)}
               </Text>
@@ -830,11 +814,20 @@ export default function NotificationsScreen() {
               {count > 0 && (
                 <View style={[
                   styles.filterBadge,
-                  { backgroundColor: isActive ? "#ffffff" : leftBarColor(type) }
+                  {
+                    backgroundColor: isActive
+                      ? colors.brand
+                      : colors.brandSoft
+                  }
                 ]}>
                   <Text style={[
                     styles.filterBadgeText,
-                    { color: isActive ? leftBarColor(type) : "#ffffff" }
+                    theme.filterBadgeText,
+                    {
+                      color: isActive
+                        ? colors.white
+                        : colors.brand
+                    }
                   ]}>
                     {count}
                   </Text>
@@ -847,7 +840,7 @@ export default function NotificationsScreen() {
 
       {/* Notifications List */}
       <ScrollView
-        style={styles.listContainer}
+        style={[styles.listContainer, theme.listContainer]}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
@@ -862,8 +855,14 @@ export default function NotificationsScreen() {
               key={n.id}
               style={[
                 styles.notificationCard,
+                theme.notificationCard,
                 isUnread && styles.notificationUnread,
-                { borderLeftColor: leftBarColor(visualType) }
+                isUnread && theme.notificationUnread,
+                {
+                  borderLeftColor: isUnread
+                    ? colors.brand
+                    : colors.borderStrong
+                }
               ]}
               activeOpacity={0.9}
               delayLongPress={220}
@@ -879,30 +878,58 @@ export default function NotificationsScreen() {
               {/* Icon and Content */}
               <View style={styles.cardMainContent}>
                 <View style={[
-                  styles.iconWrapper, 
-                  { backgroundColor: `${leftBarColor(visualType)}10` }
+                  styles.iconWrapper,
+                  {
+                    backgroundColor: isUnread
+                      ? colors.brandSoft
+                      : colors.surfaceMuted
+                  }
                 ]}>
-                  {iconForType(visualType)}
+                  {iconForType(visualType, isUnread)}
                 </View>
                 
                 <View style={styles.notificationContent}>
                   <View style={styles.notificationHeader}>
-                    <Text style={styles.notificationType}>
+                    <Text style={[
+                      styles.notificationType,
+                      theme.notificationType
+                    ]}>
                       {labelForFilter(visualType)}
                     </Text>
-                    <Text style={styles.notificationTime}>
+
+                    <Text style={[
+                      styles.notificationTime,
+                      theme.notificationTime
+                    ]}>
                       {formatDistanceToNow(createdAtDate, { addSuffix: true })}
                     </Text>
                   </View>
                   
-                  <Text style={styles.notificationMessage} numberOfLines={2}>
+                  <Text
+                    style={[
+                      styles.notificationMessage,
+                      theme.notificationMessage
+                    ]}
+                    numberOfLines={2}
+                  >
                     {n.message}
                   </Text>
                   
                   {isUnread && (
                     <View style={styles.unreadIndicator}>
-                      <View style={[styles.unreadDot, { backgroundColor: "#10b981" }]} />
-                      <Text style={styles.unreadText}>Unread</Text>
+                      <View
+                        style={[
+                          styles.unreadDot,
+                          { backgroundColor: colors.brand }
+                        ]}
+                      />
+
+                      <Text style={[
+                        styles.unreadText,
+                        theme.unreadText
+                      ]}>
+                        Unread
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -929,7 +956,11 @@ export default function NotificationsScreen() {
                 style={styles.menuButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <MaterialIcons name="more-vert" size={18} color="#9ca3af" />
+                <MaterialIcons
+                  name="more-vert"
+                  size={18}
+                  color={colors.iconMuted}
+                />
               </TouchableOpacity>
 
               {/* Menu Modal (FIXED: Always on top) */}
@@ -940,14 +971,21 @@ export default function NotificationsScreen() {
                 onRequestClose={() => setSelectedMenuId(null)}
               >
                 <TouchableOpacity
-                  style={styles.menuBackdrop}
+                  style={[
+                    styles.menuBackdrop,
+                    theme.menuBackdrop
+                  ]}
                   activeOpacity={1}
                   onPress={() => setSelectedMenuId(null)}
                 >
-                  <View style={[styles.menuCard, { 
-                    top: menuPosition.top,
-                    right: menuPosition.right
-                  }]}>
+                  <View style={[
+                    styles.menuCard,
+                    theme.menuCard,
+                    {
+                      top: menuPosition.top,
+                      right: menuPosition.right
+                    }
+                  ]}>
                     <TouchableOpacity
                       style={styles.menuItem}
                       onPress={() => {
@@ -961,9 +999,13 @@ export default function NotificationsScreen() {
                       <MaterialIcons
                         name={n.read ? "mark-email-unread" : "mark-email-read"}
                         size={16}
-                        color={C1}
+                        color={colors.brand}
                       />
-                      <Text style={styles.menuItemText}>
+
+                      <Text style={[
+                        styles.menuItemText,
+                        theme.menuItemText
+                      ]}>
                         {n.read ? "Mark as unread" : "Mark as read"}
                       </Text>
                     </TouchableOpacity>
@@ -972,8 +1014,17 @@ export default function NotificationsScreen() {
                       style={styles.menuItem}
                       onPress={() => deleteNotification(n.id)}
                     >
-                      <MaterialIcons name="delete-outline" size={16} color="#ef4444" />
-                      <Text style={[styles.menuItemText, { color: "#ef4444" }]}>
+                      <MaterialIcons
+                        name="delete-outline"
+                        size={16}
+                        color={colors.danger}
+                      />
+
+                      <Text style={[
+                        styles.menuItemText,
+                        theme.menuItemText,
+                        { color: colors.danger }
+                      ]}>
                         Delete
                       </Text>
                     </TouchableOpacity>
@@ -988,29 +1039,65 @@ export default function NotificationsScreen() {
           <View style={styles.emptyState}>
             {loading ? (
               <>
-                <ActivityIndicator size="small" color={C1} />
-                <Text style={styles.emptyTitle}>Loading notifications...</Text>
-                <Text style={styles.emptyText}>
+                <ActivityIndicator size="small" color={colors.brand} />
+
+                <Text style={[
+                  styles.emptyTitle,
+                  theme.emptyTitle
+                ]}>
+                  Loading notifications...
+                </Text>
+
+                <Text style={[
+                  styles.emptyText,
+                  theme.emptyText
+                ]}>
                   Your latest activity will appear here.
                 </Text>
               </>
             ) : (
               <>
-                <View style={styles.emptyIcon}>
-                  <FontAwesome5 name="bell-slash" size={40} color="#d1d5db" />
+                <View style={[
+                  styles.emptyIcon,
+                  theme.emptyIcon
+                ]}>
+                  <FontAwesome5
+                    name="bell-slash"
+                    size={40}
+                    color={colors.iconMuted}
+                  />
                 </View>
-                <Text style={styles.emptyTitle}>No notifications yet</Text>
-                <Text style={styles.emptyText}>
+
+                <Text style={[
+                  styles.emptyTitle,
+                  theme.emptyTitle
+                ]}>
+                  No notifications yet
+                </Text>
+
+                <Text style={[
+                  styles.emptyText,
+                  theme.emptyText
+                ]}>
                   When you get likes, comments, or matches, they'll appear here
                 </Text>
               </>
             )}
+
             {filter !== "all" && !loading && (
               <TouchableOpacity
-                style={styles.emptyButton}
+                style={[
+                  styles.emptyButton,
+                  theme.emptyButton
+                ]}
                 onPress={() => setFilter("all")}
               >
-                <Text style={styles.emptyButtonText}>Show all notifications</Text>
+                <Text style={[
+                  styles.emptyButtonText,
+                  theme.emptyButtonText
+                ]}>
+                  Show all notifications
+                </Text>
               </TouchableOpacity>
                      )}
           </View>
@@ -1023,29 +1110,54 @@ export default function NotificationsScreen() {
         animationType="fade"
         onRequestClose={() => setExpandedNotification(null)}
       >
-        <View style={styles.expandBackdrop} pointerEvents="none">
-          <View style={styles.expandCard}>
+        <View
+          style={[
+            styles.expandBackdrop,
+            theme.expandBackdrop
+          ]}
+          pointerEvents="none"
+        >
+          <View style={[
+            styles.expandCard,
+            theme.expandCard
+          ]}>
             <View style={styles.expandTopRow}>
               <View style={[
                 styles.expandIconBubble,
-                {
-                  backgroundColor: expandedNotification
-                    ? `${leftBarColor(getVisualNotificationType(expandedNotification))}12`
-                    : "rgba(177, 18, 60, 0.08)"
-                }
+                { backgroundColor: colors.brandSoft }
               ]}>
                 {expandedNotification
-                  ? iconForType(getVisualNotificationType(expandedNotification))
-                  : <FontAwesome5 name="bell" size={15} color={C1} />}
+                  ? iconForType(
+                      getVisualNotificationType(expandedNotification),
+                      true
+                    )
+                  : (
+                    <FontAwesome5
+                      name="bell"
+                      size={15}
+                      color={colors.brand}
+                    />
+                  )}
               </View>
 
               <View style={styles.expandTitleWrap}>
-                <Text style={styles.expandType}>
+                <Text style={[
+                  styles.expandType,
+                  theme.expandType
+                ]}>
                   {expandedNotification
-                    ? labelForFilter(getVisualNotificationType(expandedNotification))
+                    ? labelForFilter(
+                        getVisualNotificationType(expandedNotification)
+                      )
                     : "Notification"}
                 </Text>
-                <Text style={styles.expandHint}>Release to close</Text>
+
+                <Text style={[
+                  styles.expandHint,
+                  theme.expandHint
+                ]}>
+                  Release to close
+                </Text>
               </View>
             </View>
 
@@ -1054,7 +1166,10 @@ export default function NotificationsScreen() {
               contentContainerStyle={styles.expandMessageContent}
               showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.expandMessage}>
+              <Text style={[
+                styles.expandMessage,
+                theme.expandMessage
+              ]}>
                 {expandedNotification?.message || ""}
               </Text>
             </ScrollView>

@@ -45,6 +45,7 @@ import {
   mergeStableViewProfile,
   readCachedViewProfile,
 } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
+import ProfilePreviewBar from "@/src/features/profile/preview/ProfilePreviewBar";
 import ViewProfileHero from "@/src/features/viewProfile/hero/ViewProfileHero";
 import ViewProfileDetailsInfo from "@/src/features/viewProfile/info/ViewProfileDetailsInfo";
 import ViewProfileIntroInfo from "@/src/features/viewProfile/info/ViewProfileIntroInfo";
@@ -387,9 +388,12 @@ export default function ViewProfile() {
     fromChat?: string;
     fromMatches?: string;
     returnTo?: string;
+    profilePreviewMode?: string;
   }>();
+
   const userId = String(params.userId || params.id || "");
   const returnTo = String(params.returnTo || "").trim();
+  const isProfilePreview = params.profilePreviewMode === "after";
 
   // ✅ If you came from chat thread OR Matches tab → trust it and allow viewing
   const bypassMatchGate = params.fromChat === "1" || params.fromMatches === "1";
@@ -410,7 +414,7 @@ export default function ViewProfile() {
       return;
     }
 
-    router.replace("/profile" as any);
+    router.replace("/(tabs)/(root)/profile" as any);
   }, [router, returnTo]);
 
   const [loading, setLoading] = useState(true);
@@ -1125,7 +1129,11 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
 
   // Keep matched-only UI accurate for normal flow,
   // but allow matched-entry contexts like chat/matches to show matched actions.
-  const viewingAsMatched = bypassMatchGate ? true : matched;
+  const viewingAsMatched = isProfilePreview
+    ? true
+    : bypassMatchGate
+    ? true
+    : matched;
 
   // ---------------------------------------------------------------------------
   // MAIN UI
@@ -1168,9 +1176,12 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             { color: colors.text },
           ]}
         >
-          Profile
+          {isProfilePreview ? "Preview" : "Profile"}
         </Text>
 
+        {isProfilePreview ? (
+          <View style={styles.headerRight} />
+        ) : (
         <View
           ref={menuBtnRef}
           collapsable={false}
@@ -1187,6 +1198,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             />
           </Pressable>
         </View>
+        )}
       </View>
 
       <ScrollView
@@ -1202,6 +1214,23 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           paddingBottom: insets.bottom + 120,
         }}
       >
+        {isProfilePreview && (
+          <ProfilePreviewBar
+            mode="after"
+            onSelectBefore={() =>
+              router.replace({
+                pathname: "/(tabs)/discover-profile" as any,
+                params: {
+                  id: userId,
+                  profilePreviewMode: "before",
+                  returnTo,
+                },
+              })
+            }
+            onSelectAfter={() => {}}
+          />
+        )}
+
         <ViewProfileHero
           userId={userId}
           avatar={user?.avatar}
@@ -1209,8 +1238,9 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           age={age}
           city={user?.city}
           online={user?.online}
-          distanceText={distanceText}
+          distanceText={isProfilePreview ? "" : distanceText}
           matched={viewingAsMatched}
+          previewMode={isProfilePreview}
           buzzMeta={buzzMeta}
           onBuzzMetaChange={setBuzzMeta}
           onChat={() => {
@@ -1394,22 +1424,29 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         title={`${fullName}'s Photo`}
         onClose={closeImageViewer}
         onIndexChange={setImageViewerIndex}
-        FooterComponent={({ item }) => {
-          if (!item) return null;
+        FooterComponent={
+          isProfilePreview
+            ? undefined
+            : ({ item }) => {
+                if (!item) return null;
 
-          return (
-            <View pointerEvents="box-none" style={styles.imageViewerMediaActionsWrap}>
-              <ViewProfileMediaActions
-                item={item as any}
-                ownerId={userId}
-                ownerName={fullName}
-                ownerAvatar={user.avatar || ""}
-                mediaKind="photo"
-                onRefresh={refreshProfile}
-              />
-            </View>
-          );
-        }}
+                return (
+                  <View
+                    pointerEvents="box-none"
+                    style={styles.imageViewerMediaActionsWrap}
+                  >
+                    <ViewProfileMediaActions
+                      item={item as any}
+                      ownerId={userId}
+                      ownerName={fullName}
+                      ownerAvatar={user.avatar || ""}
+                      mediaKind="photo"
+                      onRefresh={refreshProfile}
+                    />
+                  </View>
+                );
+              }
+        }
       />
 
       <RBZVideoViewer
@@ -1419,22 +1456,29 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         title={`${fullName}'s Reel`}
         onClose={closeVideoViewer}
         onIndexChange={setVideoViewerIndex}
-        FooterComponent={({ item }) => {
-          if (!item) return null;
+        FooterComponent={
+          isProfilePreview
+            ? undefined
+            : ({ item }) => {
+                if (!item) return null;
 
-          return (
-            <View pointerEvents="box-none" style={styles.videoViewerMediaActionsWrap}>
-              <ViewProfileMediaActions
-                item={item as any}
-                ownerId={userId}
-                ownerName={fullName}
-                ownerAvatar={user.avatar || ""}
-                mediaKind="reel"
-                onRefresh={refreshProfile}
-              />
-            </View>
-          );
-        }}
+                return (
+                  <View
+                    pointerEvents="box-none"
+                    style={styles.videoViewerMediaActionsWrap}
+                  >
+                    <ViewProfileMediaActions
+                      item={item as any}
+                      ownerId={userId}
+                      ownerName={fullName}
+                      ownerAvatar={user.avatar || ""}
+                      mediaKind="reel"
+                      onRefresh={refreshProfile}
+                    />
+                  </View>
+                );
+              }
+        }
       />
       </View>
     );

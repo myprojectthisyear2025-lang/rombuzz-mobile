@@ -505,7 +505,7 @@ export default function PrivateCommentsSheet({
       onClose();
 
       if (String(id) === String(safeMeId)) {
-        router.push("/(tabs)/profile" as any);
+        router.push("/(tabs)/(root)/profile" as any);
         return;
       }
 

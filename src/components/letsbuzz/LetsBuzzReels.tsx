@@ -32,6 +32,7 @@ import {
   Modal,
   Pressable,
   RefreshControl,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -40,11 +41,14 @@ import {
 } from "react-native";
 
 import { getGiftSummary, type GiftSummaryResponse } from "@/src/api/gifts";
-import { API_BASE } from "@/src/config/api";
 import PrivateCommentsSheet from "@/src/components/comments/PrivateCommentsSheet";
 import GiftInsightSheet from "@/src/components/gifts/GiftInsightSheet";
 import GiftPicker from "@/src/components/gifts/GiftPicker";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
+import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import {
   preloadLetsBuzzFeedImages,
   readCachedLetsBuzzFeed,
@@ -103,18 +107,6 @@ type BuzzPost = {
   cloudflareStream?: any;
   status?: string;
   duration?: number;
-};
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  text: "rgba(255,255,255,0.95)",
-  sub: "rgba(255,255,255,0.70)",
-  dark: "#0a0a0f",
-  darker: "#050507",
-  border: "rgba(255,255,255,0.12)",
 };
 
 async function authHeaders() {
@@ -192,6 +184,7 @@ type LetsBuzzReelsProps = {
   commentId?: string;
   parentId?: string;
   replyId?: string;
+  fullscreen?: boolean;
 };
 
 function buildReelsFromLetsBuzzRaw(raw: any[], myId = "") {
@@ -213,8 +206,11 @@ export default function LetsBuzzReels({
   commentId,
   parentId,
   replyId,
+  fullscreen = false,
 }: LetsBuzzReelsProps) {
   const router = useRouter();
+  const { colors } = useRomBuzzTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const listRef = useRef<FlatList<BuzzPost>>(null);
 
   const [loading, setLoading] = useState(true);
@@ -225,6 +221,30 @@ export default function LetsBuzzReels({
   const [meId, setMeId] = useState("");
   const meIdRef = useRef("");
   const bootedRef = useRef(false);
+
+  const [reelViewport, setReelViewport] = useState({
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  });
+
+  const reelFrame = useMemo(() => {
+    const availableWidth = Math.max(1, reelViewport.width);
+    const availableHeight = Math.max(1, reelViewport.height);
+    const reelRatio = 9 / 16;
+
+    let width = availableWidth;
+    let height = width / reelRatio;
+
+    if (height > availableHeight) {
+      height = availableHeight;
+      width = height * reelRatio;
+    }
+
+    return {
+      width: Math.round(width),
+      height: Math.round(height),
+    };
+  }, [reelViewport.height, reelViewport.width]);
 
   const videoRefs = useRef<Record<string, any>>({});
   const [muted, setMuted] = useState(false);
@@ -269,6 +289,21 @@ export default function LetsBuzzReels({
   const fullName = useMemo(() => {
     return getOwnerName(currentReel?.user);
   }, [currentReel?.user]);
+
+  const openOwnerProfile = useCallback(
+    (post: BuzzPost | null) => {
+      if (!post?.userId) return;
+
+      setPaused(true);
+
+      try {
+        videoRefs.current[String(post.id)]?.pauseAsync?.();
+      } catch {}
+
+      router.push(`/view-profile?userId=${post.userId}` as any);
+    },
+    [router]
+  );
 
   const resolveReelPlaybackUrl = useCallback(
     async (post: BuzzPost | null) => {
@@ -890,7 +925,7 @@ export default function LetsBuzzReels({
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={RBZ.c3} />
+        <ActivityIndicator size="large" color={colors.brand} />
         <Text style={styles.loadingText}>Loading reels...</Text>
       </View>
     );
@@ -899,7 +934,11 @@ export default function LetsBuzzReels({
   if (reels.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="videocam-outline" size={64} color={RBZ.sub} />
+        <Ionicons
+          name="videocam-outline"
+          size={64}
+          color={colors.textMuted}
+        />
         <Text style={styles.emptyTitle}>No reels yet</Text>
         <Text style={styles.emptyText}>
           Matched reels from your connections will appear here
@@ -910,10 +949,37 @@ export default function LetsBuzzReels({
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar
+        hidden={fullscreen}
+        barStyle="light-content"
+        translucent
+        backgroundColor="transparent"
+      />
 
-      <View style={styles.reelsContainer}>
-            <FlatList
+      <View
+        style={styles.reelsContainer}
+        onLayout={(event) => {
+          const nextWidth = Math.round(event.nativeEvent.layout.width);
+          const nextHeight = Math.round(event.nativeEvent.layout.height);
+
+          if (nextWidth <= 0 || nextHeight <= 0) return;
+
+          setReelViewport((current) => {
+            if (
+              current.width === nextWidth &&
+              current.height === nextHeight
+            ) {
+              return current;
+            }
+
+            return {
+              width: nextWidth,
+              height: nextHeight,
+            };
+          });
+        }}
+      >
+        <FlatList
           ref={listRef}
           data={reels}
           keyExtractor={(item) => item.id}
@@ -929,8 +995,24 @@ export default function LetsBuzzReels({
             />
           }
           renderItem={({ item, index }) => (
-            <View style={styles.reelContainer}>
-                      <View style={styles.videoWrap}>
+            <View
+              style={[
+                styles.reelContainer,
+                {
+                  width: reelViewport.width,
+                  height: reelViewport.height,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.videoWrap,
+                  {
+                    width: reelFrame.width,
+                    height: reelFrame.height,
+                  },
+                ]}
+              >
                 {(() => {
                   const isActive = index === currentIndex;
                   const isWarm = Math.abs(index - currentIndex) <= 1;
@@ -947,7 +1029,7 @@ export default function LetsBuzzReels({
                         <Image
                           source={{ uri: thumb }}
                           style={styles.video}
-                          resizeMode="cover"
+                          resizeMode="contain"
                         />
                       );
                     }
@@ -958,8 +1040,14 @@ export default function LetsBuzzReels({
                   if (!playableUrl) {
                     return (
                       <View style={[styles.video, styles.streamProcessing]}>
-                        <Ionicons name="videocam" size={42} color="rgba(255,255,255,0.85)" />
-                        <Text style={styles.streamProcessingText}>Preparing reel…</Text>
+                        <Ionicons
+                          name="videocam"
+                          size={42}
+                          color="rgba(255,255,255,0.85)"
+                        />
+                        <Text style={styles.streamProcessingText}>
+                          Preparing reel…
+                        </Text>
                       </View>
                     );
                   }
@@ -971,7 +1059,7 @@ export default function LetsBuzzReels({
                       }}
                       source={{ uri: playableUrl }}
                       style={styles.video}
-                      resizeMode={ResizeMode.COVER}
+                      resizeMode={ResizeMode.CONTAIN}
                       shouldPlay={isActive && !paused}
                       isLooping
                       isMuted={muted}
@@ -1035,18 +1123,29 @@ export default function LetsBuzzReels({
                     },
                   ]}
                 >
-                  <Ionicons name="heart" size={120} color="#ff4757" />
+                  <Ionicons
+                    name="heart"
+                    size={120}
+                    color={colors.brand}
+                  />
                 </Animated.View>
               ) : null}
             </View>
           )}
           pagingEnabled
           showsVerticalScrollIndicator={false}
-          snapToInterval={SCREEN_HEIGHT}
+          snapToInterval={reelViewport.height}
+          snapToAlignment="start"
+          disableIntervalMomentum
           decelerationRate="fast"
+          getItemLayout={(_, index) => ({
+            length: reelViewport.height,
+            offset: reelViewport.height * index,
+            index,
+          })}
           onMomentumScrollEnd={(event) => {
             const newIndex = Math.round(
-              event.nativeEvent.contentOffset.y / SCREEN_HEIGHT
+              event.nativeEvent.contentOffset.y / reelViewport.height
             );
 
             if (newIndex !== currentIndex) {
@@ -1072,12 +1171,20 @@ export default function LetsBuzzReels({
         <View style={styles.overlayContainer} pointerEvents="box-none">
           <View style={styles.topBar} pointerEvents="box-none" />
 
-          <View style={styles.rightActions}>
+          <View
+            style={[
+              styles.rightActions,
+              {
+                right: Math.max(
+                  14,
+                  (reelViewport.width - reelFrame.width) / 2 + 14
+                ),
+              },
+            ]}
+          >
             <TouchableOpacity
               style={styles.actionItem}
-              onPress={() =>
-                router.push(`/view-profile?userId=${currentReel.userId}` as any)
-              }
+              onPress={() => openOwnerProfile(currentReel)}
             >
               <Image
                 source={{ uri: getOwnerAvatar(currentReel.user) }}
@@ -1166,15 +1273,23 @@ export default function LetsBuzzReels({
             <View style={styles.bottomInfo} pointerEvents="box-none">
               <View style={styles.userInfo} pointerEvents="box-none">
                 {!!currentReel.text?.trim() ? (
-                  <Text style={styles.caption} numberOfLines={3}>
-                    {currentReel.text}
-                  </Text>
+                  <View style={styles.captionViewport}>
+                    <ScrollView
+                      nestedScrollEnabled
+                      directionalLockEnabled
+                      bounces={false}
+                      showsVerticalScrollIndicator
+                      contentContainerStyle={styles.captionScrollContent}
+                    >
+                      <Text style={styles.caption}>
+                        {currentReel.text}
+                      </Text>
+                    </ScrollView>
+                  </View>
                 ) : null}
 
                 <Pressable
-                  onPress={() =>
-                    router.push(`/view-profile?userId=${currentReel.userId}` as any)
-                  }
+                  onPress={() => openOwnerProfile(currentReel)}
                   hitSlop={10}
                   style={[
                     styles.nameRowBottom,
@@ -1264,7 +1379,11 @@ export default function LetsBuzzReels({
               }}
             >
               <View style={styles.reelMenuIconBubble}>
-                <Ionicons name="flag-outline" size={18} color={RBZ.c3} />
+                <Ionicons
+                  name="flag-outline"
+                  size={18}
+                  color={colors.brand}
+                />
               </View>
 
               <View style={styles.reelMenuTextWrap}>
@@ -1330,86 +1449,96 @@ export default function LetsBuzzReels({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: RBZ.dark,
-  },
+function createStyles(colors: RomBuzzColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: "#000000",
+    },
 
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: RBZ.dark,
-  },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.background,
+    },
 
-  loadingText: {
-    color: RBZ.sub,
-    marginTop: 16,
-    fontSize: 16,
-  },
+    loadingText: {
+      color: colors.textSecondary,
+      marginTop: 16,
+      fontSize: 16,
+      fontFamily: RBZFont.regular,
+    },
 
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: RBZ.dark,
-    padding: 24,
-  },
+    emptyContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.background,
+      padding: 24,
+    },
 
-  emptyTitle: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "bold",
-    marginTop: 16,
-  },
+    emptyTitle: {
+      color: colors.text,
+      fontSize: 24,
+      fontFamily: RBZFont.bold,
+      marginTop: 16,
+    },
 
-  emptyText: {
-    color: RBZ.sub,
-    textAlign: "center",
-    marginTop: 8,
-    fontSize: 14,
-  },
+    emptyText: {
+      color: colors.textSecondary,
+      textAlign: "center",
+      marginTop: 8,
+      fontSize: 14,
+      fontFamily: RBZFont.regular,
+    },
 
-  reelsContainer: {
-    flex: 1,
-  },
+    reelsContainer: {
+      flex: 1,
+      backgroundColor: "#000000",
+      overflow: "hidden",
+    },
 
-  reelContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    backgroundColor: "#000",
-    position: "relative",
-  },
+    reelContainer: {
+      width: "100%",
+      backgroundColor: "#000000",
+      position: "relative",
+      overflow: "hidden",
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  videoWrap: {
-    width: "100%",
-    height: "100%",
-    position: "relative",
-  },
+    videoWrap: {
+      position: "relative",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#000000",
+      overflow: "hidden",
+    },
 
-   video: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-  },
+    video: {
+      width: "100%",
+      height: "100%",
+      backgroundColor: "#000000",
+    },
 
-  streamProcessing: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: RBZ.darker,
-  },
+    streamProcessing: {
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#050507",
+    },
 
-  streamProcessingText: {
-    color: RBZ.text,
-    fontSize: 14,
-    fontWeight: "800",
-    marginTop: 10,
-  },
+    streamProcessingText: {
+      color: colors.white,
+      fontSize: 14,
+      fontFamily: RBZFont.extraBold,
+      marginTop: 10,
+    },
 
-  videoTapLayer: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 5,
-  },
+    videoTapLayer: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 5,
+    },
 
   overlayContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -1428,10 +1557,9 @@ const styles = StyleSheet.create({
 
   rightActions: {
     position: "absolute",
-    right: 16,
-    bottom: 120,
+    bottom: 72,
     alignItems: "center",
-    gap: 24,
+    gap: 14,
     zIndex: 30,
     elevation: 30,
   },
@@ -1463,115 +1591,133 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.14)",
   },
 
-  reelMenuBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.38)",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    paddingRight: 74,
-  },
-  reelMenuCard: {
-    width: 230,
-    borderRadius: 20,
-    padding: 12,
-    backgroundColor: "rgba(10,10,15,0.96)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    elevation: 20,
-  },
-  reelMenuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 14,
-  },
-  reelMenuIconBubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(233,72,106,0.16)",
-  },
-  reelMenuTextWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  reelMenuTitle: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  reelMenuSubtitle: {
-    color: "rgba(255,255,255,0.62)",
-    fontSize: 11,
-    fontWeight: "600",
-    lineHeight: 15,
-    marginTop: 2,
-  },
-  reelMenuCancelButton: {
-    minHeight: 40,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 6,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  reelMenuCancelText: {
-    color: "rgba(255,255,255,0.82)",
-    fontSize: 13,
-    fontWeight: "800",
-  },
+    reelMenuBackdrop: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      alignItems: "flex-end",
+      justifyContent: "center",
+      paddingRight: 74,
+    },
 
-  profileImage: {
-    width: 48,
+    reelMenuCard: {
+      width: 230,
+      borderRadius: 20,
+      padding: 12,
+      backgroundColor: colors.surfaceRaised,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.28,
+      shadowRadius: 18,
+      elevation: 20,
+    },
+
+    reelMenuItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      borderRadius: 14,
+    },
+
+    reelMenuIconBubble: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.brandSoft,
+    },
+
+    reelMenuTextWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
+
+    reelMenuTitle: {
+      color: colors.text,
+      fontSize: 14,
+      fontFamily: RBZFont.extraBold,
+    },
+
+    reelMenuSubtitle: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: RBZFont.semiBold,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+
+    reelMenuCancelButton: {
+      minHeight: 40,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 6,
+      backgroundColor: colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    reelMenuCancelText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontFamily: RBZFont.extraBold,
+    },
+
+    profileImage: {
+      width: 48,
     height: 48,
     borderRadius: 24,
     borderWidth: 2,
     borderColor: "#fff",
   },
 
-  followBadge: {
-    position: "absolute",
-    bottom: -4,
-    backgroundColor: RBZ.c3,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    followBadge: {
+      position: "absolute",
+      bottom: -4,
+      backgroundColor: colors.brand,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  actionText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
+    actionText: {
+      color: colors.white,
+      fontSize: 12,
+      fontFamily: RBZFont.semiBold,
+    },
 
-  bottomFade: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 180,
-  },
+    bottomFade: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 220,
+    },
 
   bottomInfo: {
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingRight: 88,
     paddingBottom: 42,
   },
 
   userInfo: {
     gap: 8,
+  },
+
+  captionViewport: {
+    height: 82,
+    width: "100%",
+  },
+
+  captionScrollContent: {
+    paddingBottom: 4,
   },
 
   nameRowBottom: {
@@ -1582,57 +1728,58 @@ const styles = StyleSheet.create({
   },
 
   nameRowWithCaption: {
-    marginTop: 14,
+    marginTop: 8,
   },
 
   nameRowWithoutCaption: {
     marginTop: 95,
   },
 
-  nameAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.20)",
-  },
+    nameAvatar: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: "rgba(255,255,255,0.12)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.20)",
+    },
 
-  username: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+    username: {
+      color: colors.white,
+      fontSize: 16,
+      fontFamily: RBZFont.bold,
+    },
 
-  caption: {
-    color: "#fff",
-    fontSize: 14,
-    lineHeight: 20,
-  },
+    caption: {
+      color: colors.white,
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: RBZFont.regular,
+    },
 
-  playOverlayVisual: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "flex-start",
-    paddingTop: SCREEN_HEIGHT * 0.34 - 44,
-    zIndex: 20,
-    elevation: 20,
-  },
+      playOverlayVisual: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 20,
+      elevation: 20,
+    },
 
-  playButton: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.22)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
+    playButton: {
+      width: 88,
+      height: 88,
+      borderRadius: 44,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "rgba(0,0,0,0.22)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.08)",
+    },
 
-  doubleTapHeart: {
-    position: "absolute",
-    alignSelf: "center",
-    top: "40%",
-  },
-});
+    doubleTapHeart: {
+      position: "absolute",
+      alignSelf: "center",
+      top: "40%",
+    },
+  });
+}

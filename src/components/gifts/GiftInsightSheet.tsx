@@ -37,12 +37,12 @@ import {
   View,
 } from "react-native";
 
-import { getGiftById } from "@/src/config/rombuzzGifts";
 import type {
+  GiftSummaryGiftItem,
   GiftSummaryResponse,
   GiftSummaryRow,
-  GiftSummaryGiftItem,
 } from "@/src/api/gifts";
+import { getGiftById } from "@/src/config/rombuzzGifts";
 
 type Props = {
   visible: boolean;
@@ -157,7 +157,7 @@ export default function GiftInsightSheet({
     setExpandedRow(null);
 
     if (me && clickedUserId === me) {
-      router.push("/(tabs)/profile" as any);
+      router.push("/(tabs)/(root)/profile" as any);
       return;
     }
 

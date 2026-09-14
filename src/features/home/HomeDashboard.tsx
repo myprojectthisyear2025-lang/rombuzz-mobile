@@ -164,7 +164,7 @@ export default function HomeDashboard({
             icon="chatbubble-outline"
             onPress={() =>
               router.push(
-                "/(tabs)/chat"
+                "/(tabs)/(root)/chat"
               )
             }
           />
@@ -175,7 +175,7 @@ export default function HomeDashboard({
             icon="person-outline"
             onPress={() =>
               router.push(
-                "/(tabs)/profile"
+                "/(tabs)/(root)/profile"
               )
             }
           />

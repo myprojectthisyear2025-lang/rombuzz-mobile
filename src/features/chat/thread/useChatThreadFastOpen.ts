@@ -1155,7 +1155,7 @@ export function useChatThreadFastOpen({
         } catch {}
 
         router.replace(
-          "/(tabs)/chat" as any,
+          "/(tabs)/(root)/chat" as any,
         );
 
         const title =

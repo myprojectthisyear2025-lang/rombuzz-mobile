@@ -337,7 +337,7 @@ export default function RomBuzzVideoCallScreen() {
       if (router.canGoBack()) {
         router.back();
       } else {
-        router.replace("/(tabs)/chat");
+        router.replace("/(tabs)/(root)/chat");
       }
 
       return;
@@ -386,7 +386,7 @@ export default function RomBuzzVideoCallScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(tabs)/chat");
+      router.replace("/(tabs)/(root)/chat");
     }
   };
 
@@ -590,7 +590,7 @@ export default function RomBuzzVideoCallScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(tabs)/chat");
+      router.replace("/(tabs)/(root)/chat");
     }
 
     if (notifyBackend && activeCallId) {

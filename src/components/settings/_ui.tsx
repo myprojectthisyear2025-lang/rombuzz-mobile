@@ -50,7 +50,7 @@ export function ScreenShell({
       return;
     }
 
-    router.replace("/(tabs)/profile");
+    router.replace("/(tabs)/(root)/profile");
   };
 
   return (

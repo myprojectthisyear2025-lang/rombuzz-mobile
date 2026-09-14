@@ -524,7 +524,7 @@ export default function VideoCallGiftOverlay({
 
               // Wallet currently lives from profile/settings work.
               // Change this route later if you create a dedicated wallet page.
-              router.push("/(tabs)/profile");
+              router.push("/(tabs)/(root)/profile");
             }}
             style={{ bottom: keyboardSafeAmountBottom }}
           />
@@ -587,7 +587,7 @@ export default function VideoCallGiftOverlay({
 
           // Wallet currently lives from profile/settings work.
           // Change this route later if you create a dedicated wallet page.
-          router.push("/(tabs)/profile");
+          router.push("/(tabs)/(root)/profile");
         }}
         style={{ bottom: keyboardSafeAmountBottom }}
       />

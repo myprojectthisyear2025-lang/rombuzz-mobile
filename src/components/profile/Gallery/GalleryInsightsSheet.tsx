@@ -375,7 +375,7 @@ onShare?: () => void;
     setExpandedGiftRow(null);
 
     if (me && clickedUserId === me) {
-      router.push("/(tabs)/profile" as any);
+      router.push("/(tabs)/(root)/profile" as any);
       return;
     }
 

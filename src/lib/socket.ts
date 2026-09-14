@@ -113,7 +113,7 @@ export function normalizeNotificationHref(
   if (
     fixed === "/letsbuzz"
   ) {
-    return "/(tabs)/letsbuzz";
+    return "/(tabs)/(root)/letsbuzz";
   }
 
   if (
@@ -169,7 +169,7 @@ export function normalizeNotificationHref(
 
     if (post) {
       return (
-        `/(tabs)/letsbuzz?post=` +
+        `/(tabs)/(root)/letsbuzz?post=` +
         encodeRouteParam(post)
       );
     }
@@ -354,7 +354,7 @@ export function resolveNotificationHref(
   ) {
     if (postId) {
       return (
-        `/(tabs)/letsbuzz?post=` +
+        `/(tabs)/(root)/letsbuzz?post=` +
         encodeRouteParam(
           postId,
         )
@@ -391,7 +391,7 @@ export function resolveNotificationHref(
     return type ===
       "reaction"
       ? NOTIFICATIONS_FALLBACK
-      : "/(tabs)/letsbuzz";
+      : "/(tabs)/(root)/letsbuzz";
   }
 
   if (explicitHref) {

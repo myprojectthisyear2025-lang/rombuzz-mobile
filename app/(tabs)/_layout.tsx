@@ -161,6 +161,19 @@ export default function TabLayout() {
       ? segments?.[2] ?? null
       : segments?.[1] ?? null;
 
+  const [letsBuzzFullscreen, setLetsBuzzFullscreen] = useState(false);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "rbz:letsbuzz:fullscreen",
+      (payload: any) => {
+        setLetsBuzzFullscreen(!!payload?.active);
+      }
+    );
+
+    return () => sub.remove();
+  }, []);
+
   // ✅ Batch 2 startup warmup:
   // This runs after layout mounts and never blocks tab rendering.
   useEffect(() => {
@@ -834,7 +847,7 @@ export default function TabLayout() {
     <Tabs
       initialRouteName="(root)"
       tabBar={() =>
-        tabName === "microbuzz" ? null : (
+        tabName === "microbuzz" || letsBuzzFullscreen ? null : (
           <RootBottomBar
             activeTab={
               TAB_ORDER.includes(

@@ -19,10 +19,13 @@ import { LOOKING_FOR_WITH_ALL } from "@/src/constants/lookingFor";
 import {
   relationshipStyleKeyFromValue,
 } from "@/src/constants/relationshipStyles";
+import DiscoverCardActions from "@/src/features/discover/DiscoverCardActions";
+import DiscoverScrollableBio from "@/src/features/discover/DiscoverScrollableBio";
 import {
   loadSavedDiscoverFilters,
   saveDiscoverFilters,
 } from "@/src/features/discover/discoverFilterStorage";
+import { useDiscoverVisuals } from "@/src/features/discover/useDiscoverVisuals";
 import { useCachedDiscoverDeck } from "@/src/features/performance/useCachedDiscoverDeck";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,7 +41,6 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -57,17 +59,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 
 const { width, height } = Dimensions.get("window");
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  black: "#0b0b10",
-  soft: "#f7f7fb",
-  gray: "#6b7280",
-} as const;
 
 
 function clamp(n: number, a: number, b: number) {
@@ -425,6 +416,10 @@ function keepVisibleCardStable(prev: any[], fresh: any[]) {
 export default function DiscoverSwipeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, styles } = useDiscoverVisuals(
+    CARD_W,
+    CARD_H
+  );
   const params = useLocalSearchParams<{ discoverFilters?: string }>();
 
   const hasIncomingFilters =
@@ -1161,16 +1156,25 @@ const swipeGesture = Gesture.Pan()
     <SafeAreaView style={styles.safe}>
       {/* Header */}
 <LinearGradient
-  colors={[RBZ.c1, RBZ.c4]}
+  colors={[colors.background, colors.background]}
   style={[styles.header, { paddingTop: headerTopPadding }]}
 >
-        <View style={styles.headerTop}>
+            <View style={styles.headerTop}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+
+              router.replace(
+                "/(tabs)/(root)/homepage"
+              );
+            }}
             style={styles.headerBtn}
             android_ripple={{ color: "rgba(255,255,255,0.2)" }}
           >
-            <Ionicons name="arrow-back" size={20} color={RBZ.white} />
+            <Ionicons name="arrow-back" size={20} color={colors.icon} />
           </Pressable>
 
           <View style={{ flex: 1 }}>
@@ -1197,18 +1201,18 @@ const swipeGesture = Gesture.Pan()
       } as any)
     }
     style={styles.headerBtn}
-    android_ripple={{ color: "rgba(255,255,255,0.2)" }}
+    android_ripple={{ color: colors.brandSoft }}
   >
-    <Ionicons name="options" size={20} color={RBZ.white} />
+    <Ionicons name="options" size={20} color={colors.icon} />
   </Pressable>
 
   {/* Refresh */}
   <Pressable
     onPress={() => fetchDiscover({ withFreshCoords: true })}
     style={styles.headerBtn}
-    android_ripple={{ color: "rgba(255,255,255,0.2)" }}
+    android_ripple={{ color: colors.brandSoft }}
   >
-    <Ionicons name="refresh" size={18} color={RBZ.white} />
+    <Ionicons name="refresh" size={18} color={colors.icon} />
   </Pressable>
 </View>
 </View>
@@ -1249,12 +1253,12 @@ const swipeGesture = Gesture.Pan()
          <View style={styles.body}>
         {loading && !current ? (
           <View style={styles.center}>
-            <ActivityIndicator color={RBZ.c3} />
+            <ActivityIndicator color={colors.brand} />
             <Text style={styles.centerText}>Finding people near you…</Text>
           </View>
         ) : !current ? (
           <View style={styles.center}>
-            <Ionicons name="sparkles" size={28} color={RBZ.c3} />
+            <Ionicons name="sparkles" size={28} color={colors.brand} />
             <Text style={styles.emptyTitle}>
               {canExpandSearch ? "No strict matches left" : "No more profiles"}
             </Text>
@@ -1297,7 +1301,7 @@ const swipeGesture = Gesture.Pan()
               <GestureHandlerRootView style={styles.deck}>
                 {quietRefreshing ? (
                   <View pointerEvents="none" style={styles.refreshPill}>
-                    <ActivityIndicator size="small" color={RBZ.c3} />
+                    <ActivityIndicator size="small" color={colors.brand} />
                     <Text style={styles.refreshPillText}>Refreshing nearby</Text>
                   </View>
                 ) : null}
@@ -1372,38 +1376,20 @@ const swipeGesture = Gesture.Pan()
       </View>
 
       {!!current?.bio && (
-        <Text style={styles.bio} numberOfLines={3}>
-          {String(current.bio)}
-        </Text>
+        <DiscoverScrollableBio
+          bio={String(current.bio)}
+          textStyle={styles.bio}
+        />
       )}
     </View>
 
     {/* Bottom actions */}
-    <View style={styles.actions}>
-      <Pressable onPress={handleSkip} style={[styles.actBtn, styles.actSkip]}>
-        <Ionicons name="close" size={22} color={RBZ.white} />
-      </Pressable>
-
-      <Pressable
-        onPress={handleBuzz}
-        disabled={buzzing}
-        style={[
-          styles.actBtn,
-          styles.actBuzzPrimary,
-          buzzing && { opacity: 0.7 },
-        ]}
-      >
-        {buzzing ? (
-          <ActivityIndicator color={RBZ.white} />
-        ) : (
-          <Ionicons name="heart" size={22} color={RBZ.white} />
-        )}
-      </Pressable>
-
-      <Pressable onPress={openProfile} style={[styles.actBtn, styles.actView]}>
-        <Ionicons name="person" size={22} color={RBZ.white} />
-      </Pressable>
-    </View>
+    <DiscoverCardActions
+      buzzing={buzzing}
+      onSkip={handleSkip}
+      onBuzz={handleBuzz}
+      onViewProfile={openProfile}
+    />
   </Animated.View>
 </GestureDetector>
 
@@ -1421,274 +1407,5 @@ const swipeGesture = Gesture.Pan()
   );
 }
 
-const CARD_W = Math.min(width - 28, 420);
-const CARD_H = Math.min(height - 280, 540);
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: RBZ.soft },
-
-  header: {
-    paddingTop: 10,
-    paddingBottom: 10,
-    paddingHorizontal: 14,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingBottom: 8,
-  },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hTitle: { color: RBZ.white, fontSize: 22, fontWeight: "900" },
-  hSub: { color: "rgba(255,255,255,0.86)", fontSize: 12, marginTop: 2 },
-
-  vibesRow: { paddingTop: 8, paddingBottom: 1, gap: 10, paddingHorizontal: 2 },
-  vibeChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.24)",
-  },
-  vibeChipLocked: {
-    backgroundColor: "rgba(0,0,0,0.18)",
-    borderColor: "rgba(255,255,255,0.22)",
-  },
-  vibeChipActive: {
-    backgroundColor: RBZ.white,
-    borderColor: RBZ.white,
-  },
-  vibeText: { color: "rgba(255,255,255,0.92)", fontWeight: "800", fontSize: 13 },
-  vibeTextActive: { color: RBZ.c1 },
-
-   body: { flex: 1, paddingHorizontal: 14, paddingTop: 10 },
-
-  toastOverlay: {
-    position: "absolute",
-    top: 150,
-    left: 16,
-    right: 16,
-    zIndex: 9999,
-    elevation: 9999,
-    alignItems: "center",
-  },
-  toast: {
-    maxWidth: "92%",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderWidth: 1,
-    borderColor: "rgba(177,18,60,0.14)",
-    shadowColor: "#000",
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-  },
-  toastText: {
-    color: RBZ.black,
-    fontWeight: "800",
-    fontSize: 14,
-    textAlign: "center",
-  },
-
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    gap: 10,
-  },
-  centerText: { color: RBZ.gray, fontWeight: "700" },
-  emptyTitle: { color: RBZ.black, fontSize: 20, fontWeight: "900", marginTop: 6 },
-  emptySub: { color: RBZ.gray, fontWeight: "600", textAlign: "center" },
-   primaryBtn: {
-    marginTop: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: RBZ.c1,
-  },
-  primaryBtnText: { color: RBZ.white, fontWeight: "900" },
-  secondaryBtn: {
-    marginTop: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: "rgba(177,18,60,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(177,18,60,0.18)",
-  },
-  secondaryBtnText: {
-    color: RBZ.c1,
-    fontWeight: "900",
-  },
-
-    deck: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-  },
-
-  refreshPill: {
-    position: "absolute",
-    top: 4,
-    zIndex: 20,
-    elevation: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderWidth: 1,
-    borderColor: "rgba(177,18,60,0.12)",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  refreshPillText: {
-    color: RBZ.black,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-
-  card: {
-    width: CARD_W,
-    height: CARD_H,
-    borderRadius: 26,
-    overflow: "hidden",
-    backgroundColor: RBZ.white,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  cardBehind: {
-    position: "absolute",
-    top: 10,
-  },
-  cardImg: { width: "100%", height: "100%" },
-  cardShade: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 170,
-  },
-
-  badgeLike: {
-    position: "absolute",
-    top: 18,
-    left: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: "rgba(229,72,106,0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.55)",
-  },
-  badgeNope: {
-    position: "absolute",
-    top: 18,
-    right: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: "rgba(177,18,60,0.90)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.55)",
-  },
-  badgeText: { color: RBZ.white, fontWeight: "900", letterSpacing: 1 },
-
-  info: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 86,
-  },
-  name: { color: RBZ.white, fontSize: 26, fontWeight: "900" },
-  distance: { color: "rgba(255,255,255,0.88)", fontWeight: "800", fontSize: 12, marginBottom: 2 },
-  city: { color: "rgba(255,255,255,0.86)", fontWeight: "700", marginTop: 4 },
-
-  chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.20)",
-  },
-  chipText: { color: RBZ.white, fontWeight: "800", fontSize: 12 },
-
-  tapHint: { color: "rgba(255,255,255,0.78)", marginTop: 10, fontWeight: "700", fontSize: 12 },
-
-  actions: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  actBtn: {
-    flex: 1,
-    height: 54,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
-  },
- actSkip: {
-  backgroundColor: RBZ.c2, // soft red-pink
-  borderWidth: 1,
-  borderColor: RBZ.c3,
-},
-
-actView: {
-  backgroundColor: RBZ.c4, // purple brand
-  borderWidth: 1,
-  borderColor: RBZ.c3,
-},
-
-actBuzzPrimary: {
-  backgroundColor: RBZ.c3, // ❤️ MAIN ACTION
-  borderWidth: 2,
-  borderColor: RBZ.white,
-  shadowColor: RBZ.c3,
-  shadowOpacity: 0.6,
-  shadowRadius: 12,
-  elevation: 8,
-},
-bio: {
-  marginTop: 8,
-  color: "rgba(255,255,255,0.85)",
-  fontSize: 13,
-  fontWeight: "600",
-  lineHeight: 18,
-},
-
-});
+const CARD_W = Math.min(width - 20, 428);
+const CARD_H = Math.min(height - 260, 560);
