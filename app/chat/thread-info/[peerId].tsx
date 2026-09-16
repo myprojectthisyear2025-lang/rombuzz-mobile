@@ -6,7 +6,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useMemo, useState } from "react";
@@ -16,40 +16,23 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
+  StatusBar,
   Text,
   TextInput,
   View,
-  Modal,
-  TouchableOpacity,
-  Dimensions
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from 'expo-haptics';
 
 import ChatGiftInsightsSheet from "@/src/components/chat/ChatGiftInsightsSheet";
 import GiftPicker from "@/src/components/gifts/GiftPicker";
+import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
 import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
-import { getSocket } from "@/src/lib/socket";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
+import { useThreadInfoStyles } from "@/src/features/chat/threadInfo/useThreadInfoStyles";
 import { startVideoCall } from "@/src/features/videoCall/videoCallApi";
-import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
-
-const { width } = Dimensions.get('window');
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  ink: "#111827",
-  gray: "#6b7280",
-  soft: "#f5f6fa",
-  line: "rgba(0,0,0,0.08)",
-  success: "#10b981",
-  warning: "#f59e0b",
-};
+import { getSocket } from "@/src/lib/socket";
 
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -84,6 +67,10 @@ type MediaItem = { id: string; url: string };
 export default function ThreadInfo() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const fontsLoaded = useRomBuzzTypography();
+  const { colors, statusBarStyle } = useRomBuzzTheme();
+  const styles = useThreadInfoStyles();
 
   const params = useLocalSearchParams<{
     peerId: string;
@@ -450,7 +437,7 @@ export default function ThreadInfo() {
     }
   };
 
-      const ActionBtn = ({
+  const ActionBtn = ({
     icon,
     label,
     onPress,
@@ -475,17 +462,17 @@ export default function ThreadInfo() {
       delayLongPress={260}
       style={({ pressed }) => [
         styles.actionBtn,
-        pressed && styles.actionBtnPressed
+        pressed && styles.actionBtnPressed,
       ]}
     >
-      <LinearGradient
-        colors={[RBZ.c2, RBZ.c4]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.actionIconWrap}
-      >
-        {customIcon ? customIcon : <Ionicons name={icon} size={20} color={RBZ.white} />}
-      </LinearGradient>
+      <View style={styles.actionIconWrap}>
+        {customIcon ? (
+          customIcon
+        ) : (
+          <Ionicons name={icon} size={20} color={colors.brand} />
+        )}
+      </View>
+
       <Text style={styles.actionLabel}>{label}</Text>
     </Pressable>
   );
@@ -510,112 +497,172 @@ export default function ThreadInfo() {
       }}
       style={({ pressed }) => [
         styles.row,
-        pressed && styles.rowPressed
+        pressed && styles.rowPressed,
       ]}
     >
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <LinearGradient
-          colors={danger ? [RBZ.c1, RBZ.c3] : [RBZ.c4, RBZ.c2]}
-          style={styles.rowIconGradient}
-        >
-          <Ionicons name={icon} size={18} color={RBZ.white} />
-        </LinearGradient>
+        <Ionicons
+          name={icon}
+          size={19}
+          color={danger ? colors.danger : colors.brand}
+        />
       </View>
+
       <View style={{ flex: 1 }}>
-        <Text style={[styles.rowTitle, danger && styles.rowTitleDanger]}>{title}</Text>
-        {sub && <Text style={styles.rowSub}>{sub}</Text>}
+        <Text style={[styles.rowTitle, danger && styles.rowTitleDanger]}>
+          {title}
+        </Text>
+
+        {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
+
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={colors.iconMuted}
+      />
     </Pressable>
   );
 
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar
+          barStyle={statusBarStyle}
+          backgroundColor={colors.background}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
-      <LinearGradient
-        colors={[RBZ.c1, RBZ.c4, RBZ.c2]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
+      <StatusBar
+        barStyle={statusBarStyle}
+        backgroundColor={colors.background}
+      />
+
+      <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
           style={({ pressed }) => [
             styles.backBtn,
-            pressed && styles.backBtnPressed
+            pressed && styles.backBtnPressed,
           ]}
         >
-          <Ionicons name="arrow-back" size={22} color={RBZ.white} />
+          <Ionicons
+            name="arrow-back"
+            size={21}
+            color={colors.icon}
+          />
         </Pressable>
 
-        <View style={{ flex: 1 }} />
+        <Text style={styles.headerTitle}>
+          Chat details
+        </Text>
 
         <Pressable
           onPress={() =>
-            Alert.alert("More", "More options can live here later (mutual settings, etc).")
+            Alert.alert(
+              "More",
+              "More options can live here later (mutual settings, etc)."
+            )
           }
           style={({ pressed }) => [
             styles.backBtn,
-            pressed && styles.backBtnPressed
+            pressed && styles.backBtnPressed,
           ]}
         >
-          <Ionicons name="ellipsis-horizontal" size={20} color={RBZ.white} />
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={20}
+            color={colors.icon}
+          />
         </Pressable>
-      </LinearGradient>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom: insets.bottom + 24,
+          },
+        ]}
       >
-        {/* Premium Profile Card */}
         <View style={styles.cardPremium}>
           <Pressable
             onPress={openViewProfile}
             style={({ pressed }) => [
               styles.identity,
-              pressed && styles.identityPressed
+              pressed && styles.identityPressed,
             ]}
           >
             <View style={styles.avatarContainer}>
-              <Image source={{ uri: avatar }} style={styles.bigAvatar} />
-              <LinearGradient
-                colors={["transparent", RBZ.c1]}
-                style={styles.avatarOverlay}
-              />
+              <View style={styles.avatarRing}>
+                <Image
+                  source={{ uri: avatar }}
+                  style={styles.bigAvatar}
+                />
+              </View>
+
               <View style={styles.onlineBadge} />
             </View>
+
             <View style={{ flex: 1 }}>
-              <Text style={styles.name} numberOfLines={1}>
+              <Text
+                style={styles.name}
+                numberOfLines={1}
+              >
                 {displayName}
               </Text>
+
               <View style={styles.matchBadge}>
-                <Ionicons name="heart" size={12} color={RBZ.c1} />
-                <Text style={styles.matchText}>RomBuzz Match</Text>
+                <Ionicons
+                  name="heart"
+                  size={12}
+                  color={colors.brand}
+                />
+                <Text style={styles.matchText}>
+                  RomBuzz Match
+                </Text>
               </View>
             </View>
+
             <View style={styles.profileArrow}>
-              <Ionicons name="arrow-forward" size={18} color={RBZ.white} />
+              <Ionicons
+                name="arrow-forward"
+                size={18}
+                color={colors.white}
+              />
             </View>
           </Pressable>
 
-               <View style={styles.actionsRow}>
+          <View style={styles.actionsRow}>
             <ActionBtn
               label="Meet"
-              customIcon={<MeetMiddleMiniLogo size={23} />}
+              customIcon={<MeetMiddleMiniLogo size={21} />}
               onPress={() =>
                 router.push({
                   pathname: "/meet-middle/[peerId]" as any,
-                  params: { peerId, name: displayName, avatar },
+                  params: {
+                    peerId,
+                    name: displayName,
+                    avatar,
+                  },
                 })
               }
             />
+
             <ActionBtn
-              icon="gift"
+              icon="gift-outline"
               label="Gift"
               onPress={() => setGiftPickerOpen(true)}
               onLongPress={() => setGiftInsightsOpen(true)}
             />
+
             <ActionBtn
-              icon="videocam"
+              icon="videocam-outline"
               label={startingVideoCall ? "Calling..." : "Video"}
               onPress={handleStartVideoCall}
             />
@@ -625,38 +672,63 @@ export default function ThreadInfo() {
         {/* Nickname Section */}
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
-            <LinearGradient
-              colors={[RBZ.c4, RBZ.c2]}
-              style={styles.sectionIcon}
-            >
-              <Ionicons name="pricetag" size={16} color={RBZ.white} />
-            </LinearGradient>
-            <Text style={styles.sectionTitle}>Custom Nickname</Text>
+            <View style={styles.sectionIcon}>
+              <Ionicons
+                name="pricetag-outline"
+                size={16}
+                color={colors.brand}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>
+              Custom Nickname
+            </Text>
           </View>
+
           <Text style={styles.sectionHint}>
             Only you see this name in your chat list & header
           </Text>
 
           <View style={styles.nickRow}>
             <View style={styles.nickInputContainer}>
-              <Ionicons name="person-outline" size={18} color={RBZ.c4} />
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={colors.iconMuted}
+              />
+
               <TextInput
                 value={draftNick}
                 onFocus={() => setEditingNick(true)}
                 onChangeText={setDraftNick}
                 placeholder={`Set a nickname for ${baseName}`}
-                placeholderTextColor={RBZ.gray}
+                placeholderTextColor={colors.textMuted}
                 style={styles.nickInput}
               />
             </View>
 
             {editingNick ? (
               <View style={{ flexDirection: "row", gap: 8 }}>
-                <Pressable onPress={cancelNickname} style={styles.cancelBtn}>
-                  <Ionicons name="close" size={16} color={RBZ.white} />
+                <Pressable
+                  onPress={cancelNickname}
+                  style={styles.cancelBtn}
+                >
+                  <Ionicons
+                    name="close"
+                    size={16}
+                    color={colors.icon}
+                  />
                 </Pressable>
-                <Pressable onPress={confirmNickname} style={styles.okBtn}>
-                  <Ionicons name="checkmark" size={16} color={RBZ.white} />
+
+                <Pressable
+                  onPress={confirmNickname}
+                  style={styles.okBtn}
+                >
+                  <Ionicons
+                    name="checkmark"
+                    size={16}
+                    color={colors.white}
+                  />
                 </Pressable>
               </View>
             ) : (
@@ -668,7 +740,11 @@ export default function ThreadInfo() {
                   }}
                   style={styles.clearBtn}
                 >
-                  <Ionicons name="close" size={14} color={RBZ.white} />
+                  <Ionicons
+                    name="close"
+                    size={14}
+                    color={colors.iconMuted}
+                  />
                 </Pressable>
               )
             )}
@@ -676,82 +752,122 @@ export default function ThreadInfo() {
         </View>
 
         {/* Media Sections */}
-        <Pressable
-          onPress={() =>
-            router.push({
-              pathname: "/chat/shared-media/[peerId]" as any,
-              params: { peerId, name: baseName, avatar },
-            })
-          }
-          style={({ pressed }) => [
-            styles.card,
-            pressed && styles.cardPressed
-          ]}
-        >
-          <View style={styles.row}>
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIcon}>
+              <Ionicons
+                name="albums-outline"
+                size={17}
+                color={colors.brand}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>
+              Media
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/chat/shared-media/[peerId]" as any,
+                params: { peerId, name: baseName, avatar },
+              })
+            }
+            style={({ pressed }) => [
+              styles.row,
+              pressed && styles.rowPressed,
+            ]}
+          >
             <View style={styles.rowIcon}>
-              <LinearGradient
-                colors={[RBZ.c4, RBZ.c2]}
-                style={styles.rowIconGradient}
-              >
-                <Ionicons name="images" size={18} color={RBZ.white} />
-              </LinearGradient>
+              <Ionicons
+                name="images-outline"
+                size={19}
+                color={colors.brand}
+              />
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Shared Media</Text>
-              <Text style={styles.rowSub}>Photos and videos in separate tabs</Text>
+              <Text style={styles.rowTitle}>
+                Shared Media
+              </Text>
+
+              <Text style={styles.rowSub}>
+                Photos and videos in separate tabs
+              </Text>
             </View>
 
-            <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
-          </View>
-        </Pressable>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.iconMuted}
+            />
+          </Pressable>
 
-        <Pressable
-          onPress={() =>
-            router.push({
-              pathname: "/chat/purchased-media/[peerId]" as any,
-              params: { peerId, name: baseName, avatar },
-            })
-          }
-          style={({ pressed }) => [
-            styles.card,
-            pressed && styles.cardPressed
-          ]}
-        >
-          <View style={styles.row}>
+          <View style={styles.hr} />
+
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/chat/purchased-media/[peerId]" as any,
+                params: { peerId, name: baseName, avatar },
+              })
+            }
+            style={({ pressed }) => [
+              styles.row,
+              pressed && styles.rowPressed,
+            ]}
+          >
             <View style={styles.rowIcon}>
-              <LinearGradient
-                colors={[RBZ.c1, RBZ.c3]}
-                style={styles.rowIconGradient}
-              >
-                <Ionicons name="gift" size={18} color={RBZ.white} />
-              </LinearGradient>
+              <Ionicons
+                name="gift-outline"
+                size={19}
+                color={colors.brand}
+              />
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Purchased Media</Text>
-              <Text style={styles.rowSub}>Purchased photos and videos in separate tabs</Text>
+              <Text style={styles.rowTitle}>
+                Purchased Media
+              </Text>
+
+              <Text style={styles.rowSub}>
+                Purchased photos and videos in separate tabs
+              </Text>
             </View>
 
-            <Ionicons name="chevron-forward" size={18} color={RBZ.gray} />
-          </View>
-        </Pressable>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.iconMuted}
+            />
+          </Pressable>
+        </View>
 
         {/* Alert Tone Section */}
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
-            <LinearGradient
-              colors={[RBZ.c2, RBZ.c3]}
-              style={styles.sectionIcon}
-            >
-              <Ionicons name="volume-high" size={16} color={RBZ.white} />
-            </LinearGradient>
-            <Text style={styles.sectionTitle}>Notification Tone</Text>
+            <View style={styles.sectionIcon}>
+              <Ionicons
+                name="volume-medium-outline"
+                size={17}
+                color={colors.brand}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>
+              Notification Tone
+            </Text>
           </View>
+
+          <Text style={styles.sectionHint}>
+            Choose how this conversation should sound.
+          </Text>
+
           <View style={styles.tonesRow}>
             {(["default", "soft", "loud"] as const).map((t) => {
               const active = tone === t;
+
               return (
                 <Pressable
                   key={t}
@@ -759,15 +875,21 @@ export default function ThreadInfo() {
                   style={({ pressed }) => [
                     styles.toneChip,
                     active && styles.toneChipActive,
-                    pressed && styles.toneChipPressed
+                    pressed && styles.toneChipPressed,
                   ]}
                 >
-                  <Text style={[styles.toneText, active && styles.toneTextActive]}>
+                  <Text
+                    style={[
+                      styles.toneText,
+                      active && styles.toneTextActive,
+                    ]}
+                  >
                     {t.charAt(0).toUpperCase() + t.slice(1)}
                   </Text>
-                  {active && (
+
+                  {active ? (
                     <View style={styles.toneActiveDot} />
-                  )}
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -775,9 +897,30 @@ export default function ThreadInfo() {
         </View>
 
         {/* Settings Section */}
-        <View style={[styles.card, { paddingBottom: 14 + insets.bottom, marginBottom: 20 }]}>
+        <View
+          style={[
+            styles.card,
+            {
+              marginBottom: 20,
+            },
+          ]}
+        >
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIcon}>
+              <Ionicons
+                name="options-outline"
+                size={17}
+                color={colors.brand}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>
+              Chat controls
+            </Text>
+          </View>
+
           <Row
-            icon="bookmark"
+            icon="bookmark-outline"
             title="Pinned messages"
             sub={
               pinnedCount === 0
@@ -794,10 +937,14 @@ export default function ThreadInfo() {
             }
           />
 
-                  <View style={styles.hr} />
+          <View style={styles.hr} />
 
           <Row
-            icon={isBlocked ? "checkmark-circle" : "ban"}
+            icon={
+              isBlocked
+                ? "checkmark-circle-outline"
+                : "ban-outline"
+            }
             title={
               checkingBlockStatus
                 ? "Checking block status..."
@@ -814,16 +961,20 @@ export default function ThreadInfo() {
             danger={!isBlocked}
           />
 
+          <View style={styles.hr} />
+
           <Row
-            icon="flag"
+            icon="flag-outline"
             title="Report"
             sub="Tell us what happened"
             onPress={reportUser}
             danger
           />
 
+          <View style={styles.hr} />
+
           <Row
-            icon="trash"
+            icon="trash-outline"
             title="Delete chat"
             sub="Removes from your list (for you only)"
             onPress={() =>
@@ -832,7 +983,11 @@ export default function ThreadInfo() {
                 "Remove this chat from your list? This action cannot be undone.",
                 [
                   { text: "Cancel", style: "cancel" },
-                  { text: "Delete", style: "destructive", onPress: deleteChatForMe },
+                  {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: deleteChatForMe,
+                  },
                 ]
               )
             }
@@ -891,289 +1046,3 @@ export default function ThreadInfo() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: RBZ.soft },
-
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: RBZ.c1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    backdropFilter: "blur(10px)",
-  },
-  backBtnPressed: {
-    backgroundColor: "rgba(255,255,255,0.25)",
-    transform: [{ scale: 0.95 }],
-  },
-
-  card: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    backgroundColor: RBZ.white,
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardPremium: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    backgroundColor: RBZ.white,
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: RBZ.c4,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  cardPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.9,
-  },
-
-  identity: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  identityPressed: {
-    opacity: 0.8,
-  },
-  avatarContainer: {
-    position: "relative",
-  },
-  bigAvatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 24,
-    backgroundColor: RBZ.soft,
-    borderWidth: 3,
-    borderColor: RBZ.white,
-  },
-  avatarOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 30,
-    borderBottomLeftRadius: 21,
-    borderBottomRightRadius: 21,
-  },
-  onlineBadge: {
-    position: "absolute",
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: RBZ.success,
-    borderWidth: 2,
-    borderColor: RBZ.white,
-  },
-  name: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: RBZ.ink,
-    letterSpacing: -0.3,
-  },
-  matchBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 4,
-    backgroundColor: "rgba(177,18,60,0.08)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    alignSelf: "flex-start",
-  },
-  matchText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: RBZ.c1,
-  },
-  profileArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: RBZ.c2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  actionsRow: { flexDirection: "row", gap: 12, marginTop: 20 },
-  actionBtn: {
-    flex: 1,
-    borderRadius: 16,
-    paddingVertical: 12,
-    alignItems: "center",
-    backgroundColor: RBZ.soft,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  actionBtnPressed: {
-    transform: [{ scale: 0.95 }],
-    backgroundColor: "rgba(216,52,95,0.05)",
-  },
-  actionIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    shadowColor: RBZ.c2,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  actionLabel: { fontSize: 12, fontWeight: "700", color: RBZ.ink, marginTop: 4 },
-
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  sectionIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: RBZ.ink },
-  sectionHint: { fontSize: 12, color: RBZ.gray, marginBottom: 12, lineHeight: 16 },
-
-  nickRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: RBZ.soft,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    height: 50,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  nickInputContainer: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  nickInput: { flex: 1, fontSize: 14, fontWeight: "500", color: RBZ.ink, paddingVertical: 12 },
-  clearBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: RBZ.gray,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  tonesRow: { flexDirection: "row", gap: 12, marginTop: 8 },
-  toneChip: {
-    flex: 1,
-    height: 44,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: RBZ.line,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: RBZ.soft,
-    position: "relative",
-  },
-  toneChipActive: {
-    backgroundColor: RBZ.c2,
-    borderColor: RBZ.c2,
-    shadowColor: RBZ.c2,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  toneChipPressed: {
-    transform: [{ scale: 0.97 }],
-  },
-  toneText: { fontSize: 13, fontWeight: "700", color: RBZ.ink },
-  toneTextActive: { color: RBZ.white },
-  toneActiveDot: {
-    position: "absolute",
-    bottom: -4,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: RBZ.white,
-  },
-
-  hr: { height: 1, backgroundColor: RBZ.line, marginVertical: 8 },
-
-  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
-  rowPressed: {
-    opacity: 0.7,
-  },
-  rowIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  rowIconDanger: {
-    shadowColor: RBZ.c1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  rowIconGradient: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rowTitle: { fontSize: 15, fontWeight: "700", color: RBZ.ink },
-  rowTitleDanger: { color: RBZ.c1 },
-  rowSub: { marginTop: 4, fontSize: 12, fontWeight: "500", color: RBZ.gray },
-
-  okBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: RBZ.success,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: RBZ.success,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cancelBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: RBZ.gray,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
