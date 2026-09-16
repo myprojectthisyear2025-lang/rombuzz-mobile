@@ -12,7 +12,6 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +25,7 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  StyleSheet,
+  StatusBar,
   Text,
   TextInput,
   View,
@@ -34,22 +33,13 @@ import {
 } from "react-native";
 
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
+import { useChatListStyles } from "@/src/features/chat/list/useChatListStyles";
 import { useCachedChatInbox } from "@/src/features/performance/useCachedChatInbox";
 import { getSocket } from "@/src/lib/socket";
 import { rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  ink: "#111827",
-  gray: "#6b7280",
-  soft: "#f5f6fa",
-  line: "rgba(0,0,0,0.08)",
-};
 
 const UNREAD_MAP_KEY = "RBZ_unread_map";
 const UNREAD_TOTAL_KEY = "RBZ_unread_total";
@@ -419,7 +409,17 @@ function sameChatListForPaint(a: MatchUser[], b: MatchUser[]) {
 
 export default function ChatTab() {
   const router = useRouter();
-const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
+
+  const fontsLoaded = useRomBuzzTypography();
+
+  const {
+    colors,
+    statusBarStyle,
+  } = useRomBuzzTheme();
+
+  const styles = useChatListStyles();
+
 const [loading, setLoading] = useState(true);
 const [refreshing, setRefreshing] = useState(false);
 const [user, setUser] = useState<any>(null);
@@ -1418,7 +1418,7 @@ const bumpReactionPreview = (raw: any) => {
 
   const confirmUnmatchPeer = (peer: MatchUser) => {
     Alert.alert(
-      "Block / unmatch?",
+      "Unmatch?",
       `This will unmatch you immediately and remove this chat from your list.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -1471,56 +1471,106 @@ const bumpReactionPreview = (raw: any) => {
     });
   };
 
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.container}>
+        <StatusBar
+          barStyle={statusBarStyle}
+          backgroundColor={colors.background}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.header}>
+      <StatusBar
+        barStyle={statusBarStyle}
+        backgroundColor={colors.background}
+      />
+
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + 6,
+          },
+        ]}
+      >
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>Chats</Text>
-         
+          <View>
+            <Text style={styles.headerTitle}>
+              Chats
+            </Text>
+
+            <Text style={styles.headerSubtitle}>
+              Your conversations, all in one place.
+            </Text>
+          </View>
         </View>
 
         <View style={styles.searchWrap}>
-          <Ionicons name="search" size={18} color="rgba(255,255,255,0.75)" />
+          <Ionicons
+            name="search"
+            size={18}
+            color={colors.iconMuted}
+          />
+
           <TextInput
             value={query}
             onChangeText={setQuery}
             placeholder="Search matches"
-            placeholderTextColor="rgba(255,255,255,0.75)"
+            placeholderTextColor={colors.textMuted}
             style={styles.search}
           />
         </View>
-      </LinearGradient>
+      </View>
 
-          <FlatList
-          style={styles.list}
+      <FlatList
+        style={styles.list}
           data={filtered}
           keyExtractor={(m) => String(safeId(m))}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => loadChats("refresh")}
-              tintColor={RBZ.c1}
-              colors={[RBZ.c1]}
+              tintColor={colors.brand}
+              colors={[colors.brand]}
             />
           }
-          contentContainerStyle={{
-            paddingBottom: 90 + insets.bottom,
-          }}
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingBottom: 90 + insets.bottom,
+            },
+          ]}
           removeClippedSubviews
           initialNumToRender={12}
           maxToRenderPerBatch={12}
-                 windowSize={7}
-                ListEmptyComponent={
+          windowSize={7}
+          ListEmptyComponent={
             loading ? (
               <View style={styles.empty}>
-                <ActivityIndicator color={RBZ.c1} />
-                <Text style={styles.emptySub}>Loading chats…</Text>
+                <ActivityIndicator
+                  color={colors.brand}
+                />
+
+                <Text style={styles.emptySub}>
+                  Loading chats…
+                </Text>
               </View>
             ) : (
               <View style={styles.empty}>
-                <Ionicons name="chatbubble-ellipses-outline" size={42} color={RBZ.gray} />
-                <Text style={styles.emptyTitle}>No chats yet</Text>
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={42}
+                  color={colors.iconMuted}
+                />
+
+                <Text style={styles.emptyTitle}>
+                  No chats yet
+                </Text>
+
                 <Text style={styles.emptySub}>
                   Once you match, your conversations will appear here.
                 </Text>
@@ -1541,34 +1591,100 @@ const bumpReactionPreview = (raw: any) => {
                 onPress={() => openChat(m)}
                 onLongPress={() => setActionPeer(m)}
                 delayLongPress={280}
-                style={[styles.row, pinned ? styles.rowPinned : null]}
+                style={({ pressed }) => [
+                  styles.row,
+                  pinned
+                    ? styles.rowPinned
+                    : null,
+                  pressed
+                    ? styles.rowPressed
+                    : null,
+                ]}
               >
-                 <View style={styles.avatarWrap}>
-                  <Image source={{ uri: stableAvatarUrl(m) }} style={styles.avatar} />
-                  {online ? <View style={styles.onlineDot} /> : null}
+                <View style={styles.avatarWrap}>
+                  <Image
+                    source={{
+                      uri: stableAvatarUrl(m),
+                    }}
+                    style={styles.avatar}
+                  />
+
+                  {online ? (
+                    <View
+                      style={styles.onlineDot}
+                    />
+                  ) : null}
                 </View>
 
                 <View style={styles.mid}>
                   <View style={styles.topLine}>
-                    <Text style={styles.name} numberOfLines={1}>
-                      {nickMap[pid] || fullName(m)}
+                    <Text
+                      style={[
+                        styles.name,
+                        unread > 0
+                          ? styles.nameUnread
+                          : null,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {nickMap[pid] ||
+                        fullName(m)}
                     </Text>
 
                     <View style={styles.rowFlags}>
-                      {pinned ? <Ionicons name="pin" size={14} color={RBZ.c1} /> : null}
-                      {muted ? <Ionicons name="notifications-off" size={14} color={RBZ.gray} /> : null}
-                      {alertOn ? <Ionicons name="radio" size={14} color={RBZ.c4} /> : null}
+                      {pinned ? (
+                        <Ionicons
+                          name="pin"
+                          size={14}
+                          color={colors.brand}
+                        />
+                      ) : null}
+
+                      {muted ? (
+                        <Ionicons
+                          name="notifications-off"
+                          size={14}
+                          color={colors.iconMuted}
+                        />
+                      ) : null}
+
+                      {alertOn ? (
+                        <Ionicons
+                          name="radio"
+                          size={14}
+                          color={colors.brand}
+                        />
+                      ) : null}
                     </View>
                   </View>
 
                   <View style={styles.bottomLine}>
-                    <Text style={styles.preview} numberOfLines={1}>
-                      {safePreviewText(m?.lastMessage, myId)}
+                    <Text
+                      style={[
+                        styles.preview,
+                        unread > 0
+                          ? styles.previewUnread
+                          : null,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {safePreviewText(
+                        m?.lastMessage,
+                        myId
+                      )}
                     </Text>
 
                     {unread > 0 ? (
                       <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{unread > 99 ? "99+" : unread}</Text>
+                        <Text
+                          style={
+                            styles.badgeText
+                          }
+                        >
+                          {unread > 99
+                            ? "99+"
+                            : unread}
+                        </Text>
                       </View>
                     ) : null}
                   </View>
@@ -1604,7 +1720,7 @@ const bumpReactionPreview = (raw: any) => {
                   <Ionicons
                     name={pinnedPeers.includes(safeId(actionPeer)) ? "pin" : "pin-outline"}
                     size={21}
-                    color={RBZ.ink}
+                    color={colors.icon}
                   />
                   <Text style={styles.sheetActionText}>
                     {pinnedPeers.includes(safeId(actionPeer)) ? "Unpin" : "Pin"}
@@ -1615,7 +1731,7 @@ const bumpReactionPreview = (raw: any) => {
                   <Ionicons
                     name={mutedPeers.includes(safeId(actionPeer)) ? "notifications" : "notifications-off-outline"}
                     size={21}
-                    color={RBZ.ink}
+                    color={colors.icon}
                   />
                   <Text style={styles.sheetActionText}>
                     {mutedPeers.includes(safeId(actionPeer)) ? "Unmute" : "Mute"}
@@ -1626,7 +1742,7 @@ const bumpReactionPreview = (raw: any) => {
                   <Ionicons
                     name={(unreadMap[safeId(actionPeer)] || manualUnreadPeers.includes(safeId(actionPeer))) ? "mail-open-outline" : "mail-unread-outline"}
                     size={21}
-                    color={RBZ.ink}
+                    color={colors.icon}
                   />
                   <Text style={styles.sheetActionText}>
                     {(unreadMap[safeId(actionPeer)] || manualUnreadPeers.includes(safeId(actionPeer))) ? "Mark as read" : "Mark as unread"}
@@ -1637,7 +1753,7 @@ const bumpReactionPreview = (raw: any) => {
                   <Ionicons
                     name={alertPeers.includes(safeId(actionPeer)) ? "radio" : "radio-outline"}
                     size={21}
-                    color={RBZ.ink}
+                    color={colors.icon}
                   />
                   <Text style={styles.sheetActionText}>
                     {alertPeers.includes(safeId(actionPeer)) ? "Remove online alert" : "Set alert"}
@@ -1645,12 +1761,20 @@ const bumpReactionPreview = (raw: any) => {
                 </Pressable>
 
                 <Pressable style={styles.sheetActionDanger} onPress={() => confirmUnmatchPeer(actionPeer)}>
-                  <Ionicons name="ban-outline" size={21} color="#dc2626" />
-                  <Text style={styles.sheetActionDangerText}>Block / unmatch</Text>
+                  <Ionicons
+                    name="ban-outline"
+                    size={21}
+                    color={colors.danger}
+                  />
+                  <Text style={styles.sheetActionDangerText}>Unmatch</Text>
                 </Pressable>
 
                 <Pressable style={styles.sheetActionDanger} onPress={() => confirmDeletePeerChat(actionPeer)}>
-                  <Ionicons name="trash-outline" size={21} color="#dc2626" />
+                  <Ionicons
+                    name="trash-outline"
+                    size={21}
+                    color={colors.danger}
+                  />
                   <Text style={styles.sheetActionDangerText}>Delete chat</Text>
                 </Pressable>
               </>
@@ -1662,156 +1786,3 @@ const bumpReactionPreview = (raw: any) => {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: RBZ.soft },
-  header: {
-    paddingTop: 24,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-  },
-  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerTitle: { color: RBZ.white, fontSize: 22, fontWeight: "800" },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  searchWrap: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  search: { flex: 1, color: RBZ.white, fontSize: 15 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-
-  list: { flex: 1, paddingHorizontal: 12, paddingTop: 10 },
-   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    backgroundColor: RBZ.white,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  rowPinned: {
-    borderColor: "rgba(177,18,60,0.22)",
-    backgroundColor: "#fff7fa",
-  },
-  rowFlags: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginLeft: 8,
-  },
-  avatarWrap: { width: 56, height: 56, borderRadius: 18 },
-  avatar: { width: 56, height: 56, borderRadius: 18 },
-  onlineDot: {
-    position: "absolute",
-    right: -1,
-    bottom: -1,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: "#22c55e",
-    borderWidth: 2,
-    borderColor: RBZ.white,
-  },
-
-  mid: { flex: 1, marginLeft: 12 },
-  topLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  name: { color: RBZ.ink, fontSize: 16, fontWeight: "800", maxWidth: "78%" },
-  time: { color: RBZ.gray, fontSize: 12 },
-
-  bottomLine: {
-    marginTop: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-
-  preview: { flex: 1, color: RBZ.gray, fontSize: 13 },
-
-  right: { width: 48, alignItems: "flex-end", justifyContent: "center" },
-
-  badge: {
-    minWidth: 24,
-    height: 24,
-    paddingHorizontal: 7,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: RBZ.c2,
-  },
-  badgeText: { color: RBZ.white, fontSize: 12, fontWeight: "900" },
-
-  empty: { alignItems: "center", paddingTop: 90, paddingHorizontal: 20 },
-  emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: "900", color: RBZ.ink },
-  emptySub: { marginTop: 6, fontSize: 13, color: RBZ.gray, textAlign: "center" },
-
-    sheetBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-  actionSheet: {
-    paddingTop: 10,
-    paddingHorizontal: 16,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    backgroundColor: RBZ.white,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 44,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(17,24,39,0.18)",
-    marginBottom: 14,
-  },
-  sheetTitle: {
-    color: RBZ.ink,
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 10,
-  },
-  sheetAction: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.06)",
-  },
-  sheetActionText: {
-    color: RBZ.ink,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  sheetActionDanger: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.06)",
-  },
-  sheetActionDangerText: {
-    color: "#dc2626",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-});
