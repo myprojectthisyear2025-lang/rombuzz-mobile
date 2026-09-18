@@ -674,11 +674,25 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           mode !== "refresh" &&
           hydratedCacheForRef.current !== userId;
 
-        if (shouldTryCache) {
-          const cached = await readCachedViewProfile(userId);
+        // Start fresh data immediately while cache is checked.
+        const freshProfilePromise =
+          fetchFreshViewProfile(
+            userId
+          );
 
-          if (cached?.profile?.user && requestId === requestSeqRef.current) {
-            hydratedCacheForRef.current = userId;
+        if (shouldTryCache) {
+          const cached =
+            await readCachedViewProfile(
+              userId
+            );
+
+          if (
+            cached?.profile?.user &&
+            requestId ===
+              requestSeqRef.current
+          ) {
+            hydratedCacheForRef.current =
+              userId;
 
             applyProfileBundle({
               profile: cached.profile,
@@ -688,11 +702,18 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
           }
         }
 
-        const fresh = await fetchFreshViewProfile(userId);
+        const fresh =
+          await freshProfilePromise;
 
-        if (requestId !== requestSeqRef.current) return;
+        if (
+          requestId !==
+          requestSeqRef.current
+        ) {
+          return;
+        }
 
-        hydratedCacheForRef.current = userId;
+        hydratedCacheForRef.current =
+          userId;
 
         applyProfileBundle({
           profile: fresh.profile,

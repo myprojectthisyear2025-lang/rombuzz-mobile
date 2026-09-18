@@ -274,7 +274,11 @@ export async function fetchFreshViewProfile(userId: string) {
     savedAt: Date.now(),
   };
 
-  await rbzCacheSet(viewProfileCacheKey(userId), bundle);
+  // Never block first render on AsyncStorage persistence.
+  rbzCacheSet(
+    viewProfileCacheKey(userId),
+    bundle
+  ).catch(() => {});
 
   return bundle;
 }

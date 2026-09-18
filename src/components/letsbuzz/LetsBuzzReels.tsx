@@ -140,10 +140,6 @@ function stripCaptionTags(caption: any) {
     .trim();
 }
 
-function countHeartReactions(reactions: Record<string, any> = {}) {
-  return Object.values(reactions || {}).filter((value) => value === "❤️").length;
-}
-
 function getGiftTargetId(post: BuzzPost | null) {
   if (!post) return "";
 
@@ -450,114 +446,59 @@ export default function LetsBuzzReels({
           fetchMeId().catch(() => {});
         }
 
-        const res = await fetch(`${API_BASE}/feed/letsbuzz`, { headers });
+        const res = await fetch(
+          `${API_BASE}/feed/letsbuzz`,
+          { headers }
+        );
+
         const json = await res.json();
 
-        const raw: any[] = Array.isArray(json?.items) ? json.items : [];
-        await writeCachedLetsBuzzFeed(raw);
+        const raw: any[] =
+          Array.isArray(json?.items)
+            ? json.items
+            : [];
 
-        const onlyReels = buildReelsFromLetsBuzzRaw(raw, myId);
+        // Cache persistence must not block first paint.
+        writeCachedLetsBuzzFeed(raw).catch(
+          () => {}
+        );
 
-        // Show fresh feed immediately. Do NOT wait for /users/:id hydration.
+        const onlyReels =
+          buildReelsFromLetsBuzzRaw(
+            raw,
+            myId
+          );
+
+        // /feed/letsbuzz already contains the reel media,
+        // comment count, like state, and owner card.
+        // Do not fetch /users/:id for every reel.
+        onlyReels.forEach((item) => {
+          const count = Number(
+            item.commentsCount || 0
+          );
+
+          commentCountByPostRef.current[
+            String(item.id)
+          ] = count;
+
+          commentCountByPostRef.current[
+            String(
+              item.mediaId ||
+                item.id
+            )
+          ] = count;
+        });
+
         setReelsSafe(onlyReels);
-        preloadLetsBuzzFeedImages(raw, 6);
+
+        preloadLetsBuzzFeedImages(
+          raw,
+          6
+        );
 
         if (onlyReels.length) {
           setLoading(false);
         }
-
-        Promise.all(
-          onlyReels.map(async (item) => {
-          try {
-            const userRes = await fetch(`${API_BASE}/users/${item.userId}`, { headers });
-            const userJson = await userRes.json();
-
-            const mediaList = Array.isArray(userJson?.user?.media)
-              ? userJson.user.media
-              : [];
-
-                  const targetKeys = [
-              item.mediaId,
-              item.id,
-              item.streamUid,
-              getStreamUid(item),
-            ]
-              .map((value) => String(value || "").trim())
-              .filter(Boolean);
-
-            const media = mediaList.find((mediaItem: any) => {
-              const mediaKeys = [
-                mediaItem?.id,
-                mediaItem?._id,
-                mediaItem?.mediaId,
-                mediaItem?.postId,
-                mediaItem?.streamUid,
-                mediaItem?.uid,
-                mediaItem?.cloudflareStream?.uid,
-              ]
-                .map((value) => String(value || "").trim())
-                .filter(Boolean);
-
-              return mediaKeys.some((key) => targetKeys.includes(key));
-            });
-
-            if (!media) return item;
-
-            const reactions = media?.reactions || {};
-            const comments = Array.isArray(media?.comments) ? media.comments : [];
-
-            const visibleCommentCount = comments.length;
-            commentCountByPostRef.current[String(item.id)] = visibleCommentCount;
-            commentCountByPostRef.current[String(item.mediaId || item.id)] = visibleCommentCount;
-
-             return {
-              ...item,
-              mediaUrl: item.mediaUrl || getReelPlayableUrl(media),
-              provider: item.provider || media?.provider,
-              storage: item.storage || media?.storage,
-              streamUid: item.streamUid || getStreamUid(media),
-              playback: item.playback || media?.playback,
-              thumbnailUrl: item.thumbnailUrl || media?.thumbnailUrl,
-              cloudflareStream: item.cloudflareStream || media?.cloudflareStream,
-              status: item.status || media?.status || media?.cloudflareStream?.status,
-              duration: Number(item.duration || media?.duration || media?.cloudflareStream?.duration || 0),
-              likesCount: countHeartReactions(reactions),
-              commentsCount: visibleCommentCount,
-              isLiked: reactions?.[myId] === "❤️",
-            };
-          } catch {
-            return item;
-          }
-            })
-      )
-        .then((hydrated) => {
-          setReelsSafe(hydrated);
-
-          if (targetPostId) {
-            const idx = hydrated.findIndex((item) => String(item?.id) === String(targetPostId));
-
-            if (idx >= 0) {
-              const targetReel = hydrated[idx];
-
-              setCurrentIndex(idx);
-
-              setTimeout(() => {
-                try {
-                  listRef.current?.scrollToIndex({
-                    index: idx,
-                    animated: false,
-                    viewPosition: 0,
-                  });
-                } catch {}
-
-                if (deepLinkOpenComments && targetReel) {
-                  openComments(targetReel);
-                }
-              }, 150);
-            }
-          }
-        })
-        .catch(() => {});
 
       if (targetPostId) {
         const idx = onlyReels.findIndex((item) => String(item?.id) === String(targetPostId));
