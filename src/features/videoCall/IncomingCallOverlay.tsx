@@ -33,6 +33,7 @@ import {
   View,
 } from "react-native";
 
+import { useVideoCallSocket } from "@/src/features/videoCall/useVideoCallSocket";
 import {
   acceptVideoCall,
   declineVideoCall,
@@ -42,7 +43,6 @@ import {
   getVideoCallPeerName,
   type VideoCallSession,
 } from "@/src/features/videoCall/videoCallTypes";
-import { useVideoCallSocket } from "@/src/features/videoCall/useVideoCallSocket";
 
 const RBZ = {
   c1: "#b1123c",
@@ -150,7 +150,7 @@ export default function IncomingCallOverlay() {
       setIncomingCall(null);
 
       router.push({
-        pathname: "../video-call/[callId]",
+        pathname: "/video-call/[callId]",
         params: {
           callId: result.call.id,
           channelName: result.call.channelName,

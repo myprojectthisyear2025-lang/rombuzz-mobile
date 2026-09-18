@@ -14,7 +14,6 @@
  *  - Each tile has ⋮ menu:
  *      - Delete for me
  *      - Show in chat
- *      - Save
  *
  * Backend (already exists):
  *  - GET    /api/chat/rooms/:roomId
@@ -27,7 +26,6 @@ import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import { Ionicons } from "@expo/vector-icons";
 import { ResizeMode, Video } from "expo-av";
 import * as FileSystem from "expo-file-system";
-import { LinearGradient } from "expo-linear-gradient";
 import * as MediaLibrary from "expo-media-library";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -35,41 +33,32 @@ import * as Sharing from "expo-sharing";
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    FlatList,
-    Image,
-    Modal,
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  SafeAreaView,
+  Text,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
+import { usePurchasedMediaStyles } from "@/src/features/chat/purchasedMedia/usePurchasedMediaStyles";
 import {
   readCachedChatThread,
   writeCachedChatThread,
 } from "@/src/features/chat/thread/rbzChatThreadCache";
 
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  ink: "#111827",
-  gray: "#6b7280",
-  soft: "#f5f6fa",
-  line: "rgba(0,0,0,0.08)",
-};
-
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
 }
+
 
 type AnyMsg = any;
 
@@ -258,6 +247,9 @@ function buildPurchasedMediaRows(arr: AnyMsg[]): MediaRow[] {
 export default function PurchasedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  useRomBuzzTypography();
+  const { colors } = useRomBuzzTheme();
+  const styles = usePurchasedMediaStyles();
 
   const params = useLocalSearchParams<{
     peerId: string;
@@ -529,14 +521,13 @@ export default function PurchasedMediaHub() {
     return (
       <Pressable
         onPress={() => setMediaTab(id)}
-        style={[
-          styles.tabBtn,
-          active ? { backgroundColor: RBZ.c4, borderColor: "transparent" } : null,
-        ]}
+        style={[styles.tabBtn, active ? styles.tabBtnActive : null]}
       >
-        <Text style={[styles.tabText, active ? { color: RBZ.white } : null]}>
+        <Text style={[styles.tabText, active ? styles.tabTextActive : null]}>
           {label}{" "}
-          <Text style={[styles.tabCount, active ? { color: RBZ.white } : null]}>{count}</Text>
+          <Text style={[styles.tabCount, active ? styles.tabCountActive : null]}>
+            {count}
+          </Text>
         </Text>
       </Pressable>
     );
@@ -581,21 +572,21 @@ export default function PurchasedMediaHub() {
 
         {item.mediaType === "video" && !lockedForMe ? (
           <View style={styles.videoBadge}>
-            <Ionicons name="videocam" size={14} color={RBZ.white} />
+            <Ionicons name="videocam" size={14} color={colors.white} />
           </View>
         ) : null}
 
         <View style={styles.giftBadge}>
-          <Ionicons name={lockedForMe ? "lock-closed" : "gift"} size={14} color={RBZ.white} />
+          <Ionicons name={lockedForMe ? "lock-closed" : "gift"} size={14} color={colors.white} />
         </View>
 
         {lockedForMe ? (
           <View style={styles.lockOverlay}>
-            <Ionicons name="lock-closed" size={20} color={RBZ.white} />
+            <Ionicons name="lock-closed" size={20} color={colors.white} />
             <Text style={styles.lockPriceText}>{item.giftPriceBC} BC</Text>
             <View style={styles.unlockMiniBtn}>
               {unlockingThis ? (
-                <ActivityIndicator size="small" color={RBZ.white} />
+                <ActivityIndicator size="small" color={colors.white} />
               ) : (
                 <Text style={styles.unlockMiniText}>Unlock</Text>
               )}
@@ -603,13 +594,13 @@ export default function PurchasedMediaHub() {
           </View>
         ) : (
           <View style={styles.unlockedBadge}>
-            <Ionicons name="checkmark-circle" size={12} color={RBZ.white} />
+            <Ionicons name="checkmark-circle" size={12} color={colors.white} />
             <Text style={styles.unlockedText}>Unlocked</Text>
           </View>
         )}
 
         <Pressable onPress={() => openMenu(item)} style={styles.dotsBtn} hitSlop={10}>
-          <Ionicons name="ellipsis-vertical" size={14} color={RBZ.white} />
+          <Ionicons name="ellipsis-vertical" size={14} color={colors.white} />
         </Pressable>
       </Pressable>
     );
@@ -617,9 +608,9 @@ export default function PurchasedMediaHub() {
 
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
-      <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.header}>
+      <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="chevron-back" size={22} color={RBZ.white} />
+          <Ionicons name="chevron-back" size={22} color={colors.icon} />
         </Pressable>
 
         <View style={{ flex: 1 }}>
@@ -632,9 +623,9 @@ export default function PurchasedMediaHub() {
         </View>
 
         <Pressable onPress={load} style={styles.headerBtn}>
-          <Ionicons name="refresh" size={18} color={RBZ.white} />
+          <Ionicons name="refresh" size={18} color={colors.icon} />
         </Pressable>
-      </LinearGradient>
+      </View>
 
       <View style={styles.tabsWrap}>
         <MediaTabBtn id="photos" label="Photos" count={photos.length} />
@@ -643,7 +634,7 @@ export default function PurchasedMediaHub() {
 
       {loading ? (
         <View style={styles.loading}>
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.brand} />
           <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : data.length === 0 ? (
@@ -651,7 +642,7 @@ export default function PurchasedMediaHub() {
           <Ionicons
             name={mediaTab === "photos" ? "images-outline" : "videocam-outline"}
             size={34}
-            color={RBZ.c4}
+            color={colors.brand}
           />
           <Text style={styles.emptyTitle}>
             {mediaTab === "photos" ? "No purchased photos yet." : "No purchased videos yet."}
@@ -695,33 +686,30 @@ export default function PurchasedMediaHub() {
                 showInChat(it.id);
               }}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={18} color={RBZ.ink} />
-              <Text style={styles.menuText}>Show in chat</Text>
+              <View style={styles.menuIconBox}>
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={19}
+                  color={colors.brand}
+                />
+              </View>
+
+              <View style={styles.menuTextWrap}>
+                <Text style={styles.menuText}>Show in chat</Text>
+                <Text style={styles.menuHint}>Jump back to this message</Text>
+              </View>
+
+              <Ionicons
+                name="chevron-forward"
+                size={17}
+                color={colors.textMuted}
+              />
             </Pressable>
 
-                     <Pressable
-              style={styles.menuRow}
-              onPress={() => {
-                const it = menuItem;
-                closeMenu();
-                if (!it) return;
-
-                if (isLockedForMe(it)) {
-                  Alert.alert("Locked media", "Unlock this media before saving it.");
-                  return;
-                }
-
-                saveToPhone(it);
-              }}
-            >
-              <Ionicons name="download-outline" size={18} color={RBZ.ink} />
-              <Text style={styles.menuText}>Save</Text>
-            </Pressable>
-
-            <View style={styles.menuHr} />
+            <View style={styles.menuSectionGap} />
 
             <Pressable
-              style={styles.menuRow}
+              style={[styles.menuRow, styles.menuDangerRow]}
               onPress={() => {
                 const it = menuItem;
                 closeMenu();
@@ -736,14 +724,32 @@ export default function PurchasedMediaHub() {
                 ]);
               }}
             >
-              <Ionicons name="eye-off-outline" size={18} color={RBZ.ink} />
-              <Text style={styles.menuText}>Delete for me</Text>
+              <View style={[styles.menuIconBox, styles.menuDangerIconBox]}>
+                <Ionicons
+                  name="eye-off-outline"
+                  size={19}
+                  color={colors.danger}
+                />
+              </View>
+
+              <View style={styles.menuTextWrap}>
+                <Text style={[styles.menuText, styles.menuDangerText]}>
+                  Delete for me
+                </Text>
+                <Text style={[styles.menuHint, styles.menuDangerHint]}>
+                  Remove it only from your media
+                </Text>
+              </View>
+
+              <Ionicons
+                name="chevron-forward"
+                size={17}
+                color={colors.danger}
+              />
             </Pressable>
 
-            <View style={styles.menuHr} />
-
-            <Pressable style={[styles.menuRow, { justifyContent: "center" }]} onPress={closeMenu}>
-              <Text style={[styles.menuText, { color: RBZ.c2, fontWeight: "900" }]}>Close</Text>
+            <Pressable style={styles.menuCloseBtn} onPress={closeMenu}>
+              <Text style={styles.menuCloseText}>Close</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -769,175 +775,9 @@ export default function PurchasedMediaHub() {
           }}
           uri={videoViewerItem.url}
           mediaType="video"
-          allowDownload={!isLockedForMe(videoViewerItem)}
+          allowDownload={false}
         />
       ) : null}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: RBZ.soft },
-
-  header: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  headerTitle: { color: RBZ.white, fontSize: 16, fontWeight: "900" },
-  headerSub: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "800", marginTop: 1 },
-
-  tabsWrap: {
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  tabBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    backgroundColor: RBZ.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tabText: { color: RBZ.ink, fontWeight: "900" },
-  tabCount: { color: RBZ.gray, fontWeight: "900" },
-
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  loadingText: { marginTop: 10, color: RBZ.gray, fontWeight: "800" },
-
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
-  emptyTitle: { marginTop: 10, fontSize: 14, fontWeight: "900", color: RBZ.ink },
-  emptySub: { marginTop: 6, fontSize: 12, fontWeight: "800", color: RBZ.gray, textAlign: "center" },
-
-  tile: {
-    borderRadius: 18,
-    overflow: "hidden",
-    backgroundColor: "#000",
-    borderWidth: 1,
-    borderColor: "rgba(181,23,158,0.16)",
-  },
-   thumb: { width: "100%", height: "100%" },
-  lockedThumb: {
-    opacity: 0.16,
-  },
-  lockOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(8,8,12,0.74)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6,
-  },
-  lockPriceText: {
-    color: RBZ.white,
-    fontSize: 13,
-    fontWeight: "900",
-    marginTop: 5,
-  },
-  unlockMiniBtn: {
-    minHeight: 24,
-    marginTop: 7,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: RBZ.c2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  unlockMiniText: {
-    color: RBZ.white,
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  unlockedBadge: {
-    position: "absolute",
-    left: 6,
-    bottom: 6,
-    minHeight: 24,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    backgroundColor: "rgba(0,0,0,0.50)",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-  unlockedText: {
-    color: RBZ.white,
-    fontSize: 10,
-    fontWeight: "900",
-  },
-
-  dotsBtn: {
-    position: "absolute",
-    right: 6,
-    top: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-  },
-
-  videoBadge: {
-    position: "absolute",
-    left: 6,
-    bottom: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-
-  giftBadge: {
-    position: "absolute",
-    left: 6,
-    top: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: RBZ.c4,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "flex-end",
-    padding: 12,
-  },
-  menuCard: {
-    backgroundColor: RBZ.white,
-    borderRadius: 18,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  menuTitle: { fontSize: 14, fontWeight: "900", color: RBZ.ink },
-  menuHr: { height: 1, backgroundColor: RBZ.line, marginVertical: 10 },
-  menuRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
-  menuText: { fontSize: 14, fontWeight: "800", color: RBZ.ink },
-});

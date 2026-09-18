@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import type { useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 
 type NavigationArgs = {
   router: ReturnType<typeof useRouter>;
@@ -44,7 +44,7 @@ export function useChatNavigation({
     videoCallLaunchRef.current = true;
 
     router.push({
-      pathname: "../video-call/[callId]",
+      pathname: "/video-call/[callId]",
       params: {
         callId: "pending",
         peerId,

@@ -14,7 +14,6 @@
  *      - Delete for me
  *      - Delete for all
  *      - Show in chat
- *      - Save
  *
  * Backend (already exists):
  *  - GET    /api/chat/rooms/:roomId
@@ -28,7 +27,6 @@ import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import { Ionicons } from "@expo/vector-icons";
 import { ResizeMode, Video } from "expo-av";
 import * as FileSystem from "expo-file-system";
-import { LinearGradient } from "expo-linear-gradient";
 import * as MediaLibrary from "expo-media-library";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -44,29 +42,19 @@ import {
   Modal,
   Pressable,
   SafeAreaView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
+import { useSharedMediaStyles } from "@/src/features/chat/sharedMedia/useSharedMediaStyles";
 import {
   readCachedChatThread,
   writeCachedChatThread,
 } from "@/src/features/chat/thread/rbzChatThreadCache";
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-  ink: "#111827",
-  gray: "#6b7280",
-  soft: "#f5f6fa",
-  line: "rgba(0,0,0,0.08)",
-};
 
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -241,6 +229,9 @@ function buildSharedMediaRows(arr: AnyMsg[]): MediaRow[] {
 export default function SharedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  useRomBuzzTypography();
+  const { colors } = useRomBuzzTheme();
+  const styles = useSharedMediaStyles();
 
   const params = useLocalSearchParams<{
     peerId: string;
@@ -470,14 +461,13 @@ export default function SharedMediaHub() {
     return (
       <Pressable
         onPress={() => setMediaTab(id)}
-        style={[
-          styles.tabBtn,
-          active ? { backgroundColor: RBZ.c4, borderColor: "transparent" } : null,
-        ]}
+        style={[styles.tabBtn, active ? styles.tabBtnActive : null]}
       >
-        <Text style={[styles.tabText, active ? { color: RBZ.white } : null]}>
+        <Text style={[styles.tabText, active ? styles.tabTextActive : null]}>
           {label}{" "}
-          <Text style={[styles.tabCount, active ? { color: RBZ.white } : null]}>{count}</Text>
+          <Text style={[styles.tabCount, active ? styles.tabCountActive : null]}>
+            {count}
+          </Text>
         </Text>
       </Pressable>
     );
@@ -511,18 +501,18 @@ export default function SharedMediaHub() {
 
         {item.mediaType === "video" ? (
           <View style={styles.videoBadge}>
-            <Ionicons name="videocam" size={14} color={RBZ.white} />
+            <Ionicons name="videocam" size={14} color={colors.white} />
           </View>
         ) : null}
 
         {item.giftLocked ? (
           <View style={styles.giftBadge}>
-            <Ionicons name="gift" size={14} color={RBZ.white} />
+            <Ionicons name="gift" size={14} color={colors.white} />
           </View>
         ) : null}
 
         <Pressable onPress={() => openMenu(item)} style={styles.dotsBtn} hitSlop={10}>
-          <Ionicons name="ellipsis-vertical" size={14} color={RBZ.white} />
+          <Ionicons name="ellipsis-vertical" size={14} color={colors.white} />
         </Pressable>
       </Pressable>
     );
@@ -530,9 +520,9 @@ export default function SharedMediaHub() {
 
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
-      <LinearGradient colors={[RBZ.c1, RBZ.c4]} style={styles.header}>
+      <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="chevron-back" size={22} color={RBZ.white} />
+          <Ionicons name="chevron-back" size={22} color={colors.icon} />
         </Pressable>
 
         <View style={{ flex: 1 }}>
@@ -545,9 +535,9 @@ export default function SharedMediaHub() {
         </View>
 
         <Pressable onPress={load} style={styles.headerBtn}>
-          <Ionicons name="refresh" size={18} color={RBZ.white} />
+          <Ionicons name="refresh" size={18} color={colors.icon} />
         </Pressable>
-      </LinearGradient>
+      </View>
 
       <View style={styles.tabsWrap}>
         <MediaTabBtn id="photos" label="Photos" count={photos.length} />
@@ -556,7 +546,7 @@ export default function SharedMediaHub() {
 
       {loading ? (
         <View style={styles.loading}>
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.brand} />
           <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : data.length === 0 ? (
@@ -564,7 +554,7 @@ export default function SharedMediaHub() {
           <Ionicons
             name={mediaTab === "photos" ? "images-outline" : "videocam-outline"}
             size={34}
-            color={RBZ.c4}
+            color={colors.brand}
           />
           <Text style={styles.emptyTitle}>
             {mediaTab === "photos" ? "No shared photos yet." : "No shared videos yet."}
@@ -608,24 +598,19 @@ export default function SharedMediaHub() {
                 showInChat(it.id);
               }}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={18} color={RBZ.ink} />
-              <Text style={styles.menuText}>Show in chat</Text>
+              <View style={styles.menuIconBox}>
+                <Ionicons name="chatbubble-ellipses-outline" size={19} color={colors.brand} />
+              </View>
+
+              <View style={styles.menuTextWrap}>
+                <Text style={styles.menuText}>Show in chat</Text>
+                <Text style={styles.menuHint}>Jump back to this message</Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
             </Pressable>
 
-            <Pressable
-              style={styles.menuRow}
-              onPress={() => {
-                const it = menuItem;
-                closeMenu();
-                if (!it) return;
-                saveToPhone(it);
-              }}
-            >
-              <Ionicons name="download-outline" size={18} color={RBZ.ink} />
-              <Text style={styles.menuText}>Save</Text>
-            </Pressable>
-
-            <View style={styles.menuHr} />
+            <View style={styles.menuSectionGap} />
 
             <Pressable
               style={styles.menuRow}
@@ -643,12 +628,20 @@ export default function SharedMediaHub() {
                 ]);
               }}
             >
-              <Ionicons name="eye-off-outline" size={18} color={RBZ.ink} />
-              <Text style={styles.menuText}>Delete for me</Text>
+              <View style={styles.menuIconBox}>
+                <Ionicons name="eye-off-outline" size={19} color={colors.icon} />
+              </View>
+
+              <View style={styles.menuTextWrap}>
+                <Text style={styles.menuText}>Delete for me</Text>
+                <Text style={styles.menuHint}>Only remove it from your view</Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
             </Pressable>
 
             <Pressable
-              style={styles.menuRow}
+              style={[styles.menuRow, styles.menuDangerRow]}
               onPress={() => {
                 const it = menuItem;
                 closeMenu();
@@ -663,14 +656,24 @@ export default function SharedMediaHub() {
                 ]);
               }}
             >
-              <Ionicons name="trash-outline" size={18} color={RBZ.c1} />
-              <Text style={[styles.menuText, { color: RBZ.c1 }]}>Delete for all</Text>
+              <View style={[styles.menuIconBox, styles.menuDangerIconBox]}>
+                <Ionicons name="trash-outline" size={19} color={colors.danger} />
+              </View>
+
+              <View style={styles.menuTextWrap}>
+                <Text style={[styles.menuText, styles.menuDangerText]}>
+                  Delete for all
+                </Text>
+                <Text style={[styles.menuHint, styles.menuDangerHint]}>
+                  Permanently remove for both users
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={17} color={colors.danger} />
             </Pressable>
 
-            <View style={styles.menuHr} />
-
-            <Pressable style={[styles.menuRow, { justifyContent: "center" }]} onPress={closeMenu}>
-              <Text style={[styles.menuText, { color: RBZ.c2, fontWeight: "900" }]}>Close</Text>
+            <Pressable style={styles.menuCloseBtn} onPress={closeMenu}>
+              <Text style={styles.menuCloseText}>Close</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -696,126 +699,9 @@ export default function SharedMediaHub() {
           }}
           uri={videoViewerItem.url}
           mediaType="video"
-          allowDownload={!videoViewerItem.giftLocked}
+          allowDownload={false}
         />
       ) : null}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: RBZ.soft },
-
-  header: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  headerTitle: { color: RBZ.white, fontSize: 16, fontWeight: "900" },
-  headerSub: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "800", marginTop: 1 },
-
-  tabsWrap: {
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  tabBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    backgroundColor: RBZ.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tabText: { color: RBZ.ink, fontWeight: "900" },
-  tabCount: { color: RBZ.gray, fontWeight: "900" },
-
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  loadingText: { marginTop: 10, color: RBZ.gray, fontWeight: "800" },
-
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
-  emptyTitle: { marginTop: 10, fontSize: 14, fontWeight: "900", color: RBZ.ink },
-  emptySub: { marginTop: 6, fontSize: 12, fontWeight: "800", color: RBZ.gray, textAlign: "center" },
-
-  tile: {
-    borderRadius: 18,
-    overflow: "hidden",
-    backgroundColor: "#000",
-    borderWidth: 1,
-    borderColor: "rgba(181,23,158,0.16)",
-  },
-  thumb: { width: "100%", height: "100%" },
-
-  dotsBtn: {
-    position: "absolute",
-    right: 6,
-    top: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-  },
-
-  videoBadge: {
-    position: "absolute",
-    left: 6,
-    bottom: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-
-  giftBadge: {
-    position: "absolute",
-    left: 6,
-    top: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: RBZ.c4,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "flex-end",
-    padding: 12,
-  },
-  menuCard: {
-    backgroundColor: RBZ.white,
-    borderRadius: 18,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: RBZ.line,
-  },
-  menuTitle: { fontSize: 14, fontWeight: "900", color: RBZ.ink },
-  menuHr: { height: 1, backgroundColor: RBZ.line, marginVertical: 10 },
-  menuRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
-  menuText: { fontSize: 14, fontWeight: "800", color: RBZ.ink },
-});

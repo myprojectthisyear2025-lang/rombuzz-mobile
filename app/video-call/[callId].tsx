@@ -51,6 +51,9 @@ import {
 } from "react-native-agora";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+
 import {
   hideActiveVideoCallMini,
   setActiveVideoCallDetachedCleanup,
@@ -142,6 +145,7 @@ function wait(ms: number) {
 export default function RomBuzzVideoCallScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useRomBuzzTheme();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   const {
@@ -989,7 +993,7 @@ export default function RomBuzzVideoCallScreen() {
     }
 
     router.replace({
-      pathname: "../video-call/[callId]",
+      pathname: "/video-call/[callId]",
       params: {
         callId,
       },
@@ -1090,7 +1094,7 @@ export default function RomBuzzVideoCallScreen() {
                 : joined
                   ? showRemote
                     ? "00:00"
-                    : "Waiting for camera..."
+                    : "Ringing..."
                   : "Connecting..."}
             </Text>
           </View>
@@ -1103,20 +1107,29 @@ export default function RomBuzzVideoCallScreen() {
         <View style={styles.videoStage}>
           {loading ? (
             <View style={styles.centerState}>
-              <ActivityIndicator color="#fff" size="large" />
+              <ActivityIndicator color={colors.white} size="large" />
               <Text style={styles.centerText}>Preparing video call...</Text>
             </View>
           ) : error ? (
             <View style={styles.centerState}>
-              <Ionicons name="warning" size={34} color="#fff" />
+              <Ionicons name="warning" size={34} color={colors.white} />
               <Text style={styles.centerText}>{error}</Text>
 
               <View style={styles.errorActions}>
-                <Pressable onPress={retry} style={styles.retryButton}>
+                <Pressable
+                  onPress={retry}
+                  style={[
+                    styles.retryButton,
+                    { backgroundColor: colors.brand },
+                  ]}
+                >
                   <Text style={styles.retryText}>Retry</Text>
                 </Pressable>
 
-                <Pressable onPress={() => leaveScreen("error_close")} style={styles.closeButton}>
+                <Pressable
+                  onPress={() => leaveScreen("error_close")}
+                  style={styles.closeButton}
+                >
                   <Text style={styles.closeText}>Close</Text>
                 </Pressable>
               </View>
@@ -1208,8 +1221,22 @@ export default function RomBuzzVideoCallScreen() {
             <Ionicons name="camera-reverse" size={24} color="#fff" />
           </Pressable>
 
-            <Pressable onPress={() => leaveScreen("end_button")} style={styles.endButton}>
-            <Ionicons name="call" size={24} color="#fff" style={styles.endIcon} />
+          <Pressable
+            onPress={() => leaveScreen("end_button")}
+            style={[
+              styles.endButton,
+              {
+                backgroundColor: colors.danger,
+                shadowColor: colors.danger,
+              },
+            ]}
+          >
+            <Ionicons
+              name="call"
+              size={24}
+              color="#fff"
+              style={styles.endIcon}
+            />
           </Pressable>
         </View>
       </View>
@@ -1236,14 +1263,15 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: "#fff",
-    fontSize: 20,
-    fontWeight: "900",
+    fontSize: 18,
+    fontFamily: RBZFont.extraBold,
+    letterSpacing: -0.35,
   },
   headerSub: {
     marginTop: 3,
     color: "rgba(255,255,255,0.68)",
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12.5,
+    fontFamily: RBZFont.semiBold,
   },
   headerClose: {
     width: 42,
@@ -1269,8 +1297,9 @@ const styles = StyleSheet.create({
   waitingText: {
     marginTop: 12,
     color: "rgba(255,255,255,0.82)",
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 14.5,
+    fontFamily: RBZFont.bold,
+    lineHeight: 19.5,
     textAlign: "center",
   },
    localPreview: {
@@ -1310,9 +1339,9 @@ const styles = StyleSheet.create({
   centerText: {
     marginTop: 14,
     color: "#fff",
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "800",
+    fontSize: 14.5,
+    lineHeight: 20,
+    fontFamily: RBZFont.bold,
     textAlign: "center",
   },
   errorActions: {
@@ -1324,11 +1353,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 16,
-    backgroundColor: RBZ.c1,
   },
   retryText: {
     color: "#fff",
-    fontWeight: "900",
+    fontSize: 13,
+    fontFamily: RBZFont.bold,
   },
   closeButton: {
     paddingHorizontal: 18,
@@ -1338,7 +1367,8 @@ const styles = StyleSheet.create({
   },
   closeText: {
     color: "#fff",
-    fontWeight: "900",
+    fontSize: 13,
+    fontFamily: RBZFont.bold,
   },
   controlsWrap: {
     position: "absolute",
@@ -1371,10 +1401,8 @@ const styles = StyleSheet.create({
     borderRadius: 27,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#ef4444",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
-    shadowColor: "#ef4444",
     shadowOpacity: 0.28,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
@@ -1442,7 +1470,7 @@ const styles = StyleSheet.create({
   },
   minimizedText: {
     color: "#fff",
-    fontSize: 11,
-    fontWeight: "900",
+    fontSize: 10.5,
+    fontFamily: RBZFont.bold,
   },
 });

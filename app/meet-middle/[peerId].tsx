@@ -13,21 +13,6 @@
 // - Does NOT open map yet.
 // - This screen only proves navigation works from Chat Thread Info and Chat Header.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { router, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
 import MeetMiddleFinalMeetupCard from "@/src/features/meetMiddle/components/MeetMiddleFinalMeetupCard";
 import MeetMiddleLocationConsentCard from "@/src/features/meetMiddle/components/MeetMiddleLocationConsentCard";
@@ -39,6 +24,10 @@ import {
   rejectMeetMiddlePlace,
   selectMeetMiddlePlace,
 } from "@/src/features/meetMiddle/meetMiddleApi";
+import type {
+  MeetMiddlePlace,
+  MeetMiddleSession,
+} from "@/src/features/meetMiddle/meetMiddleTypes";
 import { useMeetMiddleLocationShare } from "@/src/features/meetMiddle/useMeetMiddleLocationShare";
 import { useMeetMiddleRequest } from "@/src/features/meetMiddle/useMeetMiddleRequest";
 import { useMeetMiddleSessionResume } from "@/src/features/meetMiddle/useMeetMiddleSessionResume";
@@ -46,10 +35,21 @@ import {
   extractMeetMiddleSocketSession,
   useMeetMiddleSessionSocket,
 } from "@/src/features/meetMiddle/useMeetMiddleSessionSocket";
-import type {
-  MeetMiddlePlace,
-  MeetMiddleSession,
-} from "@/src/features/meetMiddle/meetMiddleTypes";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type MeetMiddleParams = {
   peerId?: string;
