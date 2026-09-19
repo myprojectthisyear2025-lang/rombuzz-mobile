@@ -1,169 +1,354 @@
-// ===========================================================
-// 📁 File: app/auth/forgot-password.tsx
-// 🎯 Purpose: RomBuzz Mobile Forgot Password (Send Reset Code)
-// ===========================================================
+/**
+ * Path: app/auth/forgot-password.tsx
+ * Purpose: Theme-aware RomBuzz forgot-password screen that sends the reset code.
+ * Behavior: Existing API call and reset-password navigation are preserved.
+ */
 
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, {
+  useState,
+} from "react";
+
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
+  View,
 } from "react-native";
-import { API_BASE } from "../../src/config/api";
+
+import {
+  API_BASE,
+} from "../../src/config/api";
+
+import {
+  useRomBuzzTheme,
+} from "../../src/design/RomBuzzThemeProvider";
+
+import {
+  useRomBuzzTypography,
+} from "../../src/design/rombuzzTypography";
+
+import {
+  recoveryStyles as styles,
+} from "../../src/features/auth/passwordRecovery/passwordRecoveryStyles";
+
+import {
+  usePasswordRecoveryThemeStyles,
+} from "../../src/features/auth/passwordRecovery/usePasswordRecoveryThemeStyles";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const fontsLoaded =
+    useRomBuzzTypography();
 
-  const handleSendReset = async () => {
-    setError(null);
-    setInfo(null);
+  const {
+    colors,
+    statusBarStyle,
+  } = useRomBuzzTheme();
 
-    if (!email.trim()) {
-      setError("Email is required.");
-      return;
-    }
+  const theme =
+    usePasswordRecoveryThemeStyles();
 
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
+  const [email, setEmail] =
+    useState("");
 
-      const data = await res.json().catch(() => ({}));
+  const [loading, setLoading] =
+    useState(false);
 
-      if (!res.ok) {
-        setError(data?.error || "Failed to send reset code.");
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const [info, setInfo] =
+    useState<string | null>(null);
+
+  const handleSendReset =
+    async () => {
+      setError(null);
+      setInfo(null);
+
+      if (!email.trim()) {
+        setError(
+          "Email is required."
+        );
         return;
       }
 
-      // ✅ Move to next screen (CODE + NEW PASSWORD)
-      router.push({
-        pathname: "../auth/reset-password",
-        params: { email: email.trim() },
-      });
-    } catch (err) {
-      console.error("Forgot password error:", err);
-      setError("Network error. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      setLoading(true);
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/auth/forgot-password`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              email: email.trim(),
+            }),
+          }
+        );
+
+        const data =
+          await res
+            .json()
+            .catch(() => ({}));
+
+        if (!res.ok) {
+          setError(
+            data?.error ||
+              "Failed to send reset code."
+          );
+
+          return;
+        }
+
+        router.push({
+          pathname:
+            "../auth/reset-password",
+
+          params: {
+            email: email.trim(),
+          },
+        });
+      } catch (err) {
+        console.error(
+          "Forgot password error:",
+          err
+        );
+
+        setError(
+          "Network error. Please try again."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          theme.safeArea,
+        ]}
+      />
+    );
+  }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        theme.safeArea,
+      ]}
     >
-      <Text style={styles.title}>Reset Password</Text>
-      <Text style={styles.subtitle}>
-        Enter your email to receive a password reset code.
-      </Text>
-
-      {error && <Text style={styles.errorText}>{error}</Text>}
-      {info && <Text style={styles.infoText}>{info}</Text>}
-
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#999"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        autoCorrect={false}
+      <StatusBar
+        barStyle={statusBarStyle}
+        backgroundColor={
+          colors.background
+        }
       />
 
-      <TouchableOpacity
-        style={[styles.button, loading && { opacity: 0.7 }]}
-        onPress={handleSendReset}
-        disabled={loading}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
+        }
       >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Send Reset Code</Text>
-        )}
-      </TouchableOpacity>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            theme.scrollContent,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={
+            false
+          }
+        >
+          <View
+            style={styles.content}
+          >
+            <Text
+              style={[
+                styles.brand,
+                theme.brand,
+              ]}
+            >
+              Rom
+              <Text
+                style={
+                  theme.brandAccent
+                }
+              >
+                Buzz
+              </Text>
+            </Text>
 
-      <TouchableOpacity onPress={() => router.replace("/auth/login")}>
-        <Text style={styles.link}>Back to Login</Text>
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+            <View
+              style={[
+                styles.card,
+                theme.card,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.title,
+                  theme.title,
+                ]}
+              >
+                Reset Password
+              </Text>
+
+              <Text
+                style={[
+                  styles.subtitle,
+                  theme.subtitle,
+                ]}
+              >
+                Enter your email to
+                receive a password reset
+                code.
+              </Text>
+
+              {error ? (
+                <View
+                  style={[
+                    styles.statusBox,
+                    theme.errorBox,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      theme.errorText,
+                    ]}
+                  >
+                    {error}
+                  </Text>
+                </View>
+              ) : null}
+
+              {info ? (
+                <View
+                  style={[
+                    styles.statusBox,
+                    theme.infoBox,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      theme.infoText,
+                    ]}
+                  >
+                    {info}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View
+                style={[
+                  styles.inputShell,
+                  theme.inputShell,
+                ]}
+              >
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  style={
+                    theme.inputIcon
+                  }
+                />
+
+                <TextInput
+                  style={[
+                    styles.input,
+                    theme.input,
+                  ]}
+                  placeholder="Email"
+                  placeholderTextColor={
+                    colors.textMuted
+                  }
+                  value={email}
+                  onChangeText={
+                    setEmail
+                  }
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.primaryButton,
+                  theme.primaryButton,
+                  loading &&
+                    styles.disabledButton,
+                ]}
+                onPress={
+                  handleSendReset
+                }
+                disabled={loading}
+                activeOpacity={0.82}
+              >
+                {loading ? (
+                  <ActivityIndicator
+                    color={
+                      colors.white
+                    }
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      theme.primaryButtonText,
+                    ]}
+                  >
+                    Send Reset Code
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={
+                  styles.linkButton
+                }
+                onPress={() =>
+                  router.replace(
+                    "/auth/login"
+                  )
+                }
+                activeOpacity={0.72}
+              >
+                <Text
+                  style={[
+                    styles.link,
+                    theme.link,
+                  ]}
+                >
+                  Back to Login
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-
-// ===========================================================
-// 🎨 Styles (RomBuzz)
-// ===========================================================
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    paddingTop: 90,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    marginBottom: 8,
-    color: "#111",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#777",
-    marginBottom: 20,
-    paddingHorizontal: 32,
-    textAlign: "center",
-  },
-  input: {
-    width: "85%",
-    backgroundColor: "#f3f3f3",
-    padding: 14,
-    borderRadius: 10,
-    fontSize: 16,
-    marginBottom: 14,
-  },
-  button: {
-    width: "85%",
-    backgroundColor: "#ff005c",
-    paddingVertical: 14,
-    borderRadius: 10,
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    textAlign: "center",
-    fontWeight: "600",
-  },
-  link: {
-    color: "#555",
-    marginTop: 6,
-    fontSize: 15,
-  },
-  errorText: {
-    color: "#ff0044",
-    marginBottom: 12,
-    paddingHorizontal: 24,
-    textAlign: "center",
-  },
-  infoText: {
-    color: "#0c9248",
-    marginBottom: 12,
-    paddingHorizontal: 24,
-    textAlign: "center",
-  },
-});

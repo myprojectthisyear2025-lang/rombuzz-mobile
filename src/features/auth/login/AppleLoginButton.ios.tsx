@@ -1,21 +1,16 @@
 /**
- * ============================================================
- * 📁 File: src/features/auth/login/AppleLoginButton.ios.tsx
- * 🎯 Purpose: Render Apple's native login button on iOS only.
- *
- * LOCATION:
- *   src/features/auth/login/AppleLoginButton.ios.tsx
- *
- * USED BY:
- *   LoginForm.tsx on iOS.
- * ============================================================
+ * Path: src/features/auth/login/AppleLoginButton.ios.tsx
+ * Purpose: Render Apple's native login button with RomBuzz light/dark appearance.
+ * Used by: LoginForm.tsx on iOS.
  */
 
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { styles } from "./loginStyles";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+
+import { loginFormStyles as styles } from "./loginFormStyles";
 
 type Props = {
   disabled: boolean;
@@ -26,8 +21,8 @@ export default function AppleLoginButton({
   disabled,
   onPress,
 }: Props) {
-  const [available, setAvailable] =
-    useState(false);
+  const [available, setAvailable] = useState(false);
+  const { isDark } = useRomBuzzTheme();
 
   useEffect(() => {
     AppleAuthentication.isAvailableAsync()
@@ -43,7 +38,9 @@ export default function AppleLoginButton({
         styles.appleButtonWrap,
         disabled && styles.disabledButton,
       ]}
-      pointerEvents={disabled ? "none" : "auto"}
+      pointerEvents={
+        disabled ? "none" : "auto"
+      }
     >
       <AppleAuthentication.AppleAuthenticationButton
         buttonType={
@@ -51,10 +48,13 @@ export default function AppleLoginButton({
             .AppleAuthenticationButtonType.SIGN_IN
         }
         buttonStyle={
-          AppleAuthentication
-            .AppleAuthenticationButtonStyle.BLACK
+          isDark
+            ? AppleAuthentication
+                .AppleAuthenticationButtonStyle.WHITE
+            : AppleAuthentication
+                .AppleAuthenticationButtonStyle.BLACK
         }
-        cornerRadius={20}
+        cornerRadius={16}
         style={styles.appleButton}
         onPress={onPress}
       />

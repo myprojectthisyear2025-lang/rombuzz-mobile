@@ -25,7 +25,6 @@ import {
   Alert,
   Image,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -33,6 +32,7 @@ import {
 } from "react-native";
 
 import { RegisterForm } from "../index";
+import { useStep4PhotosStyles } from "../styles/useStep4PhotosStyles";
 
 const MIN_PHOTOS = 2;
 const MAX_PHOTOS = 6;
@@ -49,6 +49,8 @@ export type Step4Props = {
 };
 
 function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
+  const styles = useStep4PhotosStyles();
+
   const { width } = useWindowDimensions();
   const isSmallScreen = width < 360;
 
@@ -255,170 +257,5 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-  },
-  contentSmall: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 16,
-  },
-   photoCard: {
-    borderRadius: 16,
-    padding: 10,
-    marginBottom: 12,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#f5d0de",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  photoHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  photoIndex: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "#ffe2ee",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  photoIndexText: {
-    fontWeight: "700",
-    color: "#ff2f6e",
-  },
-  avatarTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "#ffe2ee",
-    color: "#ff2f6e",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  imageBox: {
-    borderWidth: 1,
-    borderColor: "#f1f1f1",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: "#fafafa",
-    minHeight: 90,
-    justifyContent: "center",
-  },
-  imageBoxAvatar: {
-    borderColor: "#ff2f6e",
-    backgroundColor: "#fff5fa",
-  },
-  imagePlaceholder: {
-    fontSize: 14,
-    color: "#999",
-  },
-  imagePreview: {
-    width: "100%",
-    height: 140,
-    borderRadius: 10,
-    resizeMode: "cover",
-  },
-  photoActions: {
-    flexDirection: "row",
-    marginTop: 8,
-    gap: 8,
-  },
-  avatarButton: {
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#ff4f81",
-    alignItems: "center",
-  },
-  avatarButtonActive: {
-    backgroundColor: "#ff4f81",
-  },
-  avatarButtonText: {
-    fontSize: 12,
-    color: "#ff4f81",
-    fontWeight: "600",
-  },
-  avatarButtonTextActive: {
-    color: "#fff",
-  },
-  removeButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  removeButtonText: {
-    fontSize: 12,
-    color: "#666",
-  },
-
-  addSlotButton: {
-    marginTop: 8,
-    marginBottom: 18,
-  },
-  addSlotText: {
-    fontSize: 14,
-    color: "#007aff",
-    fontWeight: "600",
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 24,
-  },
-  backButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  backText: {
-    fontSize: 14,
-  },
-  nextButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "#ff4f81",
-  },
-  nextButtonDisabled: {
-    opacity: 0.5,
-  },
-  nextText: {
-    fontSize: 14,
-    color: "#fff",
-    fontWeight: "600",
-  },
-});
 
 export default Step4Photos;

@@ -24,7 +24,6 @@ import { Audio } from "expo-av";
 import React from "react";
 import {
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -35,7 +34,9 @@ import {
   RELATIONSHIP_STYLE_OPTIONS,
   relationshipStyleKeyFromValue,
 } from "../../../../src/constants/relationshipStyles";
+
 import { INTEREST_OPTIONS, RegisterForm } from "../index";
+import { useStep2PrefsStyles } from "../styles/useStep2PrefsStyles";
 
 // Local state for adding custom interest
 
@@ -54,6 +55,11 @@ export default function Step2Prefs({
   onNext,
   onBack,
 }: Props) {
+  const {
+    styles,
+    colors,
+  } = useStep2PrefsStyles();
+
   const [showAdd, setShowAdd] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
@@ -395,11 +401,13 @@ export default function Step2Prefs({
             setField("ageMin", vals[0]);
             setField("ageMax", vals[1]);
           }}
-          selectedStyle={{ backgroundColor: "#ff2f6e" }}
+          selectedStyle={{
+            backgroundColor: colors.brand,
+          }}
           markerStyle={{
             height: 22,
             width: 22,
-            backgroundColor: "#ff2f6e",
+            backgroundColor: colors.brand,
             borderRadius: 20,
           }}
         />
@@ -479,7 +487,11 @@ export default function Step2Prefs({
 <View style={styles.card}>
   <Text style={styles.label}>Interests</Text>
   <Text style={styles.subtitle}>
-    Pick up to <Text style={{ fontWeight: "700" }}>5</Text> things you love.
+    Pick up to{" "}
+    <Text style={styles.emphasis}>
+      5
+    </Text>{" "}
+    things you love.
   </Text>
 
   {/* Existing chips */}
@@ -526,9 +538,9 @@ export default function Step2Prefs({
       <TextInput
         style={styles.addInput}
         placeholder="Type something..."
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.textMuted}
         value={search}
-onChangeText={(v: string) => setSearch(v)}
+        onChangeText={(v: string) => setSearch(v)}
       />
 
       {/* Auto-suggest dropdown */}
@@ -705,292 +717,4 @@ onChangeText={(v: string) => setSearch(v)}
     </View>
   );
 }
-
-
-// =============================
-// 🎨 Styles
-// =============================
-const styles = StyleSheet.create({
-  container: {
-    paddingVertical: 8,
-    gap: 8,
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  card: {
-    backgroundColor: "#fafafa",
-    borderRadius: 14,
-    padding: 10,
-    marginVertical: 4,
-  },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  half: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#444",
-  },
-  subtitle: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-    marginBottom: 6,
-  },
-  value: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#333",
-  },
-  chipsScroll: {
-  marginTop: 4,
-},
-
-  chipsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#fff",
-  },
-  chipActive: {
-    backgroundColor: "#ff2f6e",
-    borderColor: "#ff2f6e",
-  },
-  chipText: {
-    fontSize: 12,
-    color: "#444",
-  },
-  chipTextActive: {
-    fontSize: 12,
-    color: "#fff",
-    fontWeight: "600",
-  },
-  footer: {
-    marginTop: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  backBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  backText: {
-    fontSize: 14,
-    color: "#444",
-  },
-  nextBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#af1a47ff",
-  },
-  nextBtnDisabled: {
-    backgroundColor: "#ccc",
-  },
-  nextText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-  addChip: {
-  paddingHorizontal: 12,
-  paddingVertical: 6,
-  backgroundColor: "#fff",
-  borderRadius: 999,
-  borderWidth: 1,
-  borderColor: "#bbb",
-  marginTop: 6,
-},
-addChipText: {
-  color: "#ff2f6e",
-  fontWeight: "700",
-  fontSize: 12,
-},
-
-addBox: {
-  marginTop: 10,
-},
-addLabel: {
-  fontSize: 12,
-  color: "#666",
-  marginBottom: 4,
-},
-addInput: {
-  backgroundColor: "#fff",
-  borderRadius: 10,
-  borderWidth: 1,
-  borderColor: "#ddd",
-  paddingHorizontal: 10,
-  paddingVertical: 8,
-  marginBottom: 6,
-},
-
-suggestBox: {
-  backgroundColor: "#fff",
-  borderWidth: 1,
-  borderColor: "#ddd",
-  borderRadius: 10,
-  maxHeight: 140,
-  overflow: "hidden",
-},
-suggestItem: {
-  paddingVertical: 8,
-  paddingHorizontal: 12,
-  borderBottomColor: "#eee",
-  borderBottomWidth: 1,
-},
-suggestItemSelected: {
-  backgroundColor: "#ffeff5",
-},
-suggestText: {
-  fontSize: 13,
-  color: "#444",
-},
-suggestTextSelected: {
-  color: "#ff2f6e",
-  fontWeight: "700",
-},
-
-  cancelAddBtn: {
-    paddingVertical: 6,
-    alignSelf: "flex-end",
-  },
-  cancelAddText: {
-    color: "#999",
-    fontSize: 12,
-  },
-
-  // ===== Voice styles =====
-  voiceHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  voiceBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: "#ffe2ee",
-  },
-  voiceBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#af1a47ff",
-  },
-  voiceSubtitle: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 8,
-  },
-  voiceErrorText: {
-    fontSize: 12,
-    color: "#c53030",
-    marginBottom: 8,
-  },
-  voiceCenter: {
-    alignItems: "center",
-    marginVertical: 8,
-  },
-  voiceMicOuter: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2,
-    borderColor: "#ffb3ca",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    backgroundColor: "#ffeef5",
-  },
-  voiceMicOuterActive: {
-    borderColor: "#ff2f6e",
-    backgroundColor: "#ffe2ee",
-  },
-  voiceMicInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ff2f6e",
-  },
-  voiceMicIcon: {
-    fontSize: 24,
-    color: "#fff",
-  },
-  voiceStateText: {
-    fontSize: 13,
-    color: "#444",
-    marginBottom: 2,
-  },
-  voiceTimer: {
-    fontSize: 12,
-    color: "#777",
-  },
-  voiceActionsRow: {
-    marginTop: 8,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    alignItems: "center",
-  },
-  voicePrimaryBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#ff2f6e",
-  },
-  voicePrimaryText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  voiceSecondaryBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#fff",
-  },
-  voiceSecondaryText: {
-    fontSize: 12,
-    color: "#444",
-  },
-  voiceSavedPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#e6ffed",
-  },
-  voiceSavedText: {
-    fontSize: 12,
-    color: "#166534",
-    fontWeight: "600",
-  },
-});
 

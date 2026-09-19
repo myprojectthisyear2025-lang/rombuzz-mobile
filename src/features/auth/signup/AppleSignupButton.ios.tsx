@@ -1,27 +1,23 @@
 /**
- * ============================================================
- * 📁 File: src/features/auth/signup/AppleSignupButton.ios.tsx
- * 🎯 Purpose: Native Sign up with Apple button for iOS.
- *
- * LOCATION:
- *   src/features/auth/signup/AppleSignupButton.ios.tsx
- *
- * USED BY:
- *   RomBuzz signup form on iOS.
- *
- * RESPONSIBILITIES:
- *   - Check Apple authentication availability.
- *   - Render Apple's native signup button.
- *   - Respect the signup screen busy state.
- * ============================================================
+ * Path: src/features/auth/signup/AppleSignupButton.ios.tsx
+ * Purpose: Render Apple's native signup button with RomBuzz light/dark appearance.
  */
 
 import * as AppleAuthentication from "expo-apple-authentication";
-import { useEffect, useState } from "react";
+
 import {
-    StyleSheet,
-    View,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  StyleSheet,
+  View,
 } from "react-native";
+
+import {
+  useRomBuzzTheme,
+} from "@/src/design/RomBuzzThemeProvider";
 
 type Props = {
   disabled: boolean;
@@ -32,13 +28,23 @@ export default function AppleSignupButton({
   disabled,
   onPress,
 }: Props) {
-  const [available, setAvailable] =
-    useState(false);
+  const [
+    available,
+    setAvailable,
+  ] = useState(false);
+
+  const {
+    isDark,
+  } = useRomBuzzTheme();
 
   useEffect(() => {
-    AppleAuthentication.isAvailableAsync()
+    AppleAuthentication
+      .isAvailableAsync()
       .then(setAvailable)
-      .catch(() => setAvailable(false));
+      .catch(
+        () =>
+          setAvailable(false)
+      );
   }, []);
 
   if (!available) {
@@ -49,22 +55,32 @@ export default function AppleSignupButton({
     <View
       style={[
         styles.wrapper,
-        disabled && styles.disabled,
+
+        disabled &&
+          styles.disabled,
       ]}
       pointerEvents={
-        disabled ? "none" : "auto"
+        disabled
+          ? "none"
+          : "auto"
       }
     >
       <AppleAuthentication.AppleAuthenticationButton
         buttonType={
           AppleAuthentication
-            .AppleAuthenticationButtonType.SIGN_UP
+            .AppleAuthenticationButtonType
+            .SIGN_UP
         }
         buttonStyle={
-          AppleAuthentication
-            .AppleAuthenticationButtonStyle.BLACK
+          isDark
+            ? AppleAuthentication
+                .AppleAuthenticationButtonStyle
+                .WHITE
+            : AppleAuthentication
+                .AppleAuthenticationButtonStyle
+                .BLACK
         }
-        cornerRadius={20}
+        cornerRadius={16}
         style={styles.button}
         onPress={onPress}
       />
@@ -72,19 +88,20 @@ export default function AppleSignupButton({
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: {
-    width: "100%",
-    height: 54,
-    marginTop: 11,
-  },
+const styles =
+  StyleSheet.create({
+    wrapper: {
+      width: "100%",
+      height: 52,
+      marginBottom: 10,
+    },
 
-  button: {
-    width: "100%",
-    height: 54,
-  },
+    button: {
+      width: "100%",
+      height: 52,
+    },
 
-  disabled: {
-    opacity: 0.7,
-  },
-});
+    disabled: {
+      opacity: 0.6,
+    },
+  });

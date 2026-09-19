@@ -1,35 +1,28 @@
 /**
- * ============================================================
- * 📁 File: src/features/auth/login/LoginScreenView.tsx
- * 🎯 Purpose: Render the visual shell of the RomBuzz login screen.
- *
- * LOCATION:
- *   src/features/auth/login/LoginScreenView.tsx
- *
- * USED BY:
- *   app/auth/login.tsx
- *
- * RESPONSIBILITIES:
- *   - Preserve the existing login background and branding.
- *   - Run the existing soft logo pulse animation.
- *   - Render the modular LoginForm.
- * ============================================================
+ * Path: src/features/auth/login/LoginScreenView.tsx
+ * Purpose: Render the theme-aware visual shell of the RomBuzz login screen.
+ * Used by: app/auth/login.tsx.
  */
 
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import {
-  Animated,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   SafeAreaView,
   ScrollView,
+  StatusBar,
   Text,
   View,
 } from "react-native";
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
+
 import LoginForm from "./LoginForm";
-import { styles } from "./loginStyles";
+import { loginStyles as styles } from "./loginStyles";
+import { useLoginThemeStyles } from "./useLoginThemeStyles";
 
 type LoginController = ReturnType<
   typeof import("./useLoginController").useLoginController
@@ -39,129 +32,104 @@ type Props = {
   controller: LoginController;
 };
 
-export default function LoginScreenView({
-  controller,
-}: Props) {
-  const logoScale =
-    useRef(new Animated.Value(1)).current;
+export default function LoginScreenView({ controller }: Props) {
+  const fontsLoaded = useRomBuzzTypography();
+  const { colors, statusBarStyle } = useRomBuzzTheme();
+  const theme = useLoginThemeStyles();
 
-  const glowOpacity =
-    useRef(new Animated.Value(0.45)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(logoScale, {
-            toValue: 1.05,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-          Animated.timing(logoScale, {
-            toValue: 1,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.sequence([
-          Animated.timing(glowOpacity, {
-            toValue: 0.9,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-          Animated.timing(glowOpacity, {
-            toValue: 0.45,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]),
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={[styles.safeArea, theme.safeArea]}>
+        <StatusBar
+          barStyle={statusBarStyle}
+          backgroundColor={colors.background}
+        />
+      </SafeAreaView>
     );
-
-    animation.start();
-
-    return () => {
-      animation.stop();
-    };
-  }, [glowOpacity, logoScale]);
+  }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, theme.safeArea]}>
+      <StatusBar
+        barStyle={statusBarStyle}
+        backgroundColor={colors.background}
+      />
+
       <KeyboardAvoidingView
-        style={styles.container}
-        behavior={
-          Platform.OS === "ios"
-            ? "padding"
-            : undefined
-        }
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={[
+            styles.scrollContent,
+            theme.scrollContent,
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.backgroundLayer}>
-            <View
-              style={[styles.orb, styles.orbTop]}
-            />
-            <View
-              style={[
-                styles.orb,
-                styles.orbMiddle,
-              ]}
-            />
-            <View
-              style={[
-                styles.orb,
-                styles.orbBottom,
-              ]}
-            />
-            <View style={styles.gridLineOne} />
-            <View style={styles.gridLineTwo} />
-            <View
-              style={styles.gridLineThree}
-            />
-          </View>
+          <View style={styles.content}>
+            <View style={styles.brandBlock}>
+              <View style={[styles.logoTile, theme.logoTile]}>
+                <Image
+                  source={require("../../../../assets/images/logo.png")}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              </View>
 
-          <View style={styles.header}>
-            <Animated.View
+              <Text style={[styles.wordmark, theme.wordmark]}>
+                Rom
+                <Text style={theme.wordmarkAccent}>Buzz</Text>
+              </Text>
+
+              <Text style={[styles.subtitle, theme.subtitle]}>
+                Connect with people nearby in real-time
+              </Text>
+            </View>
+
+            <View style={[styles.formCard, theme.formCard]}>
+              <LoginForm controller={controller} />
+            </View>
+
+            <Text
               style={[
-                styles.logoWrapper,
-                {
-                  opacity:
-                    glowOpacity.interpolate({
-                      inputRange: [0.45, 0.9],
-                      outputRange: [0.96, 1],
-                    }),
-                  transform: [
-                    { scale: logoScale },
-                  ],
-                },
+                styles.footerText,
+                theme.footerText,
               ]}
             >
-              <Image
-                source={require(
-                  "../../../../assets/images/logo.png"
-                )}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </Animated.View>
-
-            <Text style={styles.title}>
-              RomBuzz
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Connect with people nearby in
-              real-time
+              By continuing, you agree
+              to the RomBuzz{" "}
+              <Text
+                accessibilityRole="link"
+                style={{
+                  textDecorationLine: "underline",
+                }}
+                onPress={() => {
+                  void Linking.openURL(
+                    "https://www.rombuzz.com/terms"
+                  );
+                }}
+              >
+                Terms & Conditions
+              </Text>{" "}
+              and{" "}
+              <Text
+                accessibilityRole="link"
+                style={{
+                  textDecorationLine: "underline",
+                }}
+                onPress={() => {
+                  void Linking.openURL(
+                    "https://www.rombuzz.com/privacy"
+                  );
+                }}
+              >
+                Privacy Policy
+              </Text>
+              .
             </Text>
           </View>
-
-          <LoginForm controller={controller} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -294,7 +294,11 @@ export default function LetsBuzzReels({
   const [reportReel, setReportReel] = useState<BuzzPost | null>(null);
   const [reelMenuOpen, setReelMenuOpen] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Reels must be visible immediately when cached data is available.
+  // Starting at 0 kept the whole screen invisible until the fresh
+  // /feed/letsbuzz request completed.
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
   const likeAnim = useRef(new Animated.Value(0)).current;
   const doubleTapAnim = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef(0);

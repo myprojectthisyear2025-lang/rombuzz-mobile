@@ -20,7 +20,6 @@
 
 import React, { useMemo, useState } from "react";
 import {
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import {
 
 import { ScrollView } from "react-native";
 import { GENDERS, LOOKING_FOR, RegisterForm } from "../index";
+import { useStep1BasicStyles } from "../styles/useStep1BasicStyles";
 
 // Month names for header
 const MONTH_NAMES = [
@@ -58,10 +58,15 @@ type Props = {
 export default function Step1Basic({
   form,
   setField,
-  dobInvalid,
+ dobInvalid,
   canNext,
   onNext,
 }: Props) {
+  const {
+    styles,
+    colors,
+  } = useStep1BasicStyles();
+
   // --- Date formatting helpers ---
   const formatMMDDYYYY = (date: Date) => {
     const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -198,14 +203,14 @@ export default function Step1Basic({
           <TextInput
             style={[styles.input, styles.half]}
             placeholder="First name"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={form.firstName}
             onChangeText={(v) => setField("firstName", v)}
           />
           <TextInput
             style={[styles.input, styles.half]}
             placeholder="Last name"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={form.lastName}
             onChangeText={(v) => setField("lastName", v)}
           />
@@ -216,7 +221,7 @@ export default function Step1Basic({
           <TextInput
             style={styles.inputFlex}
             placeholder="Password (min 6 characters)"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             secureTextEntry={!showPass}
             value={form.password}
             onChangeText={(v) => setField("password", v)}
@@ -236,7 +241,7 @@ export default function Step1Basic({
           <TextInput
             style={styles.inputFlex}
             placeholder="Confirm password"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             secureTextEntry={!showConfirmPass}
             value={form.confirm}
             onChangeText={(v) => setField("confirm", v)}
@@ -269,7 +274,10 @@ export default function Step1Basic({
               <Text style={styles.dropdownText}>
                 {form.gender || "Select Gender"}
               </Text>
-              <Text>▾</Text>
+
+              <Text style={styles.dropdownChevron}>
+                ▾
+              </Text>
             </TouchableOpacity>
 
             {showGender && (
@@ -283,7 +291,9 @@ export default function Step1Basic({
                       setShowGender(false);
                     }}
                   >
-                    <Text>{g}</Text>
+                    <Text style={styles.dropdownItemText}>
+                      {g}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -330,7 +340,10 @@ export default function Step1Basic({
                 ? LOOKING_FOR.find((x) => x.key === form.lookingFor)?.label
                 : "Select one"}
             </Text>
-            <Text>▾</Text>
+
+            <Text style={styles.dropdownChevron}>
+              ▾
+            </Text>
           </TouchableOpacity>
 
           {showLooking && (
@@ -344,7 +357,9 @@ export default function Step1Basic({
                     setShowLooking(false);
                   }}
                 >
-                  <Text>{opt.label}</Text>
+                  <Text style={styles.dropdownItemText}>
+                    {opt.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -523,283 +538,3 @@ export default function Step1Basic({
     </TouchableWithoutFeedback>
   );
 }
-
-// =============================
-// 🎨 Styles
-// =============================
-const styles = StyleSheet.create({
-  container: {
-    paddingVertical: 8,
-    position: "relative", // needed for calendar overlay
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 8,
-  },
-  col: {
-    flexDirection: "column",
-  },
-  half: {
-    flex: 1,
-  },
-  input: {
-    backgroundColor: "#f5f5f5",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    fontSize: 15,
-    marginBottom: 8,
-  },
-  inputSmall: {
-    backgroundColor: "#f5f5f5",
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    borderRadius: 10,
-    fontSize: 14,
-    marginTop: 4,
-  },
-  inputInvalid: {
-    borderWidth: 1,
-    borderColor: "#ff3366",
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#555",
-  },
-  block: {
-    marginTop: 6,
-    marginBottom: 4,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 6,
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#fff",
-  },
-  chipActive: {
-    backgroundColor: "#ff2f6e",
-    borderColor: "#ff2f6e",
-  },
-  chipText: {
-    fontSize: 12,
-    color: "#444",
-  },
-  chipTextActive: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  error: {
-    fontSize: 11,
-    color: "#ff3366",
-    marginTop: 2,
-  },
-   dobNote: {
-    fontSize: 11,
-    color: "#777",
-    marginTop: 2,
-  },
-  footerRow: {
-    marginTop: 12,
-    alignItems: "flex-end",
-  },
-  nextButton: {
-    backgroundColor: "#ff2f6e",
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  nextButtonDisabled: {
-    backgroundColor: "#ccc",
-  },
-  nextText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-
-  // Dropdown styles
-  dropdownButton: {
-    backgroundColor: "#f5f5f5",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 6,
-  },
-  dropdownText: {
-    color: "#444",
-    fontSize: 14,
-  },
-  dropdownList: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    marginTop: 6,
-    overflow: "hidden",
-  },
-  dropdownItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-
-  // Password input + eye icon
-  inputWithIcon: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginBottom: 8,
-  },
-  inputWithIconError: {
-    borderWidth: 1,
-    borderColor: "#d10000",
-  },
-  passwordMismatchText: {
-    color: "#d10000",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: -4,
-    marginBottom: 8,
-  },
-  inputFlex: {
-    flex: 1,
-    fontSize: 15,
-  },
-  eye: {
-    fontSize: 18,
-    marginLeft: 8,
-  },
-
-  // Calendar overlay
-  calendarOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 50,
-  },
-  calendarBackdrop: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.4)",
-  },
-  calendarCard: {
-    width: "90%",
-    maxWidth: 360,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    elevation: 6,
-  },
-  calendarHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  calendarMonthLabel: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#333",
-  },
-  calendarNavArrow: {
-    fontSize: 22,
-    paddingHorizontal: 6,
-    color: "#ff2f6e",
-  },
-  calendarWeekRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  calendarDayCell: {
-    width: 32,
-    height: 32,
-    borderRadius: 999,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  calendarDayEmpty: {
-    backgroundColor: "transparent",
-  },
-  calendarDaySelected: {
-    backgroundColor: "#ff2f6e",
-  },
-  calendarDayText: {
-    fontSize: 13,
-    color: "#333",
-  },
-  calendarDayTextSelected: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-
-  calendarWeekday: {
-    fontWeight: "600",
-    fontSize: 12,
-    color: "#999",
-  },
-  yearWheelBox: {
-  width: "100%",
-  maxHeight: 160,
-  borderWidth: 1,
-  borderColor: "#eee",
-  borderRadius: 12,
-  marginBottom: 10,
-  overflow: "hidden",
-},
-
-yearWheel: {
-  maxHeight: 160,
-},
-
-yearItem: {
-  paddingVertical: 8,
-  alignItems: "center",
-},
-
-yearItemSelected: {
-  backgroundColor: "#ffeff5",
-},
-
-yearText: {
-  fontSize: 15,
-  color: "#444",
-},
-
-yearTextSelected: {
-  fontSize: 15,
-  fontWeight: "700",
-  color: "#ff2f6e",
-},
-
-});

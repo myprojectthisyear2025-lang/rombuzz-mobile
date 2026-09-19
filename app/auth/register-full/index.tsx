@@ -46,7 +46,7 @@ import {
   Image, // ADD THIS
   SafeAreaView,
   ScrollView,
-  StyleSheet,
+  StatusBar,
   Text,
   useWindowDimensions,
   View,
@@ -60,6 +60,7 @@ import {
 import {
   relationshipStyleKeyFromValue,
 } from "../../../src/constants/relationshipStyles";
+import { useRomBuzzTypography } from "../../../src/design/rombuzzTypography";
 import {
   clearOnboardingDraft,
   loadOnboardingDraft,
@@ -76,6 +77,7 @@ import Step1Basic from "./steps/Step1Basic";
 import Step2Prefs from "./steps/Step2Prefs";
 import Step4Photos from "./steps/Step4Photos";
 import Step6Summary from "./steps/Step6Summary";
+import { useRegisterFullStyles } from "./styles/useRegisterFullStyles";
 
 /* =========================
    Catalogs (match web)
@@ -179,9 +181,17 @@ export default function RegisterFullScreen() {
     appleFirstName?: string;
     appleLastName?: string;
     signupVerificationTicket?: string;
-    appleSignupTicket?: string;
+       appleSignupTicket?: string;
     authProvider?: string;
   }>();
+
+  const fontsLoaded = useRomBuzzTypography();
+
+  const {
+    styles,
+    colors,
+    statusBarStyle,
+  } = useRegisterFullStyles();
 
   const { width, height } = useWindowDimensions();
 
@@ -689,9 +699,14 @@ export default function RegisterFullScreen() {
     }
   };
 
-  if (!draftReady) {
+  if (!fontsLoaded || !draftReady) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <StatusBar
+          barStyle={statusBarStyle}
+          backgroundColor={colors.background}
+        />
+
         <View
           style={[
             styles.container,
@@ -701,7 +716,10 @@ export default function RegisterFullScreen() {
             },
           ]}
         >
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator
+            size="large"
+            color={colors.brand}
+          />
         </View>
       </SafeAreaView>
     );
@@ -709,6 +727,11 @@ export default function RegisterFullScreen() {
 
 return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar
+        barStyle={statusBarStyle}
+        backgroundColor={colors.background}
+      />
+
       <View style={styles.container}>
         <View
           style={[
@@ -759,7 +782,7 @@ return (
 
           {busy && step !== 6 && (
             <View style={styles.busyRow}>
-              <ActivityIndicator />
+              <ActivityIndicator color={colors.brand} />
               <Text style={styles.busyText}>Saving...</Text>
             </View>
           )}
@@ -782,115 +805,3 @@ return (
     </SafeAreaView>
   );
 }
-
-// =============================
-// 🎨 Styles - Responsive for All Screens
-// =============================
-const styles = StyleSheet.create({
-  // Wrap everything in SafeAreaView for notches
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#ff2f6e",
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#ff2f6e",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    width: "100%",
-    maxWidth: 500,
-    flex: 1,
-    alignSelf: "center",
-    overflow: "hidden",
-
-    // Shadow for better visual separation
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  cardSmall: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  headerSmall: {
-    marginBottom: 6,
-  },
-  logo: {
-    width: 58,
-    height: 58,
-    marginBottom: 4,
-  },
-  logoSmall: {
-    width: 48,
-    height: 48,
-    marginBottom: 2,
-  },
-  title: {
-    fontSize: 23,
-    fontWeight: "800",
-    color: "#ff2f6e",
-    textAlign: "center",
-    marginBottom: 2,
-  },
-  titleSmall: {
-    fontSize: 20,
-    marginBottom: 1,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: "#777",
-    textAlign: "center",
-    marginBottom: 0,
-  },
-  subtitleSmall: {
-    fontSize: 12,
-    marginBottom: 0,
-  },
-  progressTrack: {
-    height: 7,
-    backgroundColor: "#ffe2ee",
-    borderRadius: 999,
-    overflow: "hidden",
-    marginBottom: 12,
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#ff2f6e",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1, // Important for ScrollView to expand
-    paddingBottom: 30, // Extra padding for keyboard
-  },
-  scrollContentSmall: {
-    paddingBottom: 20,
-  },
-  busyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 12,
-    paddingVertical: 8,
-  },
-  busyText: {
-    fontSize: 13,
-    color: "#777",
-  },
-});

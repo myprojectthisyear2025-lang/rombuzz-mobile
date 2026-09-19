@@ -1,22 +1,10 @@
 /**
- * ============================================================
- * 📁 File: src/features/auth/login/LoginForm.tsx
- * 🎯 Purpose: Render RomBuzz login controls and provider buttons.
- *
- * LOCATION:
- *   src/features/auth/login/LoginForm.tsx
- *
- * USED BY:
- *   LoginScreenView.tsx
- *
- * RESPONSIBILITIES:
- *   - Email/password controls.
- *   - Google login button.
- *   - iOS-only Apple login button.
- *   - Forgot-password and signup navigation.
- * ============================================================
+ * Path: src/features/auth/login/LoginForm.tsx
+ * Purpose: Render theme-aware RomBuzz login controls and provider buttons.
+ * Used by: LoginScreenView.tsx.
  */
 
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
@@ -27,8 +15,11 @@ import {
   View,
 } from "react-native";
 
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+
 import AppleLoginButton from "./AppleLoginButton";
-import { styles } from "./loginStyles";
+import { loginFormStyles as styles } from "./loginFormStyles";
+import { useLoginThemeStyles } from "./useLoginThemeStyles";
 
 type LoginController = ReturnType<
   typeof import("./useLoginController").useLoginController
@@ -56,26 +47,34 @@ export default function LoginForm({ controller }: Props) {
     handleAppleLogin,
   } = controller;
 
+  const { colors } = useRomBuzzTheme();
+  const theme = useLoginThemeStyles();
   const socialBusy = loading || googleLoading || appleLoading;
 
   return (
-    <View style={styles.formCard}>
+    <>
       {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorIcon}>!</Text>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={[styles.errorBox, theme.errorBox]}>
+          <Text style={[styles.errorIcon, theme.errorIcon]}>!</Text>
+          <Text style={[styles.errorText, theme.errorText]}>
+            {error}
+          </Text>
         </View>
       ) : null}
 
       <View style={styles.form}>
         <View style={styles.inputGroup}>
-          <View style={styles.inputShell}>
-            <Text style={styles.inputIcon}>✉</Text>
+          <View style={[styles.inputShell, theme.inputShell]}>
+            <Ionicons
+              name="mail-outline"
+              size={18}
+              style={[styles.inputIcon, theme.inputIcon]}
+            />
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, theme.input]}
               placeholder="Email"
-              placeholderTextColor="#aa8b99"
+              placeholderTextColor={colors.textMuted}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -86,26 +85,43 @@ export default function LoginForm({ controller }: Props) {
         </View>
 
         <View style={styles.inputGroup}>
-          <View style={styles.passwordWrapper}>
-            <Text style={styles.inputIcon}>⌁</Text>
+          <View style={[styles.inputShell, theme.inputShell]}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={18}
+              style={[styles.inputIcon, theme.inputIcon]}
+            />
 
             <TextInput
-              style={styles.passwordInput}
+              style={[styles.passwordInput, theme.input]}
               placeholder="Password"
-              placeholderTextColor="#aa8b99"
+              placeholderTextColor={colors.textMuted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
             />
 
             <TouchableOpacity
-              style={styles.showButton}
-              onPress={() => setShowPassword((value) => !value)}
-              activeOpacity={0.8}
+              style={[styles.showButton, theme.showButton]}
+              onPress={() =>
+                setShowPassword((value) => !value)
+              }
+              activeOpacity={0.75}
+              accessibilityLabel={
+                showPassword
+                  ? "Hide password"
+                  : "Show password"
+              }
             >
-              <Text style={styles.showButtonText}>
-                {showPassword ? "Hide" : "Show"}
-              </Text>
+              <Ionicons
+                name={
+                  showPassword
+                    ? "eye-off-outline"
+                    : "eye-outline"
+                }
+                size={19}
+                style={theme.showButtonIcon}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -113,18 +129,22 @@ export default function LoginForm({ controller }: Props) {
         <TouchableOpacity
           style={[
             styles.primaryButton,
+            theme.primaryButton,
             loading && styles.disabledButton,
           ]}
           onPress={handleLogin}
           disabled={loading}
-          activeOpacity={0.86}
+          activeOpacity={0.82}
         >
-          <View style={styles.primaryButtonShine} />
-
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.primaryButtonText}>
+            <Text
+              style={[
+                styles.primaryButtonText,
+                theme.primaryButtonText,
+              ]}
+            >
               Login
             </Text>
           )}
@@ -135,33 +155,63 @@ export default function LoginForm({ controller }: Props) {
           onPress={() =>
             router.push("/auth/forgot-password")
           }
-          activeOpacity={0.75}
+          activeOpacity={0.72}
         >
-          <Text style={styles.inlineLinkText}>
+          <Text
+            style={[
+              styles.inlineLinkText,
+              theme.inlineLinkText,
+            ]}
+          >
             Forgot password?
           </Text>
         </TouchableOpacity>
 
         <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
+          <View
+            style={[
+              styles.dividerLine,
+              theme.dividerLine,
+            ]}
+          />
+
+          <Text
+            style={[
+              styles.dividerText,
+              theme.dividerText,
+            ]}
+          >
+            or
+          </Text>
+
+          <View
+            style={[
+              styles.dividerLine,
+              theme.dividerLine,
+            ]}
+          />
         </View>
 
         <TouchableOpacity
           style={[
-            styles.googleButton,
+            styles.socialButton,
+            theme.socialButton,
             socialBusy && styles.disabledButton,
           ]}
           disabled={socialBusy}
           onPress={handleGoogleLogin}
-          activeOpacity={0.85}
+          activeOpacity={0.82}
         >
           {googleLoading ? (
-            <ActivityIndicator color="#ff176e" />
+            <ActivityIndicator color={colors.brand} />
           ) : (
-            <View style={styles.googleButtonContent}>
-              <View style={styles.googleIconCircle}>
+            <View style={styles.socialButtonContent}>
+              <View
+                style={[
+                  styles.googleIconCircle,
+                  theme.googleIconCircle,
+                ]}
+              >
                 <Image
                   source={{
                     uri: "https://developers.google.com/identity/images/g-logo.png",
@@ -171,7 +221,12 @@ export default function LoginForm({ controller }: Props) {
                 />
               </View>
 
-              <Text style={styles.googleButtonText}>
+              <Text
+                style={[
+                  styles.socialButtonText,
+                  theme.socialButtonText,
+                ]}
+              >
                 Login with Google
               </Text>
             </View>
@@ -184,15 +239,25 @@ export default function LoginForm({ controller }: Props) {
         />
 
         <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => router.push("/auth/signup")}
-          activeOpacity={0.82}
+          style={[
+            styles.secondaryButton,
+            theme.secondaryButton,
+          ]}
+          onPress={() =>
+            router.push("/auth/signup")
+          }
+          activeOpacity={0.78}
         >
-          <Text style={styles.secondaryButtonText}>
+          <Text
+            style={[
+              styles.secondaryButtonText,
+              theme.secondaryButtonText,
+            ]}
+          >
             Create a new account
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </>
   );
 }
