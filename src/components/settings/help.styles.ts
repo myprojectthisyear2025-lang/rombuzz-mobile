@@ -1,0 +1,112 @@
+/**
+ * Path: src/components/settings/help.styles.ts
+ * Purpose: Compact support conversation and FAQ styles using the shared RomBuzz palette.
+ */
+import { StyleSheet } from "react-native";
+import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+
+export function createHelpStyles(colors: RomBuzzColors) {
+  return StyleSheet.create({
+    faq: {
+      paddingVertical: 16,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    q: { color: colors.text, fontSize: 14, lineHeight: 20, fontFamily: RBZFont.semiBold },
+    a: {
+      color: colors.textSecondary,
+      fontSize: 12.5,
+      marginTop: 6,
+      lineHeight: 19,
+      fontFamily: RBZFont.regular,
+    },
+    cupidHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+    cupidIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      backgroundColor: colors.surfaceMuted,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    cupidTitle: { color: colors.text, fontSize: 16, fontFamily: RBZFont.bold },
+    cupidSubtitle: {
+      color: colors.textSecondary,
+      marginTop: 5,
+      fontSize: 12.5,
+      lineHeight: 19,
+      fontFamily: RBZFont.regular,
+    },
+    chatBox: { marginTop: 24 },
+    messageBlock: { marginBottom: 16 },
+    bubble: { maxWidth: "100%", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+    cupidBubble: {
+      alignSelf: "flex-start",
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    userBubble: { alignSelf: "flex-end", backgroundColor: colors.surfaceMuted },
+    bubbleText: { fontFamily: RBZFont.medium, fontSize: 13, lineHeight: 20 },
+    cupidBubbleText: { color: colors.text },
+    userBubbleText: { color: colors.text },
+    typingRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
+    typingText: { color: colors.textSecondary, fontSize: 12.5, fontFamily: RBZFont.medium },
+    suggestionsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+    suggestionChip: {
+      maxWidth: "100%",
+      minHeight: 44,
+      justifyContent: "center",
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    suggestionText: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, fontFamily: RBZFont.medium },
+    ticketButton: {
+      alignSelf: "flex-start",
+      minHeight: 44,
+      justifyContent: "center",
+      marginTop: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    ticketButtonText: { color: colors.text, fontSize: 13, fontFamily: RBZFont.bold },
+    chatInputRow: { marginTop: 4, flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
+    chatInput: {
+      flex: 1,
+      minWidth: 140,
+      minHeight: 50,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: 14,
+      paddingVertical: 13,
+      color: colors.text,
+      fontSize: 14,
+      fontFamily: RBZFont.medium,
+    },
+    sendButton: {
+      minHeight: 50,
+      borderRadius: 14,
+      backgroundColor: colors.brand,
+      paddingHorizontal: 16,
+      paddingVertical: 13,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sendButtonDisabled: { backgroundColor: colors.surfaceMuted },
+    sendButtonText: { color: colors.white, fontSize: 14, fontFamily: RBZFont.bold },
+    ticketTitle: { color: colors.textSecondary, fontSize: 13, fontFamily: RBZFont.medium, lineHeight: 19 },
+    messageInput: { minHeight: 130, lineHeight: 20 },
+    disabled: { opacity: 0.55 },
+  });
+}

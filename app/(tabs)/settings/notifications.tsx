@@ -17,10 +17,8 @@ export default function NotificationSettings() {
       <Card>
         <ToggleRow icon="mail-outline" label="Email notifications" value={email} onChange={setEmail} />
         <ToggleRow icon="notifications-outline" label="Push notifications" value={push} onChange={setPush} />
-        <SmallText>
-          Your web page says to wire these to your notifications API later, so this matches that behavior for now.
-        </SmallText>
       </Card>
+      <SmallText>These preferences are not saved yet.</SmallText>
     </ScreenShell>
   );
 }

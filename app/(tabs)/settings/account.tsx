@@ -5,12 +5,19 @@
  * ============================================================================
  */
 import * as SecureStore from "expo-secure-store";
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Card, RBZ, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { SettingsButton, SettingsField, SettingsNotice } from "@/src/components/settings/SettingsControls";
+import { useSettingsAlert } from "@/src/components/settings/SettingsDialog";
+import { Card, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
 import { rbzFetch } from "../../../src/lib/_rbzApi";
 
 export default function AccountSettings() {
+  const { colors } = useRomBuzzTheme();
+  const alert = useSettingsAlert();
+  const [loadError, setLoadError] = useState("");
   const [me, setMe] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,8 +36,9 @@ export default function AccountSettings() {
     return `You can change your name again in ${30 - days} day(s).`;
   }, [me]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       // web uses /users/me for account info :contentReference[oaicite:7]{index=7}
       const j = await rbzFetch<any>("/users/me");
@@ -38,15 +46,16 @@ export default function AccountSettings() {
       setFirstName(j?.user?.firstName || j?.firstName || "");
       setLastName(j?.user?.lastName || j?.lastName || "");
     } catch (e: any) {
-      Alert.alert("Failed", e.message || "Could not load account");
+      setLoadError(e.message || "Could not load account");
+      alert("Failed", e.message || "Could not load account");
     } finally {
       setLoading(false);
     }
-  };
+  }, [alert]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const saveName = async () => {
     try {
@@ -57,30 +66,30 @@ export default function AccountSettings() {
       const updated = j?.user || j;
       setMe(updated);
       await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(updated));
-      Alert.alert("Saved", "Your name was updated.");
+      alert("Saved", "Your name was updated.");
     } catch (e: any) {
-      Alert.alert("Failed", e.message || "Failed to update name");
+      alert("Failed", e.message || "Failed to update name");
     }
   };
 
   const requestEmailChange = async () => {
     try {
-      if (!newEmail.trim()) return Alert.alert("Missing", "Enter a new email");
+      if (!newEmail.trim()) return alert("Missing", "Enter a new email");
       // backend route name matches your web account page logic (request/confirm flow) :contentReference[oaicite:8]{index=8}
       await rbzFetch("/account/request-email-change", {
         method: "POST",
         body: { newEmail: newEmail.trim() },
       });
       setEmailStep("code");
-      Alert.alert("Check your email", "We sent a code to confirm the new email.");
+      alert("Check your email", "We sent a code to confirm the new email.");
     } catch (e: any) {
-      Alert.alert("Failed", e.message || "Failed to request email change");
+      alert("Failed", e.message || "Failed to request email change");
     }
   };
 
   const confirmEmailChange = async () => {
     try {
-      if (!code.trim()) return Alert.alert("Missing", "Enter the code");
+      if (!code.trim()) return alert("Missing", "Enter the code");
       const j = await rbzFetch<any>("/account/confirm-email-change", {
         method: "POST",
         body: { newEmail: newEmail.trim(), code: code.trim() },
@@ -91,111 +100,76 @@ export default function AccountSettings() {
       setCode("");
       setNewEmail("");
       setEmailStep("idle");
-      Alert.alert("Done", "Email updated ✔");
+      alert("Done", "Email updated ✔");
     } catch (e: any) {
-      Alert.alert("Failed", e.message || "Failed to confirm email change");
+      alert("Failed", e.message || "Failed to confirm email change");
     }
   };
 
   return (
     <ScreenShell title="Account">
+      {loading ? <SettingsNotice loading>Loading your account…</SettingsNotice> : null}
+      {loadError ? (
+        <>
+          <SettingsNotice error>{loadError}</SettingsNotice>
+          <SettingsButton label="Try again" variant="secondary" onPress={load} />
+        </>
+      ) : null}
       <SectionTitle>Your details</SectionTitle>
       <Card>
-        <Text style={styles.label}>Current email</Text>
-        <Text style={styles.value}>{me?.email || "—"}</Text>
-
-        <View style={{ height: 10 }} />
-
-        <Text style={styles.label}>First name</Text>
-        <TextInput value={firstName} onChangeText={setFirstName} placeholder="First name" placeholderTextColor="rgba(255,255,255,0.35)" style={styles.input} />
-
-        <Text style={[styles.label, { marginTop: 10 }]}>Last name</Text>
-        <TextInput value={lastName} onChangeText={setLastName} placeholder="Last name" placeholderTextColor="rgba(255,255,255,0.35)" style={styles.input} />
-
+        <View style={[styles.currentEmail, { borderColor: colors.border }]}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Current email</Text>
+          <Text selectable style={[styles.value, { color: colors.text }]}>
+            {me?.email || "—"}
+          </Text>
+        </View>
+        <SettingsField
+          label="First name"
+          value={firstName}
+          onChangeText={setFirstName}
+          placeholder="First name"
+        />
+        <SettingsField
+          label="Last name"
+          value={lastName}
+          onChangeText={setLastName}
+          placeholder="Last name"
+        />
         {!!nameCooldownText && <SmallText>{nameCooldownText}</SmallText>}
-
-        <Pressable onPress={saveName} style={styles.primaryBtn} disabled={loading}>
-          <Text style={styles.primaryText}>{loading ? "Loading..." : "Save name"}</Text>
-        </Pressable>
+        <SettingsButton label={loading ? "Loading…" : "Save name"} onPress={saveName} disabled={loading} />
       </Card>
-
       <SectionTitle>Change email</SectionTitle>
       <Card>
-        <Text style={styles.label}>New email</Text>
-        <TextInput
+        <SettingsField
+          label="New email"
           value={newEmail}
           onChangeText={setNewEmail}
           keyboardType="email-address"
           autoCapitalize="none"
           placeholder="new@email.com"
-          placeholderTextColor="rgba(255,255,255,0.35)"
-          style={styles.input}
         />
-
         {emailStep === "code" && (
-          <>
-            <Text style={[styles.label, { marginTop: 10 }]}>Verification code</Text>
-            <TextInput
-              value={code}
-              onChangeText={setCode}
-              keyboardType="number-pad"
-              placeholder="6-digit code"
-              placeholderTextColor="rgba(255,255,255,0.35)"
-              style={styles.input}
-            />
-          </>
+          <SettingsField
+            label="Verification code"
+            value={code}
+            onChangeText={setCode}
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            placeholder="6-digit code"
+          />
         )}
-
-        <Pressable
+        <SettingsButton
+          label={emailStep === "idle" ? "Send code" : "Confirm email"}
           onPress={emailStep === "idle" ? requestEmailChange : confirmEmailChange}
-          style={styles.primaryBtn}
-        >
-          <Text style={styles.primaryText}>
-            {emailStep === "idle" ? "Send code" : "Confirm email"}
-          </Text>
-        </Pressable>
-
-        <SmallText>
-          We’ll email you a code to confirm the new address.
-        </SmallText>
+        />
+        <SmallText>We’ll email you a code to confirm the new address.</SmallText>
       </Card>
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  label: {
-    color: RBZ.muted,
-    fontSize: 12,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
-
-  value: {
-    color: RBZ.text,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  input: {
-    borderWidth: 1,
-    borderColor: RBZ.line,      // RomBuzz pink border
-    backgroundColor: "#ffffff", // ✅ PURE WHITE
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: RBZ.text,
-    fontWeight: "700",
-  },
-
-  primaryBtn: {
-    marginTop: 12,
-    borderRadius: 16,
-    paddingVertical: 12,
-    alignItems: "center",
-    backgroundColor: RBZ.c2,
-    borderWidth: 1,
-    borderColor: RBZ.c3,
-  },
-  primaryText: { color: RBZ.text, fontWeight: "900" },
+  currentEmail: { paddingBottom: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  label: { fontSize: 12.5, fontFamily: RBZFont.semiBold, marginBottom: 6 },
+  value: { fontSize: 14, fontFamily: RBZFont.medium },
 });

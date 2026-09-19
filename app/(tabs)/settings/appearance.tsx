@@ -1,276 +1,92 @@
 /**
  * Path: app/(tabs)/settings/appearance.tsx
- * Purpose: Lets users choose System, Light, or Dark RomBuzz appearance.
- * Used by: Settings > Preferences > Appearance.
+ * Purpose: Select the existing System, Light, or Dark appearance in a flat Settings list.
  */
-
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-
-import {
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-
-import {
-    useRomBuzzTheme,
-} from "@/src/design/RomBuzzThemeProvider";
-
-import {
-    RBZFont,
-} from "@/src/design/rombuzzTypography";
-
-import {
-    ScreenShell,
-    SectionTitle,
-    SmallText,
-} from "@/src/components/settings/_ui";
-
-import type {
-    RomBuzzThemeMode,
-} from "@/src/design/rombuzzTheme";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { ScreenShell, SectionTitle, SmallText } from "@/src/components/settings/_ui";
+import type { RomBuzzThemeMode } from "@/src/design/rombuzzTheme";
 
 type Option = {
   value: RomBuzzThemeMode;
   title: string;
   description: string;
-  icon: React.ComponentProps<
-    typeof Ionicons
-  >["name"];
+  icon: React.ComponentProps<typeof Ionicons>["name"];
 };
 
 const OPTIONS: Option[] = [
   {
     value: "system",
     title: "System",
-    description:
-      "Match your phone’s appearance automatically.",
+    description: "Match your phone’s appearance automatically.",
     icon: "phone-portrait-outline",
   },
-  {
-    value: "light",
-    title: "Light",
-    description:
-      "Always use RomBuzz in light mode.",
-    icon: "sunny-outline",
-  },
-  {
-    value: "dark",
-    title: "Dark",
-    description:
-      "Always use RomBuzz in dark mode.",
-    icon: "moon-outline",
-  },
+  { value: "light", title: "Light", description: "Always use RomBuzz in light mode.", icon: "sunny-outline" },
+  { value: "dark", title: "Dark", description: "Always use RomBuzz in dark mode.", icon: "moon-outline" },
 ];
 
 export default function AppearanceSettings() {
-  const {
-    mode,
-    colors,
-    setMode,
-  } = useRomBuzzTheme();
-
+  const { mode, colors, setMode } = useRomBuzzTheme();
   return (
     <ScreenShell title="Appearance">
-      <SectionTitle>
-        Theme
-      </SectionTitle>
-
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor:
-              colors.surface,
-
-            borderColor:
-              colors.border,
-          },
-        ]}
-      >
-        {OPTIONS.map(
-          (option, index) => {
-            const selected =
-              mode === option.value;
-
-            return (
-              <React.Fragment
-                key={option.value}
-              >
-                <Pressable
-                  accessibilityRole="radio"
-                  accessibilityState={{
-                    selected,
-                  }}
-                  onPress={() => {
-                    void setMode(
-                      option.value
-                    );
-                  }}
-                  style={({ pressed }) => [
-                    styles.option,
-
-                    pressed && {
-                      backgroundColor:
-                        colors.surfaceMuted,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.iconWrap,
-                      {
-                        backgroundColor:
-                          selected
-                            ? colors.brandSoft
-                            : colors.surfaceMuted,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={option.icon}
-                      size={20}
-                      color={
-                        selected
-                          ? colors.brand
-                          : colors.icon
-                      }
-                    />
-                  </View>
-
-                  <View
-                    style={styles.copy}
-                  >
-                    <Text
-                      style={[
-                        styles.title,
-                        {
-                          color:
-                            colors.text,
-                        },
-                      ]}
-                    >
-                      {option.title}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.description,
-                        {
-                          color:
-                            colors.textSecondary,
-                        },
-                      ]}
-                    >
-                      {option.description}
-                    </Text>
-                  </View>
-
-                  <Ionicons
-                    name={
-                      selected
-                        ? "radio-button-on"
-                        : "radio-button-off"
-                    }
-                    size={22}
-                    color={
-                      selected
-                        ? colors.brand
-                        : colors.iconMuted
-                    }
-                  />
-                </Pressable>
-
-                {index <
-                OPTIONS.length - 1 ? (
-                  <View
-                    style={[
-                      styles.divider,
-                      {
-                        backgroundColor:
-                          colors.border,
-                      },
-                    ]}
-                  />
-                ) : null}
-              </React.Fragment>
-            );
-          }
-        )}
+      <SectionTitle>Theme</SectionTitle>
+      <View accessibilityRole="radiogroup">
+        {OPTIONS.map((option) => {
+          const selected = mode === option.value;
+          return (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected, checked: selected }}
+              onPress={() => {
+                void setMode(option.value);
+              }}
+              style={({ pressed }) => [
+                styles.option,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: pressed ? colors.surfaceMuted : colors.background,
+                },
+              ]}
+            >
+              <Ionicons name={option.icon} size={20} color={selected ? colors.brand : colors.iconMuted} />
+              <View style={styles.copy}>
+                <Text style={[styles.title, { color: colors.text }]}>{option.title}</Text>
+                <Text style={[styles.description, { color: colors.textSecondary }]}>
+                  {option.description}
+                </Text>
+              </View>
+              <Ionicons
+                name={selected ? "radio-button-on" : "radio-button-off"}
+                size={21}
+                color={selected ? colors.brand : colors.iconMuted}
+              />
+            </Pressable>
+          );
+        })}
       </View>
-
       <SmallText>
-        System follows your phone’s appearance and changes automatically when your device switches between light and dark mode.
+        System follows your phone’s appearance and changes automatically when your device switches between
+        light and dark mode.
       </SmallText>
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginTop: 8,
-
-    borderRadius: 20,
-
-    borderWidth:
-      StyleSheet.hairlineWidth,
-
-    overflow: "hidden",
-  },
-
   option: {
-    minHeight: 72,
-
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-
+    minHeight: 76,
+    paddingVertical: 16,
+    paddingHorizontal: 2,
     flexDirection: "row",
-
     alignItems: "center",
-
     gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-
-  iconWrap: {
-    width: 38,
-    height: 38,
-
-    borderRadius: 12,
-
-    alignItems: "center",
-
-    justifyContent: "center",
-  },
-
-  copy: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  title: {
-    fontSize: 15,
-
-    fontFamily:
-      RBZFont.bold,
-  },
-
-  description: {
-    marginTop: 2,
-
-    fontSize: 11.5,
-
-    lineHeight: 16,
-
-    fontFamily:
-      RBZFont.regular,
-  },
-
-  divider: {
-    height:
-      StyleSheet.hairlineWidth,
-
-    marginLeft: 66,
-  },
+  copy: { flex: 1, minWidth: 0 },
+  title: { fontSize: 14.5, fontFamily: RBZFont.semiBold },
+  description: { marginTop: 4, fontSize: 12, lineHeight: 18, fontFamily: RBZFont.regular },
 });

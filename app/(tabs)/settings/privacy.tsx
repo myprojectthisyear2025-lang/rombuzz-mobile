@@ -10,23 +10,14 @@
  */
 
 import React from "react";
-import {
-  Card,
-  ScreenShell,
-  SectionTitle,
-  SmallText,
-} from "../../../src/components/settings/_ui";
+import { ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
 
 export default function PrivacySettings() {
   return (
     <ScreenShell title="Privacy">
       <SectionTitle>Privacy</SectionTitle>
 
-      <Card>
-        <SmallText>
-          Additional privacy controls will be available in a future update.
-        </SmallText>
-      </Card>
+      <SmallText>Additional privacy controls will be available in a future update.</SmallText>
     </ScreenShell>
   );
 }

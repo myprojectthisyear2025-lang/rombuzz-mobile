@@ -1,13 +1,14 @@
 /**
- * ==========================================================================
- * 📁 File: src/components/settings/_ui.tsx
- * 🎯 Purpose: Shared modern shell and row components for RomBuzz Settings.
- * ==========================================================================
+ * Path: src/components/settings/_ui.tsx
+ * Purpose: Shared Settings layout, flat row groups, and Manrope copy.
  */
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,40 +17,29 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont, useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 
-export const RBZ = {
-  c1: "#B1123C",
-  c2: "#D8345F",
-  c3: "#E9486A",
-  c4: "#B5179E",
-  bg: "#F7F7F8",
-  card: "#FFFFFF",
-  line: "#ECE9EC",
-  text: "#1F1B1E",
-  muted: "#736C71",
-  soft: "#AAA4A8",
-  danger: "#D92D4F",
-} as const;
+type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
 export function ScreenShell({
   title,
   children,
+  scrollRef,
 }: {
   title: string;
   children: React.ReactNode;
+  scrollRef?: React.Ref<ScrollView>;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useRomBuzzTheme();
-
+  const fontsLoaded = useRomBuzzTypography();
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
-
     router.replace("/(tabs)/(root)/profile");
   };
 
@@ -59,107 +49,66 @@ export function ScreenShell({
         styles.root,
         {
           paddingTop: insets.top,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
           backgroundColor: colors.background,
         },
       ]}
     >
-      <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={handleBack}
-          style={({ pressed }) => [
-            styles.backBtn,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={27}
-            color={colors.text}
-          />
-        </Pressable>
-
-        <Text
-          style={[
-            styles.headerTitle,
-            { color: colors.text },
-          ]}
-        >
-          {title}
-        </Text>
-
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingBottom:
-              28 + insets.bottom,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {children}
-      </ScrollView>
+      {fontsLoaded ? (
+        <>
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              onPress={handleBack}
+              style={({ pressed }) => [
+                styles.backBtn,
+                { backgroundColor: colors.surfaceMuted },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name="arrow-back" size={20} color={colors.icon} />
+            </Pressable>
+            <Text accessibilityRole="header" style={[styles.headerTitle, { color: colors.text }]}>
+              {title}
+            </Text>
+          </View>
+          <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.root}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: 28 + insets.bottom }]}
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </>
+      ) : (
+        <ActivityIndicator style={styles.loader} color={colors.brand} />
+      )}
     </View>
   );
 }
 
-export function Card({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function Card({ children }: { children: React.ReactNode }) {
   const { colors } = useRomBuzzTheme();
-
-  const items =
-    React.Children.toArray(children);
-
-  const isRow = (
-    child: React.ReactNode,
-  ) =>
-    React.isValidElement(child) &&
-    (
-      child.type === NavRow ||
-      child.type === ToggleRow
-    );
-
+  const items = React.Children.toArray(children);
   const rowGroup =
     items.length > 0 &&
-    items.every(isRow);
-
+    items.every(
+      (child) => React.isValidElement(child) && (child.type === NavRow || child.type === ToggleRow),
+    );
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-        rowGroup
-          ? styles.rowCard
-          : styles.contentCard,
-      ]}
-    >
+    <View style={rowGroup ? [styles.rowGroup, { borderColor: colors.border }] : styles.contentGroup}>
       {items.map((child, index) => (
-        <React.Fragment key={index}>
+        <React.Fragment key={React.isValidElement(child) ? (child.key ?? index) : index}>
           {child}
-
-          {rowGroup &&
-          index < items.length - 1 ? (
-            <View
-              style={[
-                styles.divider,
-                {
-                  backgroundColor:
-                    colors.border,
-                },
-              ]}
-            />
+          {rowGroup && index < items.length - 1 ? (
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
           ) : null}
         </React.Fragment>
       ))}
@@ -170,80 +119,46 @@ export function Card({
 export function NavRow({
   icon,
   label,
+  description,
   value,
   onPress,
   danger,
+  accent,
+  external,
+  chevron = true,
 }: {
-  icon: React.ComponentProps<
-    typeof Ionicons
-  >["name"];
+  icon: IconName;
   label: string;
+  description?: string;
   value?: string;
   onPress: () => void;
   danger?: boolean;
+  accent?: boolean;
+  external?: boolean;
+  chevron?: boolean;
 }) {
   const { colors } = useRomBuzzTheme();
-
-  const textColor =
-    danger
-      ? colors.danger
-      : colors.text;
-
   return (
     <Pressable
+      accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        pressed && {
-          backgroundColor:
-            colors.surfaceMuted,
-        },
-      ]}
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surfaceMuted }]}
     >
-      <View style={styles.rowLeft}>
-        <Ionicons
-          name={icon}
-          size={21}
-          color={
-            danger
-              ? colors.danger
-              : colors.brand
-          }
-        />
-
-        <Text
-          style={[
-            styles.rowText,
-            {
-              color: textColor,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-
-      <View style={styles.rowRight}>
-        {value ? (
-          <Text
-            style={[
-              styles.rowValue,
-              {
-                color:
-                  colors.textSecondary,
-              },
-            ]}
-          >
-            {value}
-          </Text>
+      <Ionicons
+        name={icon}
+        size={20}
+        color={danger ? colors.danger : accent ? colors.brand : colors.iconMuted}
+      />
+      <View style={styles.copy}>
+        <Text style={[styles.rowText, { color: danger ? colors.danger : colors.text }]}>{label}</Text>
+        {description ? (
+          <Text style={[styles.description, { color: colors.textSecondary }]}>{description}</Text>
         ) : null}
-
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color={colors.iconMuted}
-        />
       </View>
+      {value ? <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{value}</Text> : null}
+      {chevron ? (
+        <Ionicons name={external ? "open-outline" : "chevron-forward"} size={16} color={colors.iconMuted} />
+      ) : null}
     </Pressable>
   );
 }
@@ -254,212 +169,80 @@ export function ToggleRow({
   value,
   onChange,
 }: {
-  icon: React.ComponentProps<
-    typeof Ionicons
-  >["name"];
+  icon: IconName;
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
   const { colors } = useRomBuzzTheme();
-
   return (
     <View style={styles.row}>
-      <View style={styles.rowLeft}>
-        <Ionicons
-          name={icon}
-          size={21}
-          color={colors.brand}
-        />
-
-        <Text
-          style={[
-            styles.rowText,
-            {
-              color: colors.text,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-
+      <Ionicons name={icon} size={20} color={colors.iconMuted} />
+      <Text style={[styles.rowText, styles.copy, { color: colors.text }]}>{label}</Text>
       <Switch
+        accessibilityLabel={label}
         value={value}
         onValueChange={onChange}
-        trackColor={{
-          false: colors.borderStrong,
-          true: colors.brand,
-        }}
+        trackColor={{ false: colors.borderStrong, true: colors.brand }}
+        thumbColor={colors.white}
+        ios_backgroundColor={colors.borderStrong}
       />
     </View>
   );
 }
 
-export function SectionTitle({
-  children,
-}: {
-  children: string;
-}) {
+export function SectionTitle({ children }: { children: string }) {
   const { colors } = useRomBuzzTheme();
-
   return (
-    <Text
-      style={[
-        styles.sectionTitle,
-        {
-          color:
-            colors.textSecondary,
-        },
-      ]}
-    >
+    <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textSecondary }]}>
       {children}
     </Text>
   );
 }
 
-export function SmallText({
-  children,
-}: {
-  children: string;
-}) {
+export function SmallText({ children }: { children: React.ReactNode }) {
   const { colors } = useRomBuzzTheme();
-
-  return (
-    <Text
-      style={[
-        styles.small,
-        {
-          color:
-            colors.textSecondary,
-        },
-      ]}
-    >
-      {children}
-    </Text>
-  );
+  return <Text style={[styles.small, { color: colors.textSecondary }]}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: RBZ.bg,
-  },
-
+  root: { flex: 1 },
+  loader: { flex: 1 },
   header: {
-    height: 62,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  pressed: {
-    opacity: 0.55,
-  },
-
-  headerTitle: {
-    color: RBZ.text,
-    fontSize: 22,
-    fontWeight: "800",
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
-
-  scroll: {
-    flex: 1,
-  },
-
-  scrollContent: {
+    minHeight: 68,
     paddingHorizontal: 18,
-    paddingTop: 4,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-
-  card: {
-    backgroundColor: RBZ.card,
-    borderRadius: 20,
-    borderWidth:
-      StyleSheet.hairlineWidth,
-    borderColor: RBZ.line,
-    overflow: "hidden",
-    marginTop: 8,
-  },
-
-  rowCard: {
-    paddingVertical: 2,
-  },
-
-  contentCard: {
-    padding: 16,
-  },
-
-  divider: {
-    height:
-      StyleSheet.hairlineWidth,
-    backgroundColor: RBZ.line,
-    marginLeft: 52,
-  },
-
+  backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  pressed: { opacity: 0.65 },
+  headerTitle: { flex: 1, fontSize: 24, letterSpacing: -0.7, fontFamily: RBZFont.extraBold },
+  scrollContent: { paddingHorizontal: 18, width: "100%", maxWidth: 640, alignSelf: "center" },
+  rowGroup: { borderBottomWidth: StyleSheet.hairlineWidth },
+  contentGroup: { paddingVertical: 8, gap: 2 },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 36 },
   row: {
-    minHeight: 58,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
+    minHeight: 56,
+    paddingVertical: 14,
+    paddingHorizontal: 2,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 12,
   },
-
-  rowPressed: {
-    backgroundColor: "#F6F4F5",
-  },
-
-  rowLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 13,
-  },
-
-  rowRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  rowValue: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  rowText: {
-    color: RBZ.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
+  copy: { flex: 1, minWidth: 0 },
+  rowText: { fontSize: 14.5, fontFamily: RBZFont.semiBold },
+  rowValue: { maxWidth: "30%", fontSize: 12, fontFamily: RBZFont.medium, textAlign: "right" },
+  description: { marginTop: 3, fontSize: 12, lineHeight: 17, fontFamily: RBZFont.regular },
   sectionTitle: {
-    color: RBZ.muted,
     fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.6,
+    fontFamily: RBZFont.bold,
+    letterSpacing: 1,
     textTransform: "uppercase",
-    marginTop: 22,
-    marginLeft: 4,
+    marginTop: 24,
+    marginBottom: 6,
   },
-
-  small: {
-    color: RBZ.muted,
-    fontSize: 12,
-    marginTop: 10,
-    lineHeight: 17,
-    paddingHorizontal: 4,
-  },
+  small: { fontSize: 12.5, fontFamily: RBZFont.regular, marginTop: 10, lineHeight: 19 },
 });

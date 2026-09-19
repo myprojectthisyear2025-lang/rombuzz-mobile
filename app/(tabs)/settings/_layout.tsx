@@ -6,14 +6,20 @@
  */
 import { Stack } from "expo-router";
 import React from "react";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { SettingsDialogProvider } from "@/src/components/settings/SettingsDialog";
 
 export default function SettingsLayout() {
+  const { colors } = useRomBuzzTheme();
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: "slide_from_right",
-      }}
-    />
+    <SettingsDialogProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: "slide_from_right",
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      />
+    </SettingsDialogProvider>
   );
 }
