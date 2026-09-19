@@ -1,58 +1,93 @@
 /**
- * ============================================================
- * 📁 File: src/features/onboarding/useFirstSignupTour.ts
- * 🎯 Purpose: Control visibility and completion of the signup tour.
- *
- * Usage:
- *   Used only by FirstSignupTour after authenticated tabs mount.
- * ============================================================
+ * Path: src/features/onboarding/useFirstSignupTour.ts
+ * Purpose: Control genuine-signup Tour visibility and safe Settings replay.
  */
 
 import {
   rbzGetCurrentUser,
 } from "@/src/performance/api/rbzApiClient";
+
 import {
   useCallback,
   useEffect,
   useState,
 } from "react";
+
 import {
   subscribeToFirstSignupTourReplay,
 } from "./firstSignupTourReplay";
+
 import {
   clearFirstSignupTourPending,
   shouldShowFirstSignupTour,
 } from "./firstSignupTourStorage";
 
+export type FirstSignupTourEntry =
+  | "signup"
+  | "settings";
+
 export function useFirstSignupTour() {
-  const [visible, setVisible] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [
+    visible,
+    setVisible,
+  ] = useState(false);
+
+  const [
+    ready,
+    setReady,
+  ] = useState(false);
+
+  const [
+    entry,
+    setEntry,
+  ] =
+    useState<FirstSignupTourEntry>(
+      "signup"
+    );
 
   useEffect(() => {
     let alive = true;
-    let replayRequested = false;
+    let replayRequested =
+      false;
 
     const replaySubscription =
-      subscribeToFirstSignupTourReplay(() => {
-        replayRequested = true;
-        setReady(true);
-        setVisible(true);
-      });
+      subscribeToFirstSignupTourReplay(
+        () => {
+          replayRequested =
+            true;
+
+          setEntry("settings");
+          setReady(true);
+          setVisible(true);
+        }
+      );
 
     (async () => {
       try {
-        // Force current SecureStore user instead of using
-        // a possibly stale in-memory account.
-        const user = await rbzGetCurrentUser(true);
+        const user =
+          await rbzGetCurrentUser(
+            true
+          );
 
         const shouldShow =
-          await shouldShowFirstSignupTour(user);
+          await shouldShowFirstSignupTour(
+            user
+          );
 
-        if (alive && !replayRequested) {
-          setVisible(shouldShow);
+        if (
+          alive &&
+          !replayRequested
+        ) {
+          setEntry("signup");
+          setVisible(
+            shouldShow
+          );
         }
       } catch {
-        if (alive && !replayRequested) {
+        if (
+          alive &&
+          !replayRequested
+        ) {
           setVisible(false);
         }
       } finally {
@@ -64,20 +99,34 @@ export function useFirstSignupTour() {
 
     return () => {
       alive = false;
+
       replaySubscription.remove();
     };
   }, []);
 
-  const complete = useCallback(async () => {
-    // Hide immediately. Storage cleanup can finish afterward.
-    setVisible(false);
+  const complete =
+    useCallback(
+      async () => {
+        setVisible(false);
 
-    await clearFirstSignupTourPending()
-      .catch(() => {});
-  }, []);
+        // Settings replay is presentation-only.
+        // Never mutate genuine first-signup state.
+        if (
+          entry === "signup"
+        ) {
+          await clearFirstSignupTourPending()
+            .catch(() => {});
+        }
+      },
+      [entry]
+    );
 
   return {
-    visible: ready && visible,
+    visible:
+      ready && visible,
+
+    entry,
+
     complete,
   };
 }

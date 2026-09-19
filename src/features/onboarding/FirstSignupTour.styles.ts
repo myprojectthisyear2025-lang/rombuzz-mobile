@@ -1,194 +1,260 @@
-/**
- * ============================================================
- * 📁 File: src/features/onboarding/FirstSignupTour.styles.ts
- * 🎯 Purpose: Premium styling for the first-signup RomBuzz tour.
- *
- * Usage:
- *   Imported only by FirstSignupTour.tsx.
- * ============================================================
- */
+/** Path: src/features/onboarding/FirstSignupTour.styles.ts — theme-aware Tour shell styles. */
 
-import {
-    StyleSheet,
-} from "react-native";
+import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { StyleSheet } from "react-native";
 
-export const firstSignupTourStyles =
-  StyleSheet.create({
+export function createFirstSignupTourStyles(
+  colors: RomBuzzColors
+) {
+  return StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: "#FFF7FA",
+      backgroundColor:
+        colors.background,
     },
 
     screen: {
       flex: 1,
-      paddingHorizontal: 24,
-      paddingBottom: 18,
+      backgroundColor:
+        colors.background,
     },
 
-    topRow: {
-      minHeight: 58,
+    topBar: {
+      minHeight: 56,
+      paddingHorizontal: 18,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+      justifyContent:
+        "space-between",
+    },
+
+    brandWrap: {
+      flexDirection: "row",
+      alignItems: "baseline",
     },
 
     brand: {
-      color: "#B1123C",
-      fontSize: 16,
-      fontWeight: "900",
+      color: colors.text,
+      fontFamily:
+        RBZFont.extraBold,
+      fontSize: 20,
+      letterSpacing: -0.7,
     },
 
-    skipButton: {
+    brandAccent: {
+      color: colors.brand,
+    },
+
+    closeButton: {
+      minHeight: 36,
       paddingHorizontal: 10,
-      paddingVertical: 8,
-    },
-
-    skipText: {
-      color: "#746970",
-      fontSize: 14,
-      fontWeight: "700",
-    },
-
-    body: {
-      flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
-    },
-
-    eyebrow: {
-      color: "#B1123C",
-      fontSize: 11,
-      fontWeight: "900",
-      letterSpacing: 1.25,
-      marginBottom: 18,
-    },
-
-    iconHalo: {
-      width: 118,
-      height: 118,
-      borderRadius: 38,
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: "#8E1033",
-      shadowOpacity: 0.22,
-      shadowRadius: 24,
-      shadowOffset: {
-        width: 0,
-        height: 12,
-      },
-      elevation: 10,
-    },
-
-    iconInner: {
-      width: 88,
-      height: 88,
-      borderRadius: 29,
-      backgroundColor:
-        "rgba(255,255,255,0.14)",
-      borderWidth: 1,
-      borderColor:
-        "rgba(255,255,255,0.30)",
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
     },
 
-    logo: {
-      width: 58,
-      height: 58,
-      resizeMode: "contain",
+    closeText: {
+      color:
+        colors.textSecondary,
+      fontFamily:
+        RBZFont.semiBold,
+      fontSize: 12.5,
     },
 
-    title: {
-      color: "#21171E",
-      fontSize: 31,
-      lineHeight: 37,
-      fontWeight: "900",
-      textAlign: "center",
-      marginTop: 30,
-    },
-
-    description: {
-      maxWidth: 380,
-      color: "#655A62",
-      fontSize: 16,
-      lineHeight: 24,
-      textAlign: "center",
-      marginTop: 12,
+    progressWrap: {
+      paddingHorizontal: 18,
+      paddingBottom: 5,
     },
 
     progressRow: {
       flexDirection: "row",
+      gap: 5,
+    },
+
+    progressSegment: {
+      flex: 1,
+      height: 3,
+      borderRadius: 999,
+    },
+
+    bodyScroll: {
+      flex: 1,
+    },
+
+    bodyContent: {
+      flexGrow: 1,
+      paddingHorizontal: 18,
+      paddingTop: 15,
+      paddingBottom: 16,
       justifyContent: "center",
+    },
+
+    stepMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      marginBottom: 8,
+    },
+
+    kickerWrap: {
+      flexDirection: "row",
       alignItems: "center",
       gap: 7,
-      marginTop: 30,
+      flex: 1,
     },
 
-    dot: {
-      width: 7,
-      height: 7,
-      borderRadius: 99,
-      backgroundColor: "#E7CED6",
+    kickerIcon: {
+      width: 27,
+      height: 27,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor:
+        colors.brandSoft,
     },
 
-    dotActive: {
-      width: 22,
-      backgroundColor: "#B1123C",
+    kicker: {
+      flex: 1,
+      color: colors.brand,
+      fontFamily: RBZFont.bold,
+      fontSize: 10,
+      letterSpacing: 1.05,
     },
 
     counter: {
-      color: "#988C94",
-      fontSize: 12,
-      fontWeight: "700",
-      marginTop: 14,
+      color: colors.textMuted,
+      fontFamily:
+        RBZFont.semiBold,
+      fontSize: 11.5,
     },
 
-    bottomRow: {
+    title: {
+      color: colors.text,
+      fontFamily:
+        RBZFont.extraBold,
+      fontSize: 25,
+      lineHeight: 30,
+      letterSpacing: -0.8,
+    },
+
+    description: {
+      marginTop: 6,
+      maxWidth: 520,
+      color:
+        colors.textSecondary,
+      fontFamily:
+        RBZFont.regular,
+      fontSize: 13.5,
+      lineHeight: 19.5,
+    },
+
+    previewWrap: {
+      marginTop: 16,
+    },
+
+    hint: {
+      marginTop: 12,
+      minHeight: 40,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: 14,
+      borderWidth:
+        StyleSheet.hairlineWidth,
+      borderColor:
+        colors.border,
+      backgroundColor:
+        colors.surfaceMuted,
       flexDirection: "row",
-      gap: 12,
-      paddingTop: 12,
+      alignItems: "center",
+      gap: 8,
+    },
+
+    hintIcon: {
+      width: 24,
+      height: 24,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor:
+        colors.brandSoft,
+    },
+
+    hintText: {
+      flex: 1,
+      color:
+        colors.textSecondary,
+      fontFamily:
+        RBZFont.medium,
+      fontSize: 11.5,
+      lineHeight: 15.5,
+    },
+
+    bottomBar: {
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 10,
+      flexDirection: "row",
+      gap: 10,
+      borderTopWidth:
+        StyleSheet.hairlineWidth,
+      borderTopColor:
+        colors.border,
+      backgroundColor:
+        colors.background,
     },
 
     backButton: {
-      width: 58,
-      minHeight: 56,
-      borderRadius: 18,
+      minWidth: 96,
+      minHeight: 50,
+      borderRadius: 16,
       borderWidth: 1,
-      borderColor: "#E8D7DD",
-      backgroundColor: "#FFFFFF",
+      borderColor:
+        colors.borderStrong,
+      backgroundColor:
+        colors.surface,
+      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
+      gap: 4,
     },
 
     backDisabled: {
-      opacity: 0.35,
+      opacity: 0.34,
+    },
+
+    backText: {
+      color: colors.text,
+      fontFamily: RBZFont.bold,
+      fontSize: 13.5,
     },
 
     nextButton: {
       flex: 1,
-      minHeight: 56,
-      borderRadius: 18,
-      backgroundColor: "#B1123C",
+      minHeight: 50,
+      borderRadius: 16,
+      backgroundColor:
+        colors.brand,
+      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      shadowColor: "#8D0E31",
-      shadowOpacity: 0.18,
-      shadowRadius: 12,
-      shadowOffset: {
-        width: 0,
-        height: 6,
-      },
-      elevation: 5,
-    },
-
-    pressed: {
-      opacity: 0.9,
-      transform: [{ scale: 0.99 }],
+      gap: 7,
     },
 
     nextText: {
-      color: "#FFFFFF",
-      fontSize: 16,
-      fontWeight: "900",
+      color: colors.white,
+      fontFamily: RBZFont.bold,
+      fontSize: 14,
+    },
+
+    pressed: {
+      opacity: 0.72,
+      transform: [
+        {
+          scale: 0.992,
+        },
+      ],
     },
   });
+}
