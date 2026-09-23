@@ -1,6 +1,8 @@
-import { ResizeMode, Video } from "expo-av";
+import { diagnosticVideo } from "@/src/performance/diagnostics/media";
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
+import { ResizeMode } from "expo-av";
 import React from "react";
-import { Image, Pressable } from "react-native";
+import { Pressable } from "react-native";
 import type { Msg } from "@/src/features/chat/thread/chatTypes";
 import { useChatWindow } from "../ChatWindowContext";
 import { getMediaKey } from "../hooks/chatMediaUtils";
@@ -11,6 +13,10 @@ import {
   ChatProtectedMediaOverlay,
   ChatVideoPlayBadge,
 } from "./ChatMediaEffects";
+
+const PerfVideo = diagnosticVideo("chat-video");
+const PerfImage = diagnosticImage("chat-media");
+
 
 export default function ChatMediaBubble({
   item,
@@ -52,7 +58,7 @@ export default function ChatMediaBubble({
       style={[styles.mediaWrap, isMine ? styles.mediaMine : styles.mediaPeer]}
     >
       {isVideo ? (
-        <Video
+        <PerfVideo
           source={{ uri: getChatVideoUri(m) }}
           style={[
             styles.mediaThumb,
@@ -63,7 +69,7 @@ export default function ChatMediaBubble({
           isMuted={!!m.muted}
         />
       ) : (
-        <Image
+        <PerfImage
           source={{ uri: m.url }}
           style={[
             styles.mediaThumb,

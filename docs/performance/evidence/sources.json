@@ -1,0 +1,376 @@
+{
+  "path": "docs/performance/evidence/sources.json",
+  "purpose": "Final code-file fingerprints and base commits for audit reproducibility",
+  "capturedAt": "2026-09-23T15:00:15.674Z",
+  "baseCommits": {
+    "mobile": "ed5054f5991331066590eb02c34f7cfab2a04444",
+    "backend": "b4c4f1d16b6bae33d9a3fe6f81dba16856182318"
+  },
+  "files": [
+    {
+      "repo": "mobile",
+      "file": ".gitignore",
+      "sha256": "3c4cd3eefd4da21bebf2d09bc402f346a4b605fe8833cf4d8fddc091762e6b82"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/(root)/chat.tsx",
+      "sha256": "3a24bbb8634b95ba18f6a4d11b41a1aa288b15e71cac818657e7eff946aad30a"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/(root)/homepage.tsx",
+      "sha256": "5b7ee94689a64384567acdfe37abfe94fe3878400b405ed468137dee89b7b82b"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/(root)/letsbuzz.tsx",
+      "sha256": "e2e3ac72ab16f4fd1bc8fda95aedab92baf236fea569877626bbd3f360f2698d"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/(root)/profile.tsx",
+      "sha256": "4cd573834de2c3c3186a44150baf5c246ce0cc05c4077fec549d905ab4cac327"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/(root)/social-stats.tsx",
+      "sha256": "591b0ff4e4ca7c34dac70c9cde9072455248fe4c74ff7da1a89be064fac3289a"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/discover.tsx",
+      "sha256": "bf48a506c10954a6390a9a4450cd4276cbfa8897d28ff27ade93c597b4fe1791"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/microbuzz.tsx",
+      "sha256": "ac09991b396ab46452df25e6bf99dfd4551ae03bd19f79c617e3b765700dea64"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/notifications.tsx",
+      "sha256": "4d70f865098b823aa1705be770581bb6b531037372a9429063451ee946d0458c"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/(tabs)/view-profile.tsx",
+      "sha256": "8193175f760fb3dcb5f7b3ef3d94119efd2dbe21f81371035ec98577caadbee7"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/_layout.tsx",
+      "sha256": "8f4b2c7183de2868ea1d0601594ca88b261f1b4ba695171064b38f4f8ec0af63"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/chat/purchased-media/[peerId].tsx",
+      "sha256": "23a4d8b8b801cb944b6f3876e0fef6478ce268165c7b0eacfc0df236b9965845"
+    },
+    {
+      "repo": "mobile",
+      "file": "app/chat/shared-media/[peerId].tsx",
+      "sha256": "70199288bef31280bff401451b57ed328818539a746e2c3cd8c42f049dd4d75b"
+    },
+    {
+      "repo": "mobile",
+      "file": "eslint.config.js",
+      "sha256": "caf09a1e4a714b91c2345db7f48ec21be6883a399ab6d8f889918666cb274200"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/gifts/GiftCard.tsx",
+      "sha256": "2e2ff6b1ddce7a7a4b3eb88a3e20665d6d48ad04c4990f9158b72cc2293a742a"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/gifts/GiftPicker.tsx",
+      "sha256": "bb334c7a053101447f8484ad3b288adf57f089c96011fa669187d5e9a039ed67"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/letsbuzz/LetsBuzzPosts.tsx",
+      "sha256": "5d4d0c007d613806d0c93cfc838ee5c8864bf69a018200e8d7358bd055c50a6c"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/letsbuzz/LetsBuzzReels.tsx",
+      "sha256": "e3801cbe6705219bb0e150cbd6c9934b4f99bb4d770734e65fd2c47fd52d7170"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/media/RBZVideoViewer.tsx",
+      "sha256": "a576ce0777c0c79e47a802c8c44fdd94e94a3766edf933fac3f605792239c085"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/profile/Gallery/PhotoGrid.tsx",
+      "sha256": "89bd58600e6d33cc4dd39115cba3300231c0fcc570d5616395c562fcdd11c9c7"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/profile/Gallery/ReelGrid.tsx",
+      "sha256": "e785c3c059972baea8871e854aec756f55dc43fb8a25c05f63599e58c07647c3"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/components/profile/ViewProfileGallery.tsx",
+      "sha256": "7291879aa5d596fd7bcecec274ddd26783a4bfbf6bdcf389da4e534f928a5c9b"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/list/useChatListActions.ts",
+      "sha256": "e9622641faa000b3f8bfb8d1e04a20c2e7b598bc148a60ac8a9aaf8d16701ecd"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/list/useChatListInbox.ts",
+      "sha256": "9ed6c9f6a20a5f5260b1705a864f5818d91ef49a56583836e03d2f067988771a"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/thread/rbzChatThreadCache.ts",
+      "sha256": "4a3200ae5575bc33883c985371ddd624d9d8edad7df58ac3f219bbf5983d9345"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/thread/useChatThreadFastOpen.ts",
+      "sha256": "f25a7e68cce128642bd47d83745d7c6a33dc688defe3d9d0716d17901be02784"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/window/ChatWindowScreen.tsx",
+      "sha256": "c0f9c7f13dc21d22b2c049ddabb0b2f8eec95fcf5eb259ae579b7fa19ab62f85"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/window/components/ChatMediaBubble.tsx",
+      "sha256": "096ee5e47af11e8d48a1cadc9b5edcd6d60f1f9a69a992e63145eab0911a8cd1"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/chat/window/hooks/useChatTextSender.ts",
+      "sha256": "9546c393c987dbba4f527ff077ef55e062d98cb3afd890bc89ed91aa0be7d5bf"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/discoverProfile/DiscoverProfileHero.tsx",
+      "sha256": "742efc3b8c3fdcc2978295661f7412f93cc6c17a301680b1a6d2a84fb34eb0d7"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/discoverProfile/DiscoverProfileScreen.tsx",
+      "sha256": "bd1bb713e230042df6c36a3f5fb340b3bf4efe9370cf81e43fbb689f86eb1dc8"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/home/HomeDashboard.tsx",
+      "sha256": "dff280e27002e79627803528b49b84aadfab9c2e8f2394d7bf1f3d937368ac5e"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/performance/letsbuzz/rbzLetsBuzzFeedCache.ts",
+      "sha256": "8b334a63663afeae5742f4d28c33da04594031d7b8996b2a55d63aa23dd0f927"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/performance/useCachedDiscoverDeck.ts",
+      "sha256": "ea126a0f82dcb2b8f2fa2214fe2a59d8f5c7e54d0eda394f59b1116a0212eebf"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/profile/ProfilePhotoHero.tsx",
+      "sha256": "e85f9f9a5301623ec721d0aeb0b9df36af542b327212b1d4c850222bb6c975f7"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/socialStats/useSocialStatsData.ts",
+      "sha256": "365d2e862fc5d47adff3db819280bff9f52b11fa42c42ff6813dba8facec761b"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/socialStats/useSocialStatsListActions.ts",
+      "sha256": "ec9f457c2256eba72501797ddeed2f01cc403b24e34a961a8f21cb56733d502b"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/features/viewProfile/hero/ViewProfileHero.tsx",
+      "sha256": "3d8226680779e6eec09dd25641a0220bf6c80c8e0199d62f918d202f5dc30655"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/hooks/gifts/useGiftCatalog.ts",
+      "sha256": "415aa4252addd79829bff1d6f1163ec3ece83fd4ec919f94e75af341137a7d9e"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/lib/socket.ts",
+      "sha256": "f9bf2139d9b52299eaf04b4ce65d2a0453f9b50d72bba62d5623421ca10a7975"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/navigation/RootBottomBar.tsx",
+      "sha256": "69ec05e27aa6151423af991fc1fbbac44e818cef8e9ae50f4bac7ac73b389949"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/api/rbzApiClient.ts",
+      "sha256": "52805ece56fb7c2249aa6d63483f4478be4980eb335ee7996736638da0d51b0a"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/cache/rbzCache.ts",
+      "sha256": "a5ee2a0293b4aab00dc8a82c6058293a48180614a4b4dbce591224f6f530cf9a"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/actions.cjs",
+      "sha256": "f835ced37ffaaf901adccef2cbf0e314fcbf660b3cbc0fa47d0d79734dcb7d94"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/asset-metadata.cjs",
+      "sha256": "ae3f11c77ec533bd6d650d94b360104cd1c912e7184dbf6196cc86e8d539d5d9"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/instrumentation.test.cjs",
+      "sha256": "c9a07874a15909d8e21ba6101e4bda0763ec445f34e7d62799685e0e9a4a64f2"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/local-baseline.cjs",
+      "sha256": "3e1149bc0a631f3b2ce8794e7fb630176db8c01baf02421f72986540f9a1e8b8"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/local-device-server.cjs",
+      "sha256": "bbe8e871835c8ea65caa667d2590ef3cd1575986ef6e07d18154f9d3176ec886"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/local-harness.cjs",
+      "sha256": "44823bfd5e9fd22d67028fe8eaf92a564cca5c19725e97c219b9a0c367875942"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/media-probe.cjs",
+      "sha256": "a39eeaffca6b20f720431ffced4e62a69dc715aef7d6ed4aa74de3d06819d5ca"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/mobile-diagnostics.test.cjs",
+      "sha256": "feb1ef354feefb0179768927f9b209f2213e21e659f99c7ecc0e798404a2e918"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/mobile-report.cjs",
+      "sha256": "5ce7328d6468d2c73b233c2c8fc6f5269b31fd7b006f0a126e937b746342a4c0"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/no-env.cjs",
+      "sha256": "ef0dc72070aacf87b487be040c7aab932728950e52f73d347448e979083d16b2"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/overhead.cjs",
+      "sha256": "0ce576d8f15bfd778245a238f191d6ef49fbfc2ff55b528edcf456dc839e3d22"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/regional-probe.cjs",
+      "sha256": "ca94cda36150dd116fcc0c1ea5aea4449428d7d5989b04add9508f9e9f7a6e40"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/report.cjs",
+      "sha256": "7f64d45147bff58e9255d0de817072bd0508a7869f79167a53734b3a9bf17cbd"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/seed.cjs",
+      "sha256": "510d3f1905391761fb72406be818fc598cef366d0841a694ec082181e4576bcc"
+    },
+    {
+      "repo": "mobile",
+      "file": "scripts/performance/verify-evidence.cjs",
+      "sha256": "8b571f4bde2cb0f0ed12020bb65b4ca7e88dfa3e1e71df32373e4afe21781d6b"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/diagnostics/cache.ts",
+      "sha256": "056afcf5347d985de928d175b14409db3be12194d51fe4f0571fd7c242f7d930"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/diagnostics/core.ts",
+      "sha256": "448d482b80d19a3e467a083f5952b5d800b96ff0bb76f467c4d700bfd9533df7"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/diagnostics/media.tsx",
+      "sha256": "eaf5de49295c250b71544acd9fc89803b8d73987ed31de0a39c252f40537f68f"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/diagnostics/network.ts",
+      "sha256": "45e870b7746dcafaa48879a6dcb56f2a66570f22699afd8687c9ecbe81bfa602"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/diagnostics/screens.tsx",
+      "sha256": "44bbf79fe994258a1f5dde25f82201ca8da423b163cbaa32a9b8e18f95c634c4"
+    },
+    {
+      "repo": "mobile",
+      "file": "src/performance/diagnostics/socket.ts",
+      "sha256": "57173b2c89f8d91bcb3aded4963927ee2dc5aeb2db50cd428b96a68c44a3f324"
+    },
+    {
+      "repo": "backend",
+      "file": "server/config/cors.js",
+      "sha256": "feadf6f79c426526c1f713c3cc8c3a11027435b32b493a6b352a4f2601d13807"
+    },
+    {
+      "repo": "backend",
+      "file": "server/config/db.js",
+      "sha256": "38ecd213f7eaa85628902d649fb53e2610aa4b2ca88e09236e3b9b6365421f27"
+    },
+    {
+      "repo": "backend",
+      "file": "server/index.js",
+      "sha256": "2fc24d13844be3036963d7e64bc62ca48e8cf8220102829696cea159422a7b6a"
+    },
+    {
+      "repo": "backend",
+      "file": "server/routes/discover.js",
+      "sha256": "49fe366add80e0dd4bee688b61317092220e9538d52746b89aeeb1436cbf5685"
+    },
+    {
+      "repo": "backend",
+      "file": "server/performance/context.js",
+      "sha256": "bdbbb4ff3ef23a8fbe43116784808052f85bf74e659b58cdff4b7d0109ba6f6e"
+    },
+    {
+      "repo": "backend",
+      "file": "server/performance/express.js",
+      "sha256": "77b668858fa78d59c02fe6f030d59693bb90e7b20e9ce71642183635cfd6607f"
+    },
+    {
+      "repo": "backend",
+      "file": "server/performance/http.js",
+      "sha256": "c581f427a8657dcdf74bf76cbf071b73c4ad256cf32dd078d10b7ccd641ce13b"
+    },
+    {
+      "repo": "backend",
+      "file": "server/performance/mongo.js",
+      "sha256": "e06645b77119c19a671ad866851ce394a7bece2c040724caf8d97ed72ab0178d"
+    },
+    {
+      "repo": "backend",
+      "file": "server/performance/runtime.js",
+      "sha256": "ef50d25cbd628e2f1e28f2b7b0aa003f4d23e9af743eb06dd28e8ff44d7a2340"
+    }
+  ]
+}

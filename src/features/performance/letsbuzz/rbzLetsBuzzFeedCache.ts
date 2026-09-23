@@ -1,3 +1,4 @@
+import { observeCacheReader } from "@/src/performance/diagnostics/cache";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "react-native";
 
@@ -42,7 +43,7 @@ function isHttpUrl(value: any) {
   return url.startsWith("http://") || url.startsWith("https://");
 }
 
-export async function readCachedLetsBuzzFeed(): Promise<CachedLetsBuzzFeed | null> {
+async function readCachedLetsBuzzFeedUnobserved(): Promise<CachedLetsBuzzFeed | null> {
   try {
     const raw = await AsyncStorage.getItem(RBZ_LETSBUZZ_FEED_CACHE_KEY);
     if (!raw) return null;
@@ -122,3 +123,4 @@ export async function writeCachedLetsBuzzMeId(meId: string) {
     // Cache must never break LetsBuzz.
   }
 }
+export const readCachedLetsBuzzFeed = observeCacheReader("letsbuzz-feed", readCachedLetsBuzzFeedUnobserved);

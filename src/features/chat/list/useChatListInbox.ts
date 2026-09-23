@@ -1,3 +1,4 @@
+import { perfState } from "@/src/performance/diagnostics/core";
 /**
  * Path: src/features/chat/list/useChatListInbox.ts
  * Purpose: Cached inbox hydration, refresh, deferred presence, persistence, and search filtering.
@@ -71,6 +72,7 @@ export function useChatListInbox(
       inboxCacheReadyRef.current = true;
       inboxCacheOwnerIdRef.current = myId;
 
+      perfState("chat", "cache");
       setMatches(cachedMatches);
       setFiltered(cachedMatches);
       setLoading(false);
@@ -143,6 +145,7 @@ export function useChatListInbox(
         inboxCacheReadyRef.current = true;
         inboxCacheOwnerIdRef.current = myId;
 
+        perfState("chat", "fresh");
         setMatches((prev) => {
           if (sameChatListForPaint(prev, orderedVisible)) {
             return prev;

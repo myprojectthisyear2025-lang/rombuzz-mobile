@@ -1,3 +1,4 @@
+import { observeSocket } from "@/src/performance/diagnostics/socket";
 /**
  * ============================================================
  * File: src/lib/socket.ts
@@ -477,6 +478,8 @@ export async function getSocket(): Promise<Socket> {
         500,
     },
   );
+
+  observeSocket(socket);
 
   socket.on(
     "connect",

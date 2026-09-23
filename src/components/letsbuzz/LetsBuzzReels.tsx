@@ -1,3 +1,7 @@
+import { perfState } from "@/src/performance/diagnostics/core";
+import { diagnosticVideo } from "@/src/performance/diagnostics/media";
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================================
  * 📁 File: src/components/letsbuzz/LetsBuzzReels.tsx
@@ -17,7 +21,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
+import { ResizeMode } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -28,7 +32,6 @@ import {
   Animated,
   Dimensions,
   FlatList,
-  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -65,6 +68,10 @@ import {
   shouldShowInLetsBuzzReels,
   type LetsBuzzNormalizedReel,
 } from "./letsBuzzReelMedia";
+
+const PerfVideo = diagnosticVideo("reel-video");
+const PerfImage = diagnosticImage("reel-avatar-thumbnail");
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -195,7 +202,7 @@ function buildReelsFromLetsBuzzRaw(raw: any[], myId = "") {
   return baseList.filter((item) => shouldShowInLetsBuzzReels(item, myId));
 }
 
-export default function LetsBuzzReels({
+function LetsBuzzReels({
   targetPostId,
   targetType,
   ownerId,
@@ -217,6 +224,7 @@ export default function LetsBuzzReels({
   const reelsRef = useRef<BuzzPost[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [meId, setMeId] = useState("");
+  usePerfContent("letsbuzz-reels", !loading || reels.length > 0, reels.length, reels);
   const meIdRef = useRef("");
   const bootedRef = useRef(false);
 
@@ -493,6 +501,7 @@ export default function LetsBuzzReels({
           ] = count;
         });
 
+        perfState("letsbuzz-reels", "fresh");
         setReelsSafe(onlyReels);
 
         preloadLetsBuzzFeedImages(
@@ -847,6 +856,7 @@ export default function LetsBuzzReels({
 
           if (cachedReels.length) {
             showedCached = true;
+            perfState("letsbuzz-reels", "cache");
             setReelsSafe(cachedReels);
             preloadLetsBuzzFeedImages(cached.items, 6);
             setLoading(false);
@@ -1027,7 +1037,7 @@ export default function LetsBuzzReels({
 
                     if (thumb) {
                       return (
-                        <Image
+                        <PerfImage
                           source={{ uri: thumb }}
                           style={styles.video}
                           resizeMode="contain"
@@ -1054,7 +1064,7 @@ export default function LetsBuzzReels({
                   }
 
                   return (
-                    <Video
+                    <PerfVideo
                       ref={(ref) => {
                         if (ref) videoRefs.current[String(item.id)] = ref;
                       }}
@@ -1188,7 +1198,7 @@ export default function LetsBuzzReels({
               style={styles.actionItem}
               onPress={() => openOwnerProfile(currentReel)}
             >
-              <Image
+              <PerfImage
                 source={{ uri: getOwnerAvatar(currentReel.user) }}
                 style={styles.profileImage}
               />
@@ -1294,7 +1304,7 @@ export default function LetsBuzzReels({
                   hitSlop={10}
                   style={styles.nameRowBottom}
                 >
-                  <Image
+                  <PerfImage
                     source={{ uri: getOwnerAvatar(currentReel.user) }}
                     style={styles.nameAvatar}
                   />
@@ -1793,3 +1803,4 @@ function createStyles(colors: RomBuzzColors) {
     },
   });
 }
+export default withPerfScreen(LetsBuzzReels, "letsbuzz-reels");

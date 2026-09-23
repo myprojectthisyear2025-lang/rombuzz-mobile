@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * Path: src/features/discoverProfile/DiscoverProfileHero.tsx
  * Purpose: Clickable Discover hero with identity, location, distance, and preview chips.
@@ -8,7 +9,10 @@ import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+const PerfImage = diagnosticImage("discover-profile-hero");
+
 
 export default function DiscoverProfileHero({
   imageUri,
@@ -52,7 +56,7 @@ export default function DiscoverProfileHero({
       ]}
     >
       {imageUri ? (
-        <Image
+        <PerfImage
           source={{ uri: imageUri }}
           style={styles.image}
           resizeMode="cover"

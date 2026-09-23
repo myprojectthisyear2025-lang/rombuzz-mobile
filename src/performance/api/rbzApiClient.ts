@@ -1,3 +1,4 @@
+import { perfSpan } from "../diagnostics/core";
 /**
  * ============================================================
  * 📁 File: src/performance/api/rbzApiClient.ts
@@ -117,7 +118,9 @@ export async function rbzApiJson<T = any>(
   });
 
   const text = await response.text();
+  const stopParse = perfSpan("json.parse.shared-api");
   const json = text ? safeJson(text) : {};
+  stopParse();
 
   if (!response.ok) {
     const message =

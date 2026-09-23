@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * ============================================================
  * 📁 Location: src/components/gifts/GiftCard.tsx
@@ -22,13 +23,15 @@ import React, { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
   Easing,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import type { RomBuzzGift } from "../../config/rombuzzGifts";
+
+const PerfImage = diagnosticImage("gift-asset");
+
 
 type Props = {
   gift: RomBuzzGift;
@@ -279,7 +282,7 @@ export default function GiftCard({
         )}
 
         <Animated.View style={[styles.imageMotion, imageAnimatedStyle]}>
-          <Image
+          <PerfImage
             source={{ uri: gift.imageUrl }}
             style={styles.image}
             resizeMode="contain"

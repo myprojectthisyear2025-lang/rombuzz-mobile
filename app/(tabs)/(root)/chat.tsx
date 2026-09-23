@@ -1,3 +1,4 @@
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 File: app/(tabs)/chat.tsx
@@ -38,7 +39,7 @@ import { useChatListStyles } from "@/src/features/chat/list/useChatListStyles";
 import { useChatListUnread } from "@/src/features/chat/list/useChatListUnread";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export default function ChatTab() {
+function ChatTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -53,6 +54,7 @@ export default function ChatTab() {
 
   // Preserve the original lifecycle effect order across the extracted hooks.
   const state = useChatListState();
+  usePerfContent("chat", !state.loading || state.matches.length > 0, state.matches.length);
   const {
     loading, refreshing, nickMap, filtered, pinnedPeers, mutedPeers, alertPeers,
     manualUnreadPeers, actionPeer, setActionPeer, query, setQuery, onlineMap,
@@ -381,3 +383,5 @@ export default function ChatTab() {
     </View>
   );
 }
+
+export default withPerfScreen(ChatTab, "chat");

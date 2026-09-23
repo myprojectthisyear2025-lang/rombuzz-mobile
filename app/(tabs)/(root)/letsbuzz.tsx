@@ -1,3 +1,4 @@
+import { perfTap } from "@/src/performance/diagnostics/core";
 /**
  * ============================================================================
  * 📁 File: app/(tabs)/letsbuzz.tsx
@@ -158,7 +159,7 @@ export default function LetsBuzzScreen() {
           ]}
         >
           <TouchableOpacity
-            onPress={() => setTab("posts")}
+            onPress={() => { perfTap("letsbuzz-posts"); setTab("posts"); }}
             activeOpacity={0.7}
             style={[
               styles.tabButton,
@@ -195,7 +196,7 @@ export default function LetsBuzzScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setTab("reels")}
+            onPress={() => { perfTap("letsbuzz-reels"); setTab("reels"); }}
             activeOpacity={0.7}
             style={[
               styles.tabButton,

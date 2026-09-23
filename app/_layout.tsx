@@ -1,3 +1,5 @@
+import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network";
+import { perfMark, perfSpan } from "@/src/performance/diagnostics/core";
 /**
  * ============================================================
  * 📁 File: app/_layout.tsx
@@ -39,6 +41,8 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+
+installNetworkDiagnostics();
 
 const IS_EXPO_GO = Constants.appOwnership === "expo";
 const Notifications: any = IS_EXPO_GO ? null : require("expo-notifications");
@@ -156,6 +160,7 @@ async function removePushTokenFromBackend(authToken: string, pushToken: string) 
 }
 
 function RootLayout() {
+  useEffect(() => { perfMark("startup", "root-mounted"); }, []);
   const {
     colors,
     isDark,
@@ -210,6 +215,7 @@ function RootLayout() {
     let mounted = true;
 
     const syncAuth = async () => {
+      const stopAuthStorage = perfSpan("startup.auth-storage");
       try {
         const [tokenValue, rawUser, pendingDraft] = await Promise.all([
           SecureStore.getItemAsync("RBZ_TOKEN"),
@@ -244,6 +250,7 @@ function RootLayout() {
         setLoggedIn(false);
         setOnboardingPending(false);
       } finally {
+        stopAuthStorage();
         if (mounted) setReady(true);
       }
     };
@@ -331,6 +338,7 @@ function RootLayout() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
+      perfMark("startup", "splash-gate-complete");
       setSplashDone(true);
     }, 2100);
 

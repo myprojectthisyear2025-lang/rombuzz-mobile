@@ -1,3 +1,5 @@
+import { perfState } from "@/src/performance/diagnostics/core";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 
 /**
  * ============================================================================
@@ -377,7 +379,7 @@ async function resolveStreamPlayback(streamUid: string) {
   }
 }
 
-export default function ViewProfile() {
+function ViewProfile() {
   const router = useRouter();
   const { colors } = useRomBuzzTheme();
   const insets = useSafeAreaInsets();
@@ -420,6 +422,7 @@ export default function ViewProfile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
+  usePerfContent("view-profile", !!user, undefined, user);
   const [matched, setMatched] = useState(false);
   const [buzzMeta, setBuzzMeta] = useState<BuzzPokeMeta>({
     count: 0,
@@ -694,6 +697,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             hydratedCacheForRef.current =
               userId;
 
+            perfState("view-profile", "cache");
             applyProfileBundle({
               profile: cached.profile,
             });
@@ -715,6 +719,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
         hydratedCacheForRef.current =
           userId;
 
+        perfState("view-profile", "fresh");
         applyProfileBundle({
           profile: fresh.profile,
         });
@@ -2171,3 +2176,5 @@ const styles = StyleSheet.create({
   },
   
 });
+
+export default withPerfScreen(ViewProfile, "view-profile");

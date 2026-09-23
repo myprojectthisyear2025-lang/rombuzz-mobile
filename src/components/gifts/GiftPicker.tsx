@@ -1,3 +1,4 @@
+import { usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 Location: src/components/gifts/GiftPicker.tsx
@@ -91,6 +92,7 @@ export default function GiftPicker({
     error: catalogError,
   } = useGiftCatalog(visible);
 
+  usePerfContent("gifts", visible && !catalogLoading && !catalogError, backendGifts.length, backendGifts);
   const { send, sending } = useSendGift();
 
   const backendGiftIds = useMemo(() => {

@@ -1,3 +1,6 @@
+import { perfState } from "@/src/performance/diagnostics/core";
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 File: app/(tabs)/discover.tsx
@@ -36,7 +39,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Dimensions,
-  Image,
   Platform,
   Pressable,
   SafeAreaView,
@@ -56,6 +58,9 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const PerfImage = diagnosticImage("discover-card");
+
 
 
 const { width, height } = Dimensions.get("window");
@@ -413,7 +418,7 @@ function keepVisibleCardStable(prev: any[], fresh: any[]) {
   return [freshCurrent, ...rest];
 }
 
-export default function DiscoverSwipeScreen() {
+function DiscoverSwipeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, styles } = useDiscoverVisuals(
@@ -485,6 +490,7 @@ const nextScale = useAnimatedStyle(() => ({
 
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<any[]>([]);
+  usePerfContent("discover", !loading || users.length > 0, users.length, users);
   const usersRef = useRef<any[]>([]);
   const current = users[0] || null;
 
@@ -596,6 +602,7 @@ const nextScale = useAnimatedStyle(() => ({
 
       if (!alive || !cached.hit) return;
 
+      perfState("discover", "cache");
       setUsers(cached.users);
       setReveal(0);
       setPhotoIndex(0);
@@ -755,6 +762,7 @@ const nextScale = useAnimatedStyle(() => ({
           backgroundRefresh = true;
 
           // Show the small cached deck immediately.
+          perfState("discover", "cache");
           setUsers(cached.users);
           setReveal(0);
           setPhotoIndex(0);
@@ -841,6 +849,7 @@ const nextScale = useAnimatedStyle(() => ({
            const serverList = Array.isArray(data?.users) ? data.users : [];
         const finalList = applyClientOnlyFilters(serverList, effective);
 
+        perfState("discover", "fresh");
         setUsers((prev) => {
           const next = backgroundRefresh
             ? keepVisibleCardStable(prev, finalList)
@@ -1309,7 +1318,7 @@ const swipeGesture = Gesture.Pan()
                 {/* Next card (peek) */}
                  {users[1] ? (
                   <Animated.View style={[styles.card, styles.cardBehind, nextScale]}>
-                  <Image
+                  <PerfImage
                       source={{ uri: getImageUri(users[1]) }}
                       style={styles.cardImg}
                       fadeDuration={0}
@@ -1332,7 +1341,7 @@ const swipeGesture = Gesture.Pan()
       }}
       onLongPress={openProfile}
     >
-      <Image
+      <PerfImage
         source={{ uri: getUserImages(current)[photoIndex] }}
         style={styles.cardImg}
         blurRadius={blurRadius}
@@ -1409,3 +1418,5 @@ const swipeGesture = Gesture.Pan()
 
 const CARD_W = Math.min(width - 20, 428);
 const CARD_H = Math.min(height - 260, 560);
+
+export default withPerfScreen(DiscoverSwipeScreen, "discover");

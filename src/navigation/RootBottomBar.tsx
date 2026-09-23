@@ -1,3 +1,5 @@
+import { perfTap } from "@/src/performance/diagnostics/core";
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * File: src/navigation/RootBottomBar.tsx
  * Purpose: Persistent RomBuzz five-button bottom bar for the native root pager.
@@ -20,7 +22,6 @@ import React from "react";
 
 import {
   Animated,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -30,6 +31,9 @@ import {
 import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+
+const PerfImage = diagnosticImage("avatar");
+
 
 export type RootTabName =
   | "homepage"
@@ -134,11 +138,10 @@ export default function RootBottomBar({
             accessibilityState={{
               selected: focused,
             }}
-            onPress={() =>
-              onNavigate(
-                item.name
-              )
-            }
+            onPress={() => {
+              perfTap(item.name === "letsbuzz" ? "letsbuzz-posts" : item.name);
+              onNavigate(item.name);
+            }}
             style={styles.item}
           >
             <View
@@ -170,7 +173,7 @@ export default function RootBottomBar({
                   ]}
                 >
                   {profilePhoto ? (
-                    <Image
+                    <PerfImage
                       source={{
                         uri:
                           profilePhoto,

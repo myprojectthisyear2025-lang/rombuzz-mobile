@@ -1,3 +1,5 @@
+import { usePerfContent } from "@/src/performance/diagnostics/screens";
+import { perfState } from "@/src/performance/diagnostics/core";
 /**
  * Path: src/features/socialStats/useSocialStatsData.ts
  * Purpose: Preserve Social Stats caching, refresh, polling, list loading, and auth behavior.
@@ -84,6 +86,9 @@ export function useSocialStatsData() {
       SocialStatsUser[]
     >([]);
 
+  const diagnosticReady = useRef(false);
+  usePerfContent("social-stats", diagnosticReady.current, undefined, social);
+
   const pollRef =
     useRef<
       ReturnType<
@@ -134,6 +139,8 @@ export function useSocialStatsData() {
           return false;
         }
 
+        diagnosticReady.current = true;
+        perfState("social-stats", "cache");
         setSocial(
           cached.social
         );
@@ -260,6 +267,8 @@ export function useSocialStatsData() {
           const fresh =
             await socialPerf.fetchSocialStatsFresh();
 
+          diagnosticReady.current = true;
+          perfState("social-stats", "fresh");
           setSocial(
             (prev) =>
               JSON.stringify(
@@ -345,6 +354,8 @@ export function useSocialStatsData() {
           if (
             payload?.social
           ) {
+            diagnosticReady.current = true;
+            perfState("social-stats", "fresh");
             setSocial(
               payload.social
             );

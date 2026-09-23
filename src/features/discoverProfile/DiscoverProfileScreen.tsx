@@ -1,3 +1,4 @@
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * Path: src/features/discoverProfile/DiscoverProfileScreen.tsx
  * Purpose: Standalone modern Discover Profile composition; no View Profile coupling.
@@ -39,7 +40,7 @@ import { useDiscoverProfileController } from "./useDiscoverProfileController";
 import { useDiscoverProfileSwipe } from "./useDiscoverProfileSwipe";
 import { useDiscoverVoiceIntro } from "./useDiscoverVoiceIntro";
 
-export default function DiscoverProfileScreen({
+function DiscoverProfileScreen({
   userId,
   returnTo,
   previewUser,
@@ -69,6 +70,7 @@ export default function DiscoverProfileScreen({
   });
 
   const { user } = controller;
+  usePerfContent("discover-profile", !!user, undefined, user);
   const { voiceUrl, playing, toggleVoice } =
     useDiscoverVoiceIntro(user);
 
@@ -417,3 +419,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+export default withPerfScreen(DiscoverProfileScreen, "discover-profile");

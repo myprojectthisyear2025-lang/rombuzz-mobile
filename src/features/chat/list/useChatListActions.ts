@@ -1,3 +1,4 @@
+import { perfTap } from "@/src/performance/diagnostics/core";
 /**
  * Path: src/features/chat/list/useChatListActions.ts
  * Purpose: Chat preference actions, delete and unmatch confirmations, and thread navigation.
@@ -244,6 +245,7 @@ export function useChatListActions(
     const pid = safeId(peer);
     if (!pid || !myId) return;
 
+    perfTap("chat-open");
     // clear unread for this peer
     setUnreadMap((prev) => {
       if (!prev[pid]) return prev;

@@ -1,3 +1,4 @@
+import { perfMark } from "@/src/performance/diagnostics/core";
 /**
  * ============================================================
  * 📁 Location: src/hooks/gifts/useGiftCatalog.ts
@@ -32,6 +33,7 @@ export function useGiftCatalog(autoLoad = true) {
 
   const reload = useCallback(async () => {
     try {
+      perfMark("gifts", "catalog-load-start");
       setLoading(true);
       setError("");
 
@@ -40,6 +42,7 @@ export function useGiftCatalog(autoLoad = true) {
     } catch (err: any) {
       setError(err?.message || "Failed to load gifts.");
     } finally {
+      perfMark("gifts", "catalog-state-update");
       setLoading(false);
     }
   }, []);

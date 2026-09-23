@@ -1,3 +1,4 @@
+import { withPerfScreen } from "@/src/performance/diagnostics/screens";
 /**
  * Path: app/(tabs)/(root)/social-stats.tsx
  * Purpose: RomBuzz Social Stats shell using the shared Home typography/theme system.
@@ -47,7 +48,7 @@ function safeNum(value: unknown) {
     : 0;
 }
 
-export default function SocialStatsScreen() {
+function SocialStatsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -238,3 +239,4 @@ export default function SocialStatsScreen() {
     </View>
   );
 }
+export default withPerfScreen(SocialStatsScreen, "social-stats");

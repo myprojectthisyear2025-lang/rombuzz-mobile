@@ -1,3 +1,4 @@
+import { perfCacheRead } from "../diagnostics/cache";
 /**
  * ============================================================
  * 📁 File: src/performance/cache/rbzCache.ts
@@ -31,10 +32,11 @@ export async function rbzCacheGet<T>(
   key: string,
   fallback: T
 ): Promise<{ value: T; savedAt: number; hit: boolean }> {
+  const done = perfCacheRead(key);
   try {
     const mem = memory.get(key);
     if (mem) {
-      return { value: mem.value as T, savedAt: mem.savedAt, hit: true };
+      return done({ value: mem.value as T, savedAt: mem.savedAt, hit: true }, "memory");
     }
 
     // Performance caches can be much larger than SecureStore's safe payload
@@ -54,21 +56,21 @@ export async function rbzCacheGet<T>(
     }
 
     if (!raw) {
-      return {
+      return done({
         value: fallback,
         savedAt: 0,
         hit: false,
-      };
+      }, "persistent-miss");
     }
 
     const parsed = JSON.parse(raw) as CacheEnvelope<T>;
 
     if (!parsed || typeof parsed !== "object" || !("value" in parsed)) {
-      return {
+      return done({
         value: fallback,
         savedAt: 0,
         hit: false,
-      };
+      }, "invalid");
     }
 
     const savedAt = Number(parsed.savedAt || 0) || 0;
@@ -80,17 +82,17 @@ export async function rbzCacheGet<T>(
 
     memory.set(key, envelope);
 
-    return {
+    return done({
       value: parsed.value,
       savedAt,
       hit: true,
-    };
+    }, "persistent");
   } catch {
-    return {
+    return done({
       value: fallback,
       savedAt: 0,
       hit: false,
-    };
+    }, "error");
   }
 }
 

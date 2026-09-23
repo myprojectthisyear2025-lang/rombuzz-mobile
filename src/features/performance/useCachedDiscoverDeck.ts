@@ -1,3 +1,4 @@
+import { observeCacheReader } from "@/src/performance/diagnostics/cache";
 /**
  * ============================================================
  * 📁 File: src/features/performance/useCachedDiscoverDeck.ts
@@ -179,7 +180,7 @@ function compactDiscoverUsers(users: any[]) {
     .slice(0, MAX_CACHED_DISCOVER_USERS);
 }
 
-async function readDiscoverDeckKey(key: string) {
+async function readDiscoverDeckKeyUnobserved(key: string) {
   try {
     const raw = await AsyncStorage.getItem(key);
     if (!raw) return { hit: false, users: [], savedAt: 0 };
@@ -287,3 +288,4 @@ export function useCachedDiscoverDeck() {
     preloadDiscoverImages,
   };
 }
+const readDiscoverDeckKey = observeCacheReader("discover-deck", readDiscoverDeckKeyUnobserved);

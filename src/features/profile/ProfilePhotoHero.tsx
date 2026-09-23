@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * Path: src/features/profile/ProfilePhotoHero.tsx
  * Purpose: Full-bleed, safe-area-aware Profile photo hero.
@@ -10,13 +11,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import {
-    Image,
     Pressable,
     StyleSheet,
     Text,
     View,
     useWindowDimensions,
 } from "react-native";
+
+const PerfImage = diagnosticImage("own-profile-hero");
+
 
 type Props = {
   fullName: string;
@@ -86,7 +89,7 @@ export default function ProfilePhotoHero({
           style={StyleSheet.absoluteFill}
         >
           {avatarUri ? (
-            <Image
+            <PerfImage
               source={{ uri: avatarUri }}
               style={styles.photo}
               resizeMode="cover"

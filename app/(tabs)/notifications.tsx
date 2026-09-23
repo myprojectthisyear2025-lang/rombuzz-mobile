@@ -1,3 +1,5 @@
+import { perfState } from "@/src/performance/diagnostics/core";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * =============================================================================
  * 📁 File: app/(tabs)/notifications.tsx
@@ -173,7 +175,7 @@ function getVisualNotificationType(n: NotificationItem): NotificationType {
   return n?.type || "system";
 }
 
-export default function NotificationsScreen() {
+function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const fontsLoaded = useRomBuzzTypography();
@@ -184,6 +186,7 @@ export default function NotificationsScreen() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
    const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  usePerfContent("notifications", !loading || notifications.length > 0, notifications.length, notifications);
   const [filter, setFilter] = useState<NotificationType>("all");
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -233,6 +236,7 @@ export default function NotificationsScreen() {
 
         seenIds.current.clear();
         cachedList.forEach((n) => n?.id && seenIds.current.add(n.id));
+        perfState("notifications", "cache");
         setNotifications(cachedList);
         setLoading(false);
       }
@@ -244,6 +248,7 @@ export default function NotificationsScreen() {
       seenIds.current.clear();
       freshList.forEach((n) => n?.id && seenIds.current.add(n.id));
 
+      perfState("notifications", "fresh");
       setNotifications(freshList);
     } catch (err) {
       console.warn("Fetch notifications failed:", err);
@@ -1518,3 +1523,5 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
 });
+
+export default withPerfScreen(NotificationsScreen, "notifications");

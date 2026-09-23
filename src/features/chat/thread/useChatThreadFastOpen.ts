@@ -1,3 +1,4 @@
+import { perfState } from "@/src/performance/diagnostics/core";
 /**
  * ============================================================
  * 📁 File: src/features/chat/thread/useChatThreadFastOpen.ts
@@ -1572,6 +1573,7 @@ export function useChatThreadFastOpen({
           latestMessagesRef.current =
             cachedMessages;
 
+          perfState("chat-open", "cache");
           setMessages(
             cachedMessages,
           );
@@ -1746,6 +1748,7 @@ export function useChatThreadFastOpen({
               )
             : "";
 
+        perfState("chat-open", "fresh");
         setMessages(
           (current) => {
             const next =

@@ -1,3 +1,4 @@
+import { perfTap, perfMark } from "@/src/performance/diagnostics/core";
 import { Alert } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { API_BASE } from "@/src/config/api";
@@ -40,6 +41,7 @@ export function useChatTextSender({
     const trimmed = text.trim();
     if (!trimmed || !myId || !peerId) return;
 
+    perfTap("chat-send");
     const isEditing = !!editId;
     const currentReply = replyingTo;
     const editingId = editId ? String(editId) : null;
@@ -63,6 +65,7 @@ export function useChatTextSender({
         replyTo: currentReply,
         _temp: true,
       };
+      perfMark("chat-send", "optimistic-state-scheduled");
       setMessages((p) => [...p, temp]);
       setReplyingTo(null);
 
@@ -148,6 +151,7 @@ export function useChatTextSender({
 
       const j = await r.json().catch(() => ({}));
 
+      perfMark("chat-send", r.ok ? "http-success" : "http-failed");
       if (!r.ok) {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         Alert.alert(

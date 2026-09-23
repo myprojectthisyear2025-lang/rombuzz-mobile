@@ -1,3 +1,5 @@
+import { perfState } from "@/src/performance/diagnostics/core";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * Path: app/(tabs)/profile.tsx
  * Purpose: Owner Profile orchestration shell for profile data, media, tabs, saves, and edit flows.
@@ -510,7 +512,7 @@ function computeAgeFromDob(dob?: string) {
   return age;
 }
 
-export default function ProfileScreen() {
+function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const fontsLoaded = useRomBuzzTypography();
@@ -553,6 +555,7 @@ const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [user, setUser] = useState<any>(null);
+  usePerfContent("profile", !!user, undefined, user);
   const completion = useMemo(() => computeCompletion(user), [user]);
 
 
@@ -1009,6 +1012,7 @@ useEffect(() => {
 
     if (!u) return false;
 
+    perfState("profile", "cache");
     setUser(u);
     hydrateFormFromUser(u);
     hydratedOnceRef.current = true;
@@ -1037,6 +1041,7 @@ const loadProfile = useCallback(
       const u = data?.user;
 
       if (u) {
+        perfState("profile", "fresh");
         setUser(u);
 
         if (!hydratedOnceRef.current) {
@@ -2276,3 +2281,5 @@ pickerOptionTextActive: {
 },
 
 });
+
+export default withPerfScreen(ProfileScreen, "profile");

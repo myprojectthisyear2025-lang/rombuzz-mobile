@@ -1,3 +1,4 @@
+import { perfTap } from "@/src/performance/diagnostics/core";
 /**
  * Path: src/features/home/HomeDashboard.tsx
  * Purpose: Theme-aware Home content below the greeting.
@@ -96,11 +97,7 @@ export default function HomeDashboard({
             cta="Go live"
             scene="microbuzz"
             compact={compact}
-            onPress={() =>
-              router.push(
-                "/(tabs)/microbuzz"
-              )
-            }
+            onPress={() => { perfTap("microbuzz"); router.push("/(tabs)/microbuzz"); }}
           />
 
           <HomeFeatureCard
@@ -110,11 +107,7 @@ export default function HomeDashboard({
             cta="Find match"
             scene="discover"
             compact={compact}
-            onPress={() =>
-              router.push(
-                "/(tabs)/discover"
-              )
-            }
+            onPress={() => { perfTap("discover"); router.push("/(tabs)/discover"); }}
           />
         </View>
       </Animated.View>
@@ -140,44 +133,28 @@ export default function HomeDashboard({
             title="Nearby Energy"
             subtitle="Who’s around"
             icon="location-outline"
-            onPress={() =>
-              router.push(
-                "/(tabs)/microbuzz"
-              )
-            }
+            onPress={() => { perfTap("microbuzz"); router.push("/(tabs)/microbuzz"); }}
           />
 
           <HomePulseTile
             title="Curated Matches"
             subtitle="Find your vibe"
             icon="people-outline"
-            onPress={() =>
-              router.push(
-                "/(tabs)/discover"
-              )
-            }
+            onPress={() => { perfTap("discover"); router.push("/(tabs)/discover"); }}
           />
 
           <HomePulseTile
             title="Chats"
             subtitle="Keep it going"
             icon="chatbubble-outline"
-            onPress={() =>
-              router.push(
-                "/(tabs)/(root)/chat"
-              )
-            }
+            onPress={() => { perfTap("chat"); router.push("/(tabs)/(root)/chat"); }}
           />
 
           <HomePulseTile
             title="My Profile"
             subtitle="Best self"
             icon="person-outline"
-            onPress={() =>
-              router.push(
-                "/(tabs)/(root)/profile"
-              )
-            }
+            onPress={() => { perfTap("profile"); router.push("/(tabs)/(root)/profile"); }}
           />
         </View>
       </View>

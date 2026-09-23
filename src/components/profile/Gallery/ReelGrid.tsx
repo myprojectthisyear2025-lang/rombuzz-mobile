@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * Path: src/components/profile/Gallery/ReelGrid.tsx
  * Purpose: Compact 3-column Profile reel grid with play and privacy indicators.
@@ -11,12 +12,14 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 
 import {
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+
+const PerfImage = diagnosticImage("profile-reel-thumbnail");
+
 
 const GRID_GAP = 5;
 
@@ -130,7 +133,7 @@ export default function ReelGrid({
               ]}
             >
               {thumbnailUrl ? (
-                <Image
+                <PerfImage
                   source={{
                     uri: thumbnailUrl,
                   }}

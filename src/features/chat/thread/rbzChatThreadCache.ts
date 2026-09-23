@@ -1,3 +1,4 @@
+import { observeCacheReader } from "@/src/performance/diagnostics/cache";
 /**
  * ============================================================
  * 📁 File: src/features/chat/thread/rbzChatThreadCache.ts
@@ -72,7 +73,7 @@ function normalizeMessages(messages: any[]) {
     .slice(-MAX_CACHED_MESSAGES);
 }
 
-export async function readCachedChatThread(
+async function readCachedChatThreadUnobserved(
   roomId: string
 ): Promise<CachedChatThread | null> {
   try {
@@ -127,3 +128,4 @@ export async function clearCachedChatThread(roomId: string) {
     // Cache must never break chat.
   }
 }
+export const readCachedChatThread = observeCacheReader("chat-thread", readCachedChatThreadUnobserved);

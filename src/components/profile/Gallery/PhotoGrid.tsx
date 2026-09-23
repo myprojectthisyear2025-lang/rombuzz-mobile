@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * Path: src/components/profile/Gallery/PhotoGrid.tsx
  * Purpose: Compact 3-column Profile photo grid with privacy indicators.
@@ -9,11 +10,13 @@ import { Ionicons } from "@expo/vector-icons";
 
 import {
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   View,
 } from "react-native";
+
+const PerfImage = diagnosticImage("profile-gallery");
+
 
 const GRID_GAP = 5;
 
@@ -117,7 +120,7 @@ export default function PhotoGrid({
             },
           ]}
         >
-          <Image
+          <PerfImage
             source={{
               uri: item.url,
             }}

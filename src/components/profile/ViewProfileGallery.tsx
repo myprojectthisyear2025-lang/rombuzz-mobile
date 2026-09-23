@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * ============================================================================
  * 📁 File: src/components/profile/ViewProfileGallery.tsx
@@ -21,7 +22,10 @@ import { RBZFont } from "@/src/design/rombuzzTypography";
 import { getDirectStreamThumbnailUrl } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+const PerfImage = diagnosticImage("view-profile-gallery");
+
 
 const GRID_COLUMNS = 3;
 const GRID_GAP = 7;
@@ -165,7 +169,7 @@ function MediaTile({
     >
       <Pressable onPress={() => onOpen(item, index)} style={styles.mediaPressable}>
         {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.media} resizeMode="cover" />
+          <PerfImage source={{ uri: imageUri }} style={styles.media} resizeMode="cover" />
         ) : (
           <View style={styles.streamPlaceholder}>
             <Ionicons

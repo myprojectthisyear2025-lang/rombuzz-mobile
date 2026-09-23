@@ -1,3 +1,6 @@
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
+import { observeCacheReader } from "@/src/performance/diagnostics/cache";
+import { perfState } from "@/src/performance/diagnostics/core";
 /**
  * Path: app/(tabs)/homepage.tsx
  * Purpose: RomBuzz Home shell with global light/dark theme support.
@@ -24,7 +27,9 @@ import HomeNotificationButton from "@/src/features/home/HomeNotificationButton";
 import { homeStyles as styles } from "@/src/features/home/homeStyles";
 import { useHomeThemeStyles } from "@/src/features/home/useHomeThemeStyles";
 
-export default function HomeScreen() {
+const readHomeUser = observeCacheReader("home-greeting", () => SecureStore.getItemAsync("RBZ_USER"));
+
+function HomeScreen() {
   const insets = useSafeAreaInsets();
   const fontsLoaded = useRomBuzzTypography();
 
@@ -37,6 +42,7 @@ export default function HomeScreen() {
 
   const [firstName, setFirstName] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  usePerfContent("homepage", fontsLoaded && !!firstName);
 
   const [fadeAnim] = useState(
     new Animated.Value(0)
@@ -49,15 +55,14 @@ export default function HomeScreen() {
   const loadUser = async () => {
     try {
       const raw =
-        await SecureStore.getItemAsync(
-          "RBZ_USER"
-        );
+        await readHomeUser();
 
       if (!raw) return;
 
       const user = JSON.parse(raw);
 
       if (user?.firstName) {
+        perfState("homepage", "cache");
         setFirstName(user.firstName);
       }
     } catch {
@@ -258,3 +263,4 @@ export default function HomeScreen() {
     </View>
   );
 }
+export default withPerfScreen(HomeScreen, "homepage");

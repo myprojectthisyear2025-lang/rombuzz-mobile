@@ -1,3 +1,4 @@
+import { perfTap } from "@/src/performance/diagnostics/core";
 /**
  * Path: src/features/socialStats/useSocialStatsListActions.ts
  * Purpose: Preserve existing Social Stats list actions while the UI is redesigned.
@@ -65,6 +66,7 @@ export function useSocialStatsListActions({
         ? "/view-profile"
         : "/discover-profile";
 
+    perfTap(target === "/view-profile" ? "view-profile" : "discover-profile");
     router.push({
       pathname: target,
 

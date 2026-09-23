@@ -1,3 +1,4 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 /**
  * Path: src/features/viewProfile/hero/ViewProfileHero.tsx
  * Purpose: Compact matched-user identity and primary actions for View Profile.
@@ -12,12 +13,14 @@ import { RBZFont } from "@/src/design/rombuzzTypography";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+
+const PerfImage = diagnosticImage("view-profile-hero");
+
 
 type Props = {
   userId: string;
@@ -59,7 +62,7 @@ export default function ViewProfileHero({
     <View style={styles.root}>
       <View style={styles.identityRow}>
         <View style={styles.photoWrap}>
-          <Image
+          <PerfImage
             source={{
               uri:
                 avatar ||

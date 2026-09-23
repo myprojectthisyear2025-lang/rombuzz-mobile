@@ -1,0 +1,25 @@
+{
+  "path": "docs/performance/evidence/assets.json",
+  "purpose": "Bundled file sizes and PNG-header dimensions; not native decode, CDN delivery or visible timing",
+  "capturedAt": "2026-09-23T02:50:54.573Z",
+  "assets": [
+    {
+      "file": "assets/images/logo.png",
+      "bytes": 677152,
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "file": "assets/images/rombuzz-home-discover.png",
+      "bytes": 1878176,
+      "width": 1122,
+      "height": 1402
+    },
+    {
+      "file": "assets/images/rombuzz-home-microbuzz.png",
+      "bytes": 1752833,
+      "width": 1122,
+      "height": 1402
+    }
+  ]
+}

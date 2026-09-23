@@ -1,3 +1,4 @@
+import { diagnosticVideo } from "@/src/performance/diagnostics/media";
 /**
  * ============================================================
  * 📁 File: src/components/media/RBZVideoViewer.tsx
@@ -47,6 +48,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const PerfVideo = diagnosticVideo("video-viewer");
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -531,7 +535,7 @@ export default function RBZVideoViewer({
               }}
             >
               {videoUri ? (
-                <Video
+                <PerfVideo
                   ref={(ref) => {
                     videoRefs.current[index] = ref;
                   }}

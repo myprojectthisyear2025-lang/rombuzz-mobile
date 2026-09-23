@@ -1,3 +1,5 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 File: app/chat/purchased-media/[peerId].tsx
@@ -37,7 +39,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Modal,
   Pressable,
   SafeAreaView,
@@ -54,6 +55,9 @@ import {
   readCachedChatThread,
   writeCachedChatThread,
 } from "@/src/features/chat/thread/rbzChatThreadCache";
+
+const PerfImage = diagnosticImage("purchased-media");
+
 
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -244,7 +248,7 @@ function buildPurchasedMediaRows(arr: AnyMsg[]): MediaRow[] {
     .sort((a, b) => b.createdAtMs - a.createdAtMs);
 }
 
-export default function PurchasedMediaHub() {
+function PurchasedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   useRomBuzzTypography();
@@ -269,6 +273,7 @@ export default function PurchasedMediaHub() {
   const [mediaTab, setMediaTab] = useState<"photos" | "videos">("photos");
 
   const [purchased, setPurchased] = useState<MediaRow[]>([]);
+  usePerfContent("purchased-media", !loading, purchased.length);
   const [unlockingId, setUnlockingId] = useState("");
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -564,7 +569,7 @@ export default function PurchasedMediaHub() {
             useNativeControls={false}
           />
         ) : (
-          <Image
+          <PerfImage
             source={{ uri: item.url }}
             style={[styles.thumb, lockedForMe ? styles.lockedThumb : null]}
           />
@@ -781,3 +786,5 @@ export default function PurchasedMediaHub() {
     </SafeAreaView>
   );
 }
+
+export default withPerfScreen(PurchasedMediaHub, "purchased-media");

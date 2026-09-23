@@ -1,3 +1,5 @@
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 File: app/chat/shared-media/[peerId].tsx
@@ -38,7 +40,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Modal,
   Pressable,
   SafeAreaView,
@@ -55,6 +56,9 @@ import {
   readCachedChatThread,
   writeCachedChatThread,
 } from "@/src/features/chat/thread/rbzChatThreadCache";
+
+const PerfImage = diagnosticImage("shared-media");
+
 
 function makeRoomId(a: string, b: string) {
   return [String(a), String(b)].sort().join("_");
@@ -226,7 +230,7 @@ function buildSharedMediaRows(arr: AnyMsg[]): MediaRow[] {
     .sort((a, b) => b.createdAtMs - a.createdAtMs);
 }
 
-export default function SharedMediaHub() {
+function SharedMediaHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   useRomBuzzTypography();
@@ -248,6 +252,7 @@ export default function SharedMediaHub() {
   const roomId = useMemo(() => makeRoomId(myId, peerId), [myId, peerId]);
 
   const [loading, setLoading] = useState(true);
+  usePerfContent("shared-media", !loading);
   const [mediaTab, setMediaTab] = useState<"photos" | "videos">("photos");
 
   const [shared, setShared] = useState<MediaRow[]>([]);
@@ -496,7 +501,7 @@ export default function SharedMediaHub() {
             useNativeControls={false}
           />
         ) : (
-          <Image source={{ uri: item.url }} style={styles.thumb} />
+          <PerfImage source={{ uri: item.url }} style={styles.thumb} />
         )}
 
         {item.mediaType === "video" ? (
@@ -705,3 +710,5 @@ export default function SharedMediaHub() {
     </SafeAreaView>
   );
 }
+
+export default withPerfScreen(SharedMediaHub, "shared-media");

@@ -1,3 +1,6 @@
+import { perfState } from "@/src/performance/diagnostics/core";
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================================
  * 📁 File: src/components/letsbuzz/LetsBuzzPosts.tsx
@@ -15,7 +18,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -41,6 +43,9 @@ import {
 } from "@/src/features/performance/letsbuzz/rbzLetsBuzzFeedCache";
 import { getSocket } from "@/src/lib/socket";
 import { useLetsBuzzActions } from "./LetsBuzzActions";
+
+const PerfImage = diagnosticImage("post-image-avatar");
+
 
 /* -------------------------------------------------------------------------- */
 /* Types */
@@ -188,7 +193,7 @@ function buildPostsFromLetsBuzzRaw(raw: any[], myId = "") {
 /* -------------------------------------------------------------------------- */
 /* Component */
 /* -------------------------------------------------------------------------- */
-export default function LetsBuzzPosts({
+function LetsBuzzPosts({
   targetPostId,
   targetType,
   ownerId,
@@ -210,6 +215,7 @@ export default function LetsBuzzPosts({
   const [refreshing, setRefreshing] = useState(false);
    const [posts, setPosts] = useState<BuzzPost[]>([]);
   const [meId, setMeId] = useState("");
+  usePerfContent("letsbuzz-posts", !loading || posts.length > 0, posts.length, posts);
   const meIdRef = useRef("");
   const bootedRef = useRef(false);
    const [imageViewerVisible, setImageViewerVisible] = useState(false);
@@ -313,6 +319,7 @@ export default function LetsBuzzPosts({
         const photosOnly = buildPostsFromLetsBuzzRaw(raw, myId);
 
         // Show the feed immediately. Do NOT wait for /users/:id hydration.
+        perfState("letsbuzz-posts", "fresh");
         setPosts(photosOnly);
         preloadLetsBuzzFeedImages(raw, 8);
 
@@ -387,6 +394,7 @@ export default function LetsBuzzPosts({
 
         if (cachedPosts.length) {
           showedCached = true;
+          perfState("letsbuzz-posts", "cache");
           setPosts(cachedPosts);
           preloadLetsBuzzFeedImages(cached.items, 8);
           setLoading(false);
@@ -461,7 +469,7 @@ const avatarUrl =
             style={styles.userInfo}
             activeOpacity={0.7}
           >
-            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+            <PerfImage source={{ uri: avatarUrl }} style={styles.avatar} />
             <View>
               <Text style={styles.userName}>{fullName}</Text>
               <Text style={styles.timestamp}>{timestamp}</Text>
@@ -499,7 +507,7 @@ const avatarUrl =
             pressed && styles.mediaPressed
           ]}
         >
-          <Image
+          <PerfImage
             source={{ uri: item.mediaUrl }}
             style={styles.media}
             resizeMode="cover"
@@ -933,3 +941,4 @@ function createStyles(colors: RomBuzzColors) {
     },
   });
 }
+export default withPerfScreen(LetsBuzzPosts, "letsbuzz-posts");

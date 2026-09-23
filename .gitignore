@@ -44,3 +44,8 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Local performance audit staging and compile output
+/.perf-work/
+
+docs/performance/evidence/local-baseline.json

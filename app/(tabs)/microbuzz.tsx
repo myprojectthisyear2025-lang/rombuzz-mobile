@@ -1,3 +1,4 @@
+import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 File: app/(tabs)/microbuzz.tsx
@@ -214,7 +215,7 @@ function metersLabel(m?: number) {
   return `${(m / 1000).toFixed(1)}km`;
 }
 
-export default function MicroBuzzScreen() {
+function MicroBuzzScreen() {
   // Tips carousel
   const [tipIndex, setTipIndex] = useState(0);
   const [statusMessageIndex, setStatusMessageIndex] = useState(0);
@@ -257,6 +258,8 @@ export default function MicroBuzzScreen() {
 
   // Radar
   const [nearby, setNearby] = useState<NearbyUser[]>([]);
+  const diagnosticScanReady = useRef(false);
+  usePerfContent("microbuzz", diagnosticScanReady.current, nearby.length, nearby);
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Camera modal
@@ -719,6 +722,7 @@ export default function MicroBuzzScreen() {
       const list: NearbyUser[] =
         data?.users || [];
 
+      diagnosticScanReady.current = true;
       setNearby(list);
     } catch {
       // silent
@@ -3291,3 +3295,4 @@ const styles = StyleSheet.create({
     transform: [{ scaleX: -1 }],
   },
 });
+export default withPerfScreen(MicroBuzzScreen, "microbuzz");
