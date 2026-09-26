@@ -8,11 +8,12 @@ import type { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { Alert } from "react-native";
 import { API_BASE } from "@/src/config/api";
+import { chatUnread, unreadRequest } from "../unread/chatUnread";
 import { fullName, makeRoomId, safeId, type MatchUser } from "./chatListPresentation";
 import {
   ALERT_CHATS_KEY, HIDDEN_CHATS_KEY, MANUAL_UNREAD_KEY,
-  MUTED_CHATS_KEY, PINNED_CHATS_KEY, UNREAD_MAP_KEY,
-  applyPinnedOrder, applyUnreadSummary, reorderMatchesPersist,
+  MUTED_CHATS_KEY, PINNED_CHATS_KEY,
+  applyPinnedOrder, reorderMatchesPersist,
   setJSONStore, toggleListValue,
 } from "./chatListPersistence";
 import type { ChatListState } from "./useChatListState";
@@ -20,40 +21,25 @@ import type { ChatListState } from "./useChatListState";
 type ActionState = Pick<ChatListState,
   "myId" | "pinnedPeers" | "mutedPeers" | "alertPeers" | "manualUnreadPeers" |
   "unreadMap" | "hiddenPeers" | "setPinnedPeers" | "setMutedPeers" | "setAlertPeers" |
-  "setManualUnreadPeers" | "setUnreadMap" | "setUnreadTotal" | "setHiddenPeers" |
+  "setManualUnreadPeers" | "setHiddenPeers" |
   "setMatches" | "setFiltered" | "setActionPeer" | "stableAvatarUrl">;
 
 export function useChatListActions(
   { myId, pinnedPeers, mutedPeers, alertPeers, manualUnreadPeers, unreadMap, hiddenPeers,
-    setPinnedPeers, setMutedPeers, setAlertPeers, setManualUnreadPeers, setUnreadMap, setUnreadTotal,
+    setPinnedPeers, setMutedPeers, setAlertPeers, setManualUnreadPeers,
     setHiddenPeers, setMatches, setFiltered, setActionPeer, stableAvatarUrl }: ActionState,
   router: ReturnType<typeof useRouter>,
 ) {
-  const patchRoomPrefs = async (peerId: string, patch: Record<string, boolean>) => {
-    const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-    if (!token || !myId || !peerId) return null;
+  const patchRoomPrefs = async (peerId: string, patch: Record<string, boolean>, optimistic?: () => void) => {
+    const session = chatUnread.getSession();
+    if (!session.token || session.userId !== myId || !myId || !peerId) return null;
 
     const roomId = makeRoomId(myId, peerId);
 
-    const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/prefs`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(patch),
-    });
-
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error || "Failed to update chat settings");
-
-    if (j?.summary) {
-      const applied = await applyUnreadSummary(j.summary);
-      setUnreadMap(applied.byPeer || {});
-      setUnreadTotal(applied.total || 0);
-    }
-
-    return j;
+    return chatUnread.mutate(`prefs:${peerId}:${JSON.stringify(patch)}`, owner =>
+      unreadRequest(owner, `/chat/rooms/${roomId}/prefs`, {
+        method: "PATCH", body: JSON.stringify(patch),
+      }), optimistic);
   };
 
   const togglePinPeer = async (peer: MatchUser) => {
@@ -107,21 +93,10 @@ export function useChatListActions(
 
     if (shouldMarkUnread) {
       await toggleListValue(MANUAL_UNREAD_KEY(myId), manualUnreadPeers, setManualUnreadPeers, pid, true);
-      setUnreadMap((prev) => {
-        const next = { ...prev, [pid]: Math.max(1, Number(prev[pid] || 0)) };
-        setJSONStore(UNREAD_MAP_KEY, next);
-        return next;
-      });
-      await patchRoomPrefs(pid, { forceUnread: true });
+      await patchRoomPrefs(pid, { forceUnread: true }, () => chatUnread.setPeerUnread(pid, true, myId));
     } else {
       await toggleListValue(MANUAL_UNREAD_KEY(myId), manualUnreadPeers, setManualUnreadPeers, pid, false);
-      setUnreadMap((prev) => {
-        const next = { ...prev };
-        delete next[pid];
-        setJSONStore(UNREAD_MAP_KEY, next);
-        return next;
-      });
-      await patchRoomPrefs(pid, { forceUnread: false });
+      await patchRoomPrefs(pid, { forceUnread: false }, () => chatUnread.clearPeer(pid, myId));
     }
 
     setActionPeer(null);
@@ -149,12 +124,7 @@ export function useChatListActions(
       forceUnread: false,
     }).catch(() => null);
 
-    setUnreadMap((prev) => {
-      const next = { ...prev };
-      delete next[pid];
-      setJSONStore(UNREAD_MAP_KEY, next);
-      return next;
-    });
+    chatUnread.clearPeer(pid, myId);
 
     if (manualUnreadPeers.includes(pid)) {
       const nextManual = manualUnreadPeers.filter((x) => x !== pid);
@@ -190,13 +160,9 @@ export function useChatListActions(
 
     const roomId = makeRoomId(myId, pid);
 
-    const r = await fetch(`${API_BASE}/chat/rooms/${roomId}/unmatch`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error || "Failed to unmatch");
+    if (chatUnread.getSession().userId !== myId) return;
+    await chatUnread.mutate(`unmatch:${pid}`, owner =>
+      unreadRequest(owner, `/chat/rooms/${roomId}/unmatch`, { method: "POST" }));
 
     const nextHidden = Array.from(new Set([...hiddenPeers.map(String), pid]));
     setHiddenPeers(nextHidden);
@@ -247,16 +213,7 @@ export function useChatListActions(
 
     perfTap("chat-open");
     // clear unread for this peer
-    setUnreadMap((prev) => {
-      if (!prev[pid]) return prev;
-      const next = { ...prev };
-      delete next[pid];
-      setJSONStore(UNREAD_MAP_KEY, next);
-
-      // ⚠️ DO NOT touch UNREAD_TOTAL_KEY here.
-      // That total is now a "global since last reset" counter for the bottom tab badge.
-      return next;
-    });
+    chatUnread.clearPeer(pid, myId);
 
     if (manualUnreadPeers.includes(pid)) {
       const nextManual = manualUnreadPeers.filter((x) => x !== pid);

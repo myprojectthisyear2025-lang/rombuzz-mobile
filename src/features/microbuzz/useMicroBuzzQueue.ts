@@ -6,8 +6,10 @@
 import {
     useCallback,
     useMemo,
-    useState,
+    useRef,
 } from "react";
+import { useRetainedState } from "../lifecycle/useRetainedState";
+import type { ScreenActivity } from "../lifecycle/useScreenActivity";
 
 import {
     fetchIncomingBuzzQueue,
@@ -44,21 +46,34 @@ function dedupe(
   );
 }
 
-export function useMicroBuzzQueue() {
+export function useMicroBuzzQueue(activity: ScreenActivity) {
+  type QueueUpdate = (previous: BuzzRequestPayload[]) => BuzzRequestPayload[];
+  const inFlight = useRef<Promise<void> | null>(null);
+  const duringLoad = useRef<QueueUpdate[]>([]);
   const [
     requests,
     setRequests,
   ] =
-    useState<
+    useRetainedState<
       BuzzRequestPayload[]
-    >([]);
+    >(activity, []);
 
   const current =
     requests[0] || null;
 
+  // Reconcile a reconnect/focus snapshot without losing socket events or
+  // user decisions that arrived while that snapshot was in flight.
+  const updateRequests = useCallback((update: QueueUpdate) => {
+    if (inFlight.current) duringLoad.current.push(update);
+    setRequests(update);
+  }, [setRequests]);
+
   const load =
     useCallback(
-      async () => {
+      () => {
+        if (inFlight.current) return inFlight.current;
+        duringLoad.current = [];
+        const task = (async () => {
         const raw =
           await fetchIncomingBuzzQueue();
 
@@ -71,11 +86,15 @@ export function useMicroBuzzQueue() {
               Boolean
             ) as BuzzRequestPayload[];
 
-        setRequests(
-          dedupe(normalized)
-        );
+        setRequests(duringLoad.current.reduce((queue, update) => update(queue), dedupe(normalized)));
+        })();
+        inFlight.current = task.finally(() => {
+          inFlight.current = null;
+          duringLoad.current = [];
+        });
+        return inFlight.current;
       },
-      []
+      [setRequests]
     );
 
   const enqueue =
@@ -91,7 +110,7 @@ export function useMicroBuzzQueue() {
 
         if (!request) return;
 
-        setRequests(
+        updateRequests(
           (prev) => {
             const withoutSame =
               prev.filter(
@@ -112,13 +131,13 @@ export function useMicroBuzzQueue() {
           }
         );
       },
-      []
+      [updateRequests]
     );
 
   const remove =
     useCallback(
       (fromId: string) => {
-        setRequests(
+        updateRequests(
           (prev) =>
             prev.filter(
               (item) =>
@@ -127,13 +146,13 @@ export function useMicroBuzzQueue() {
             )
         );
       },
-      []
+      [updateRequests]
     );
 
   const clear =
     useCallback(() => {
-      setRequests([]);
-    }, []);
+      updateRequests(() => []);
+    }, [updateRequests]);
 
   return useMemo(
     () => ({

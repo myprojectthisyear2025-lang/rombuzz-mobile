@@ -35,6 +35,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import { clearSession } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -839,7 +840,7 @@ const nextScale = useAnimatedStyle(() => ({
           const msg = data?.error || "discover_failed";
 
           if (res.status === 401 || msg.toLowerCase().includes("token")) {
-            await SecureStore.deleteItemAsync("RBZ_TOKEN");
+            await clearSession(headers.Authorization.replace(/^Bearer /, ""));
             throw new Error("AUTH_EXPIRED");
           }
 

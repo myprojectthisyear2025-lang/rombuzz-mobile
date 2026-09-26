@@ -15,85 +15,23 @@ import { perfSpan } from "../diagnostics/core";
  */
 
 import { API_BASE } from "@/src/config/api";
-import * as SecureStore from "expo-secure-store";
+import {
+  clearSession, initializeSession, refreshSession,
+} from "@/src/features/auth/rbzSession";
 import { DeviceEventEmitter } from "react-native";
-
-let tokenMemory: string | null = null;
-let tokenLoadedAt = 0;
-
-let userMemory: any | null = null;
-let userLoadedAt = 0;
-
-const TOKEN_MEMORY_TTL_MS = 60_000;
-const USER_MEMORY_TTL_MS = 60_000;
 
 export const RBZ_AUTH_EXPIRED_EVENT = "rbz:auth:expired";
 
-let authExpiredCleanupPromise: Promise<void> | null = null;
-
 export async function rbzGetAuthToken(force = false) {
-  const now = Date.now();
-
-  if (!force && tokenMemory && now - tokenLoadedAt < TOKEN_MEMORY_TTL_MS) {
-    return tokenMemory;
-  }
-
-  const token =
-    (await SecureStore.getItemAsync("RBZ_TOKEN")) ||
-    (await SecureStore.getItemAsync("token")) ||
-    "";
-
-  tokenMemory = token || "";
-  tokenLoadedAt = now;
-
-  return tokenMemory;
+  return (await (force ? refreshSession() : initializeSession())).token;
 }
 
 export async function rbzGetCurrentUser(force = false) {
-  const now = Date.now();
-
-  if (!force && userMemory && now - userLoadedAt < USER_MEMORY_TTL_MS) {
-    return userMemory;
-  }
-
-  const raw = await SecureStore.getItemAsync("RBZ_USER");
-
-  let user = null;
-
-  try {
-    user = raw ? JSON.parse(raw) : null;
-  } catch {
-    await SecureStore.deleteItemAsync("RBZ_USER");
-    user = null;
-  }
-
-  userMemory = user;
-  userLoadedAt = now;
-
-  return userMemory;
-}
-
-export function rbzPrimeCurrentUser(user: any) {
-  userMemory = user || null;
-  userLoadedAt = Date.now();
-}
-
-export function rbzForgetAuthToken() {
-  tokenMemory = null;
-  tokenLoadedAt = 0;
-  userMemory = null;
-  userLoadedAt = 0;
+  return (await (force ? refreshSession() : initializeSession())).user;
 }
 
 export async function rbzClearStoredAuth() {
-  rbzForgetAuthToken();
-
-  await Promise.allSettled([
-    SecureStore.deleteItemAsync("RBZ_TOKEN"),
-    SecureStore.deleteItemAsync("token"),
-    SecureStore.deleteItemAsync("RBZ_USER"),
-    SecureStore.deleteItemAsync("user"),
-  ]);
+  await clearSession();
 }
 
 export async function rbzApiJson<T = any>(
@@ -131,7 +69,7 @@ export async function rbzApiJson<T = any>(
         : text || `HTTP ${response.status}`;
 
     if (needsAuth && rbzIsExpiredAuthError(response.status, message)) {
-      await rbzHandleExpiredAuth(message);
+      await rbzHandleExpiredAuth(message, token);
     }
 
     throw new Error(message);
@@ -152,20 +90,12 @@ function rbzIsExpiredAuthError(status: number, message: string) {
   );
 }
 
-async function rbzHandleExpiredAuth(message: string) {
-  if (!authExpiredCleanupPromise) {
-    authExpiredCleanupPromise = (async () => {
-      await rbzClearStoredAuth();
-
-      DeviceEventEmitter.emit(RBZ_AUTH_EXPIRED_EVENT, {
-        message: message || "Invalid or expired token",
-      });
-    })().finally(() => {
-      authExpiredCleanupPromise = null;
+async function rbzHandleExpiredAuth(message: string, token: string) {
+  if (await clearSession(token)) {
+    DeviceEventEmitter.emit(RBZ_AUTH_EXPIRED_EVENT, {
+      message: message || "Invalid or expired token",
     });
   }
-
-  await authExpiredCleanupPromise;
 }
 
 function safeJson(text: string) {

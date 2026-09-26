@@ -1,21 +1,19 @@
 /**
  * Path: src/features/chat/list/chatListRealtimeHandlers.ts
- * Purpose: Socket message deduplication, previews, persisted ordering, and optimistic unread updates.
+ * Purpose: Socket message deduplication, previews, and persisted ordering.
  */
 
 import type { RefObject } from "react";
 import { safeId } from "./chatListPresentation";
-import { UNREAD_MAP_KEY, persistUnreadTotal, reorderMatchesPersist, setJSONStore } from "./chatListPersistence";
+import { reorderMatchesPersist } from "./chatListPersistence";
 import type { ChatListState } from "./useChatListState";
 
 type RealtimeMessageState = Pick<ChatListState,
-  "myId" | "activePeerRef" | "setMatches" | "setFiltered" | "setUnreadMap" | "setUnreadTotal">;
+  "myId" | "activePeerRef" | "setMatches" | "setFiltered">;
 
 export function createChatListRealtimeHandlers(
-  { myId, activePeerRef, setMatches, setFiltered, setUnreadMap, setUnreadTotal }: RealtimeMessageState,
+  { myId, activePeerRef, setMatches, setFiltered }: RealtimeMessageState,
   seenMsgIdsRef: RefObject<Record<string, number>>,
-  reconcileTimerRef: RefObject<any>,
-  reconcileFromServer: () => Promise<void>,
 ) {
   const TTL_MS = 8000; // keep msg ids for 8s, enough to kill duplicates
 
@@ -23,7 +21,7 @@ export function createChatListRealtimeHandlers(
   const peerFromMsg = (msg: any) =>
     String(msg?.from || msg?.fromId || msg?.senderId || msg?.userId || "");
 
-  const bumpUnread = (raw: any) => {
+  const updateMessagePreview = (raw: any) => {
     // Some emitters wrap message payload (defensive)
     const msg = raw?.message ? raw.message : raw;
 
@@ -34,7 +32,6 @@ export function createChatListRealtimeHandlers(
     const peerId = peerFromMsg(msg);
     if (!peerId) return;
 
-    const isOutgoing = String(msg?.from) === String(myId);
 
     // ✅ If user is actively inside this chat, do NOTHING
     // (prevents chat list from fighting the open chat screen)
@@ -105,28 +102,6 @@ export function createChatListRealtimeHandlers(
       return persisted;
     });
 
-    // ✅ ONLY count unread for incoming (not your own messages)
-    if (isOutgoing) return;
-
-    // ✅ per-thread count
-    setUnreadMap((prev) => {
-      const next = { ...prev, [peerId]: (prev[peerId] || 0) + 1 };
-      setJSONStore(UNREAD_MAP_KEY, next);
-      return next;
-    });
-
-    // ✅ global total badge (bottom tab) — optimistic
-    setUnreadTotal((prev) => {
-      const nextTotal = (prev || 0) + 1;
-      persistUnreadTotal(nextTotal);
-      return nextTotal;
-    });
-
-    // ✅ reconcile to server truth (debounced)
-    if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
-    reconcileTimerRef.current = setTimeout(() => {
-      reconcileFromServer();
-    }, 700);
   };
 
   const bumpReactionPreview = (raw: any) => {
@@ -203,19 +178,6 @@ export function createChatListRealtimeHandlers(
       return persisted;
     });
 
-    // ✅ Treat incoming reactions like a lightweight chat-list notification.
-    // This makes Kylie see Tom's reaction from the chat list without opening chat.
-    setUnreadMap((prev) => {
-      const next = { ...prev, [peerId]: (Number(prev?.[peerId] || 0) || 0) + 1 };
-      setJSONStore(UNREAD_MAP_KEY, next);
-      return next;
-    });
-
-    setUnreadTotal((prev) => {
-      const nextTotal = (Number(prev || 0) || 0) + 1;
-      persistUnreadTotal(nextTotal);
-      return nextTotal;
-    });
   };
-  return { bumpUnread, bumpReactionPreview };
+  return { updateMessagePreview, bumpReactionPreview };
 }

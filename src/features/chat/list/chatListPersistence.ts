@@ -5,12 +5,8 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import * as SecureStore from "expo-secure-store";
-import { DeviceEventEmitter } from "react-native";
-import { API_BASE } from "@/src/config/api";
 import { safeId, type MatchUser } from "./chatListPresentation";
 
-export const UNREAD_MAP_KEY = "RBZ_unread_map";
-export const UNREAD_TOTAL_KEY = "RBZ_unread_total";
 
 export const HIDDEN_CHATS_KEY = (meId: string) => (meId ? `RBZ_chat_hidden_${meId}` : "");
 
@@ -110,58 +106,6 @@ export function applyPinnedOrder(list: MatchUser[], pinnedIds: string[]) {
 
     return (new Date(bt).getTime() || 0) - (new Date(at).getTime() || 0);
   });
-}
-
-// ✅ Global unread total (for bottom tab badge)
-export async function persistUnreadTotal(total: number) {
-  try {
-    await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, String(total));
-  } catch { }
-
-  // ✅ RN-safe event bus
-  try {
-    DeviceEventEmitter.emit("rbz:unread:total", { total });
-  } catch { }
-}
-
-// ✅ Server truth: fetch unread summary (total + per peer)
-export async function fetchUnreadSummary(token: string) {
-  const r = await fetch(`${API_BASE}/chat/unread-summary`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const j = await r.json().catch(() => ({}));
-  return {
-    total: Number(j?.total || 0) || 0,
-    byPeer: j?.byPeer && typeof j.byPeer === "object" ? j.byPeer : {},
-  };
-}
-
-// ✅ Apply server unread summary everywhere (state + storage + global events)
-export async function applyUnreadSummary(summary: any) {
-  const total = Number(summary?.total || 0) || 0;
-
-  const safeByPeer: Record<string, number> = {};
-  const rawByPeer =
-    summary?.byPeer && typeof summary.byPeer === "object" ? summary.byPeer : {};
-
-  Object.keys(rawByPeer || {}).forEach((k) => {
-    safeByPeer[String(k)] = Number(rawByPeer[k] || 0) || 0;
-  });
-
-  // persist map + total
-  await setJSONStore(UNREAD_MAP_KEY, safeByPeer);
-  await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, String(total)).catch(() => { });
-
-  // broadcast for bottom tab + any listeners
-  try {
-    DeviceEventEmitter.emit("rbz:unread:total", { total });
-  } catch { }
-
-  try {
-    DeviceEventEmitter.emit("rbz:unread:summary", { total, byPeer: safeByPeer });
-  } catch { }
-
-  return { total, byPeer: safeByPeer };
 }
 
 export const nickKey = (meId: string, peerId: string) =>

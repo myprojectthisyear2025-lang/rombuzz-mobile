@@ -18,7 +18,7 @@
  */
 
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { getCurrentUser, persistCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
@@ -74,9 +74,8 @@ export default function SecuritySettings() {
       setLoadingEmail(true);
 
       try {
-        const storedUserRaw = await SecureStore.getItemAsync("RBZ_USER");
-        if (storedUserRaw) {
-          const storedUser = JSON.parse(storedUserRaw);
+        const storedUser = await getCurrentUser();
+        if (storedUser) {
           const storedEmail = normalizeEmail(storedUser?.email);
           if (storedEmail) {
             setEmail(storedEmail);
@@ -89,7 +88,7 @@ export default function SecuritySettings() {
 
         if (serverEmail) {
           setEmail(serverEmail);
-          await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(serverUser));
+          await persistCurrentUser(serverUser);
         }
       } catch (e: any) {
         console.log("Security email load failed:", e?.message || e);

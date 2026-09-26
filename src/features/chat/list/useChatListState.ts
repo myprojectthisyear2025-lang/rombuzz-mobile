@@ -6,6 +6,7 @@
 import { useCachedChatInbox } from "@/src/features/performance/useCachedChatInbox";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceEventEmitter } from "react-native";
+import { useUnreadSummary } from "../unread/useUnreadSummary";
 import {
   ALERT_CHATS_KEY, HIDDEN_CHATS_KEY, MANUAL_UNREAD_KEY,
   MUTED_CHATS_KEY, PINNED_CHATS_KEY, getJSONStore, setJSONStore,
@@ -35,7 +36,7 @@ export function useChatListState() {
 
   const [query, setQuery] = useState("");
   const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
-  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
+  const { byPeer: unreadMap, total: unreadTotal } = useUnreadSummary();
   const activePeerRef = useRef<string | null>(null);
   const stableAvatarByPeerRef = useRef<Record<string, string>>({});
   const myId = useMemo(() => String(user?.id || user?._id || ""), [user]);
@@ -152,7 +153,6 @@ export function useChatListState() {
     })();
   }, [myId]);
 
-  const [unreadTotal, setUnreadTotal] = useState(0);
 
   return {
     loading, setLoading, refreshing, setRefreshing,
@@ -162,8 +162,8 @@ export function useChatListState() {
     mutedPeers, setMutedPeers, alertPeers, setAlertPeers,
     manualUnreadPeers, setManualUnreadPeers, actionPeer, setActionPeer,
     query, setQuery, onlineMap, setOnlineMap,
-    unreadMap, setUnreadMap, activePeerRef, myId,
-    stableAvatarUrl, chatPerfRef, unreadTotal, setUnreadTotal,
+    unreadMap, activePeerRef, myId,
+    stableAvatarUrl, chatPerfRef, unreadTotal,
   };
 }
 

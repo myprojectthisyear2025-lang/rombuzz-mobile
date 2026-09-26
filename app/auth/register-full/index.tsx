@@ -17,7 +17,7 @@
  *       interests, photos, avatar, phone, voiceUrl
  *   - On Finish:
  *       → POST `${API_BASE}/auth/register-full` with full payload
- *       → Save token + user to SecureStore
+ *       → Save the secure session and cached user
  *       → Redirect to `/(tabs)` (main app)
  *
  * CONNECTED FILES:
@@ -38,7 +38,7 @@
 
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { persistCurrentUser, setSession } from "@/src/features/auth/rbzSession";
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -563,7 +563,7 @@ export default function RegisterFullScreen() {
 
       // uploadRomBuzzMedia uses the normal authenticated Profile/R2
       // upload route, so save the newly created session first.
-      await SecureStore.setItemAsync("RBZ_TOKEN", token);
+      await setSession(token, user);
 
       const uploadedProfile = await uploadSignupProfilePhotos(
         token,
@@ -602,10 +602,7 @@ export default function RegisterFullScreen() {
           : {}),
       };
 
-      await SecureStore.setItemAsync(
-        "RBZ_USER",
-        JSON.stringify(finalUser)
-      );
+      await persistCurrentUser(finalUser);
 
       // ✅ Only genuine new email / Google / Apple signups get
       // the first-time RomBuzz feature tour.

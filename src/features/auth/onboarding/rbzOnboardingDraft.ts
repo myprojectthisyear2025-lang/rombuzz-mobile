@@ -20,6 +20,21 @@ import * as SecureStore from "expo-secure-store";
 const DRAFT_KEY = "RBZ_ONBOARDING_DRAFT_V1";
 const SECRET_KEY = "RBZ_ONBOARDING_SECRET_V1";
 
+let pendingDraft: boolean | undefined;
+let draftRevision = 0;
+const draftListeners = new Set<(pending: boolean) => void>();
+
+export function subscribeOnboardingDraft(listener: (pending: boolean) => void) {
+  draftListeners.add(listener);
+  return () => { draftListeners.delete(listener); };
+}
+
+function publishDraft(pending: boolean) {
+  draftRevision++;
+  pendingDraft = pending;
+  draftListeners.forEach(listener => listener(pending));
+}
+
 type DraftForm = Record<string, any>;
 
 type SaveDraftInput = {
@@ -90,6 +105,7 @@ export async function saveOnboardingDraft({
       })
     ),
   ]);
+  publishDraft(true);
 }
 
 export async function loadOnboardingDraft<
@@ -139,16 +155,19 @@ export async function loadOnboardingDraft<
   }
 }
 
-export async function hasOnboardingDraft() {
+export async function hasOnboardingDraft(force = false) {
+  if (!force && pendingDraft !== undefined) return pendingDraft;
+  const revision = draftRevision;
   try {
     const [rawDraft, rawSecret] = await Promise.all([
       AsyncStorage.getItem(DRAFT_KEY),
       SecureStore.getItemAsync(SECRET_KEY),
     ]);
 
-    return Boolean(rawDraft && rawSecret);
+    if (revision === draftRevision) pendingDraft = Boolean(rawDraft && rawSecret);
+    return pendingDraft ?? false;
   } catch {
-    return false;
+    return pendingDraft ?? false;
   }
 }
 
@@ -157,4 +176,5 @@ export async function clearOnboardingDraft() {
     AsyncStorage.removeItem(DRAFT_KEY),
     SecureStore.deleteItemAsync(SECRET_KEY),
   ]);
+  publishDraft(false);
 }

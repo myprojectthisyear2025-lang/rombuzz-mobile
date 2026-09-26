@@ -31,6 +31,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -167,10 +168,8 @@ function getHelperText(targetType?: RBZReportTargetType, title?: string) {
 }
 
 async function getReporterName() {
-  const storedMe = await SecureStore.getItemAsync("RBZ_USER");
-
   try {
-    const parsedMe = storedMe ? JSON.parse(storedMe) : null;
+    const parsedMe = await getCurrentUser();
 
     return (
       [parsedMe?.firstName, parsedMe?.lastName].filter(Boolean).join(" ").trim() ||

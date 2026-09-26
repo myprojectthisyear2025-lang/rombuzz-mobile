@@ -6,19 +6,18 @@
  * Goal:
  *  - Profile opens instantly from cache
  *  - /profile/full refreshes quietly
- *  - RBZ_USER stays updated for layout/avatar/tab usage
+ *  - Session identity and the full cached user stay synchronized
  * ============================================================
  */
 
 import {
   rbzApiJson,
-  rbzPrimeCurrentUser,
 } from "@/src/performance/api/rbzApiClient";
 import {
   rbzCacheGet,
   rbzCacheSet,
 } from "@/src/performance/cache/rbzCache";
-import * as SecureStore from "expo-secure-store";
+import { persistCurrentUser } from "@/src/features/auth/rbzSession";
 import { useMemo } from "react";
 
 const PROFILE_FULL_CACHE_KEY = "RBZ_PERF_PROFILE_FULL";
@@ -50,11 +49,7 @@ export function useCachedProfile() {
       });
 
       try {
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user));
-      } catch {}
-
-      try {
-        rbzPrimeCurrentUser(user);
+        await persistCurrentUser(user);
       } catch {}
 
       return user;

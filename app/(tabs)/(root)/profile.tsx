@@ -14,8 +14,11 @@ import StoryViewer from "@/src/components/story/StoryViewer";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLatestCallback, useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
+import { useRetainedState } from "@/src/features/lifecycle/useRetainedState";
 import * as SecureStore from "expo-secure-store";
+import { clearSession, persistCurrentUser } from "@/src/features/auth/rbzSession";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -204,8 +207,7 @@ async function apiFetch(path: string, init: RequestInit = {}) {
     token = await getTokenOrThrow();
   } catch {
     // Token missing → force logout
-    await SecureStore.deleteItemAsync("RBZ_TOKEN");
-    await SecureStore.deleteItemAsync("RBZ_USER");
+    await clearSession("");
     throw new Error("Session expired");
   }
 
@@ -227,8 +229,7 @@ async function apiFetch(path: string, init: RequestInit = {}) {
       msg.toLowerCase().includes("expired") ||
       msg.toLowerCase().includes("invalid token")
     ) {
-      await SecureStore.deleteItemAsync("RBZ_TOKEN");
-      await SecureStore.deleteItemAsync("RBZ_USER");
+      await clearSession(token);
       throw new Error("SESSION_EXPIRED");
     }
 
@@ -245,8 +246,7 @@ async function apiJson(path: string, method: string, body: any) {
   try {
     token = await getTokenOrThrow();
   } catch {
-    await SecureStore.deleteItemAsync("RBZ_TOKEN");
-    await SecureStore.deleteItemAsync("RBZ_USER");
+    await clearSession("");
     throw new Error("SESSION_EXPIRED");
   }
 
@@ -268,8 +268,7 @@ async function apiJson(path: string, method: string, body: any) {
       msg.toLowerCase().includes("expired") ||
       msg.toLowerCase().includes("invalid token")
     ) {
-      await SecureStore.deleteItemAsync("RBZ_TOKEN");
-      await SecureStore.deleteItemAsync("RBZ_USER");
+      await clearSession(token);
       throw new Error("SESSION_EXPIRED");
     }
 
@@ -513,6 +512,8 @@ function computeAgeFromDob(dob?: string) {
 }
 
 function ProfileScreen() {
+  const activity = useScreenActivity();
+  const { isActive: isScreenActive } = activity;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const fontsLoaded = useRomBuzzTypography();
@@ -551,10 +552,10 @@ function ProfileScreen() {
   const deepLinkParentId = parentId ? String(parentId) : "";
   const deepLinkReplyId = replyId ? String(replyId) : "";
 
-const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+const [loading, setLoading] = useRetainedState(activity, false);
+  const [refreshing, setRefreshing] = useRetainedState(activity, false);
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useRetainedState<any>(activity, null);
   usePerfContent("profile", !!user, undefined, user);
   const completion = useMemo(() => computeCompletion(user), [user]);
 
@@ -615,7 +616,7 @@ const profilePerf = useCachedProfile();
            };
 
       setUser(merged);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
+      await persistCurrentUser(merged);
       profilePerf.writeCachedProfile(merged).catch(() => {});
 
       if (Object.prototype.hasOwnProperty.call(patch, "lookingFor")) {
@@ -651,7 +652,7 @@ useEffect(() => {
 }, [deepLinkTargetId]);
 
   // Edit form (subset of web, but supports all core fields + favorites voice)
-const [form, setForm] = useState<ProfileEditForm>({
+const [form, setForm] = useRetainedState<ProfileEditForm>(activity, {
   // Identity
   firstName: "",
   lastName: "",
@@ -725,11 +726,28 @@ const [form, setForm] = useState<ProfileEditForm>({
   // Voice
   const recordingRef = useRef<Audio.Recording | null>(null);
   const [recording, setRecording] = useState(false);
-  const [voiceUrl, setVoiceUrl] = useState<string>("");
-  const [voiceDurationSec, setVoiceDurationSec] = useState<number>(0);
+  const [voiceUrl, setVoiceUrl] = useRetainedState<string>(activity, "");
+  const [voiceDurationSec, setVoiceDurationSec] = useRetainedState<number>(activity, 0);
   const voiceDurationRecoveryRef = useRef<string>("");
   const soundRef = useRef<Audio.Sound | null>(null);
-  const [playing, setPlaying] = useState(false);
+  const voicePlaybackEpochRef = useRef(0);
+  const [playing, setPlaying] = useRetainedState(activity, false);
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      voicePlaybackEpochRef.current = voicePlaybackEpochRef.current + 1;
+      const sound = soundRef.current;
+      soundRef.current = null;
+      sound?.setOnPlaybackStatusUpdate(null);
+      sound?.unloadAsync().catch(() => {});
+      setPlaying(false);
+    };
+  }, [activity.active, setPlaying]);
+  useEffect(() => () => {
+    if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+    recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+    recordingRef.current = null;
+  }, []);
 
   const fullName = useMemo(() => {
     const fn = user?.firstName || user?.name || "";
@@ -781,14 +799,15 @@ const [form, setForm] = useState<ProfileEditForm>({
   const [guidanceIndex, setGuidanceIndex] = useState(0);
 
   // STORY STATE (REAL: backed by /api/stories/me)
-const [hasStory, setHasStory] = useState(false);
-const [myStories, setMyStories] = useState<any[]>([]);
-const [storyOwner, setStoryOwner] = useState<any>(null);
+const [hasStory, setHasStory] = useRetainedState(activity, false);
+const [myStories, setMyStories] = useRetainedState<any[]>(activity, []);
+const [storyOwner, setStoryOwner] = useRetainedState<any>(activity, null);
 const [storyOpen, setStoryOpen] = useState(false);
 
 
 // loads story state for avatar ring + future viewer
 const loadMyStories = useCallback(async () => {
+  if (!isScreenActive()) return;
   if (!STORIES_V1_ENABLED) {
     setMyStories([]);
     setHasStory(false);
@@ -809,7 +828,7 @@ const loadMyStories = useCallback(async () => {
     setHasStory(false);
     setStoryOwner(null);
   }
-}, []);
+}, [isScreenActive, setHasStory, setMyStories, setStoryOwner]);
 
 
 
@@ -819,14 +838,14 @@ const guidanceList = useMemo(
 );
 
 useEffect(() => {
-  if (!guidanceList.length) return;
+  if (!activity.active || !guidanceList.length) return;
 
   const id = setInterval(() => {
     setGuidanceIndex((i) => (i + 1) % guidanceList.length);
   }, 30000); // 30 seconds
 
   return () => clearInterval(id);
-}, [guidanceList]);
+}, [activity.active, guidanceList]);
 
 
     const hydrateFormFromUser = useCallback((u: any) => {
@@ -908,7 +927,7 @@ useEffect(() => {
     visibilityMode: u?.visibilityMode || "public",
     fieldVisibility: u?.fieldVisibility || {},
   });
-}, []);
+}, [setForm, setVoiceDurationSec, setVoiceUrl]);
 
 /**
  * Recover duration for older voice intros that were saved before
@@ -918,6 +937,7 @@ useEffect(() => {
  * recover the real duration, save it to MongoDB, and update cache.
  */
 useEffect(() => {
+  if (!activity.active) return;
   if (!voiceUrl) {
     voiceDurationRecoveryRef.current = "";
     return;
@@ -933,6 +953,7 @@ useEffect(() => {
   voiceDurationRecoveryRef.current = voiceUrl;
 
   let probeSound: Audio.Sound | null = null;
+  let cancelled = false;
 
   const recoverVoiceDuration = async () => {
     try {
@@ -942,6 +963,7 @@ useEffect(() => {
       );
 
       probeSound = created.sound;
+      if (cancelled || !isScreenActive()) return;
 
       const status: any = created.status?.isLoaded
         ? created.status
@@ -952,15 +974,12 @@ useEffect(() => {
           ? Number(status.durationMillis)
           : 0;
 
-      if (durationMillis <= 0) return;
+      if (durationMillis <= 0 || cancelled || !isScreenActive()) return;
 
       const recoveredDurationSec = Math.max(
         1,
         Math.round(durationMillis / 1000)
       );
-
-      // Show the real duration immediately.
-      setVoiceDurationSec(recoveredDurationSec);
 
       // Permanently backfill the missing value in MongoDB.
       const updated = await apiJson("/users/me", "PUT", {
@@ -968,7 +987,7 @@ useEffect(() => {
       });
 
       // Do not let an old recovery overwrite a newly changed/deleted voice.
-      if (voiceDurationRecoveryRef.current !== voiceUrl) return;
+      if (cancelled || voiceDurationRecoveryRef.current !== voiceUrl) return;
 
       const merged = {
         ...(user || {}),
@@ -977,8 +996,9 @@ useEffect(() => {
       };
 
       setUser(merged);
+      setVoiceDurationSec(recoveredDurationSec);
 
-      // Keep stale-first Profile cache and RBZ_USER synchronized too.
+      // Keep the stale-first Profile cache and session user synchronized too.
       await profilePerf.writeCachedProfile(merged);
     } catch (e: any) {
       console.log(
@@ -994,7 +1014,14 @@ useEffect(() => {
   };
 
   recoverVoiceDuration();
-}, [voiceUrl, voiceDurationSec, profilePerf, user]);
+  return () => {
+    cancelled = true;
+    if (voiceDurationSec <= 0) voiceDurationRecoveryRef.current = "";
+    const sound = probeSound;
+    probeSound = null;
+    sound?.unloadAsync().catch(() => {});
+  };
+}, [activity.active, isScreenActive, voiceUrl, voiceDurationSec, profilePerf, user, setUser, setVoiceDurationSec]);
 
  const hydrateUserFromLocal = useCallback(async () => {
   if (hydratedOnceRef.current && user) return true;
@@ -1005,7 +1032,7 @@ useEffect(() => {
 
     let u = cachedProfile?.user || null;
 
-    // ✅ Fallback to normal RBZ_USER if full profile cache is not ready yet.
+    // ✅ Fallback to the session user if full profile cache is not ready yet.
     if (!u) {
       u = await rbzGetCurrentUser().catch(() => null);
     }
@@ -1023,13 +1050,22 @@ useEffect(() => {
     console.log("Failed to hydrate cached profile", e);
     return false;
   }
-}, [hydrateFormFromUser, profilePerf, user]);
+}, [hydrateFormFromUser, profilePerf, user, setUser, setLoading]);
 
 
 const lastProfileSyncRef = useRef<number>(0);
+const profileRequestRef = useRef<Promise<void> | null>(null);
 
 const loadProfile = useCallback(
-  async (opts?: { background?: boolean }) => {
+  (opts?: { background?: boolean }): Promise<void> => {
+    if (profileRequestRef.current) {
+      if (opts?.background) return profileRequestRef.current;
+      // An explicit refresh/save must read after the older request, which may
+      // have started before that user action reached the server.
+      return profileRequestRef.current.then(() => loadProfile(opts));
+    }
+    if (!isScreenActive()) return Promise.resolve();
+    const task = (async () => {
     const background = !!opts?.background;
 
     try {
@@ -1049,11 +1085,11 @@ const loadProfile = useCallback(
           hydratedOnceRef.current = true;
         }
 
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(u));
+        await persistCurrentUser(u);
       }
 
       // stories can refresh silently
-      loadMyStories().catch(() => {});
+      if (isScreenActive()) loadMyStories().catch(() => {});
 
       lastProfileSyncRef.current = Date.now();
     } catch (e: any) {
@@ -1065,7 +1101,7 @@ const loadProfile = useCallback(
         return;
       }
 
-      if (!background) {
+      if (!background && isScreenActive()) {
         Alert.alert("Profile", e?.message || "Failed to load profile");
       }
     } finally {
@@ -1073,13 +1109,15 @@ const loadProfile = useCallback(
         setLoading(false);
       }
     }
+    })();
+    profileRequestRef.current = task.finally(() => { profileRequestRef.current = null; });
+    return profileRequestRef.current;
   },
-  [hydrateFormFromUser, loadMyStories, profilePerf, user]
+  [isScreenActive, hydrateFormFromUser, loadMyStories, profilePerf, router, user, setLoading, setUser]
 );
 
 
-useFocusEffect(
-  useCallback(() => {
+const refreshProfileOnEntry = useLatestCallback(() => {
     // 1️⃣ Instant render from cache
     hydrateUserFromLocal();
 
@@ -1094,8 +1132,10 @@ if (
   loadProfile({ background: true });
 }
 
-  }, [hydrateUserFromLocal, loadProfile])
-);
+});
+useEffect(() => {
+  if (activity.active) refreshProfileOnEntry();
+}, [activity.active, refreshProfileOnEntry]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1104,7 +1144,7 @@ if (
     } finally {
       setRefreshing(false);
     }
-  }, [loadProfile]);
+  }, [loadProfile, setRefreshing]);
 
    // ---------- Avatar change (R2 + PUT /users/me + optional gallery save + optional auto-post)
   const changeAvatar = async () => {
@@ -1164,7 +1204,7 @@ if (
         };
 
         setUser((prev: any) => ({ ...(prev || {}), ...merged }));
-        await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
+        await persistCurrentUser(merged);
       }
 
       Alert.alert("Profile", "Avatar updated!");
@@ -1309,8 +1349,8 @@ setStoryOpen(true);
       setRecording(true);
 
       // Safety auto-stop at 60s
-      setTimeout(async () => {
-        if (recordingRef.current) {
+      recordingTimerRef.current = setTimeout(async () => {
+        if (recordingRef.current === rec) {
           try {
             await stopRecording(true);
           } catch {}
@@ -1325,6 +1365,8 @@ setStoryOpen(true);
     try {
       const rec = recordingRef.current;
       if (!rec) return;
+      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
 
       setRecording(false);
 
@@ -1368,10 +1410,7 @@ setStoryOpen(true);
 
       if (updated?.user) {
         setUser((prev: any) => ({ ...(prev || {}), ...updated.user }));
-        await SecureStore.setItemAsync(
-          "RBZ_USER",
-          JSON.stringify({ ...(user || {}), ...updated.user })
-        );
+        await persistCurrentUser({ ...(user || {}), ...updated.user });
       }
 
       Alert.alert("Voice Intro", autoStop ? "Saved (60s max)" : "Saved!");
@@ -1385,15 +1424,22 @@ setStoryOpen(true);
 
   const playVoice = async () => {
     try {
-      if (!voiceUrl) return;
+      if (!voiceUrl || !isScreenActive()) return;
       if (playing) {
         await soundRef.current?.stopAsync();
         setPlaying(false);
         return;
       }
 
-      const { sound } = await Audio.Sound.createAsync({ uri: voiceUrl }, { shouldPlay: true });
+      const epoch = ++voicePlaybackEpochRef.current;
+      const { sound } = await Audio.Sound.createAsync({ uri: voiceUrl }, { shouldPlay: false });
+      if (epoch !== voicePlaybackEpochRef.current || !isScreenActive()) {
+        await sound.unloadAsync().catch(() => {});
+        return;
+      }
       soundRef.current = sound;
+      await sound.playAsync();
+      if (soundRef.current !== sound) return;
       setPlaying(true);
 
       sound.setOnPlaybackStatusUpdate((st: any) => {
@@ -1440,7 +1486,7 @@ setStoryOpen(true);
       };
 
       setUser(merged);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
+      await persistCurrentUser(merged);
 
       Alert.alert("Voice Intro", "Deleted.");
       await loadProfile();
@@ -1507,7 +1553,7 @@ setStoryOpen(true);
       };
 
       setUser(merged);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(merged));
+      await persistCurrentUser(merged);
 
       setEditTarget(null);
       Alert.alert("Profile", "Saved!");
@@ -1527,8 +1573,7 @@ setStoryOpen(true);
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await SecureStore.deleteItemAsync("RBZ_TOKEN");
-          await SecureStore.deleteItemAsync("RBZ_USER");
+          await clearSession();
           router.replace("/auth/login");
         },
       },
@@ -1545,8 +1590,7 @@ setStoryOpen(true);
           try {
             setUploading(true);
             await apiFetch("/account/deactivate", { method: "PATCH" });
-            await SecureStore.deleteItemAsync("RBZ_TOKEN");
-            await SecureStore.deleteItemAsync("RBZ_USER");
+            await clearSession();
             router.replace("/auth/login");
           } catch (e: any) {
             Alert.alert("Deactivate", e?.message || "Failed");
@@ -1571,8 +1615,7 @@ setStoryOpen(true);
             try {
               setUploading(true);
               await apiFetch("/account/delete", { method: "DELETE" });
-              await SecureStore.deleteItemAsync("RBZ_TOKEN");
-              await SecureStore.deleteItemAsync("RBZ_USER");
+              await clearSession();
               router.replace("/auth/login");
             } catch (e: any) {
               Alert.alert("Delete", e?.message || "Failed");

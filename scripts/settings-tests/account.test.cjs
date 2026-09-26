@@ -13,7 +13,7 @@ test("name save and verified email change preserve payloads and cached user", as
   h.replies.push({ user: updated });
   await h.press("Save name");
   assert.deepEqual(h.requests.at(-1), { url: "/users/me", method: "PUT", body: { firstName: "Sam", lastName: "Lee" } });
-  assert.deepEqual(JSON.parse(h.stored.get("RBZ_USER")), updated);
+  assert.deepEqual(JSON.parse(h.stored.get("RBZ_SESSION_USER_V1")), updated);
   await h.press("OK");
   await h.enter("New email", " new@example.com ");
   h.replies.push({ success: true });
@@ -27,7 +27,7 @@ test("name save and verified email change preserve payloads and cached user", as
     url: "/account/confirm-email-change", method: "POST",
     body: { newEmail: "new@example.com", code: "123456" },
   });
-  assert.equal(JSON.parse(h.stored.get("RBZ_USER")).email, "new@example.com");
+  assert.equal(JSON.parse(h.stored.get("RBZ_SESSION_USER_V1")).email, "new@example.com");
   assert.equal(h.input("New email").props.value, "");
   assert.equal(h.input("Verification code"), undefined);
 });

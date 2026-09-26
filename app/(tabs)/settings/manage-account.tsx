@@ -17,7 +17,7 @@
  */
 
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { clearSession } from "@/src/features/auth/rbzSession";
 import React, { useState } from "react";
 
 import { StyleSheet, Text, View } from "react-native";
@@ -76,15 +76,7 @@ export default function ManageAccount() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const hardLogout = async () => {
-    await Promise.allSettled([
-      SecureStore.deleteItemAsync("RBZ_TOKEN"),
-
-      SecureStore.deleteItemAsync("RBZ_USER"),
-
-      SecureStore.deleteItemAsync("token"),
-
-      SecureStore.deleteItemAsync("user"),
-    ]);
+    await clearSession();
 
     router.replace("/start");
   };

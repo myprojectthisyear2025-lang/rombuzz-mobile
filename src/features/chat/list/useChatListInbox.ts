@@ -180,7 +180,7 @@ export function useChatListInbox(
           .catch(() => { });
 
         // ✅ Also refresh unread truth during pull-down refresh.
-        await reconcileFromServer();
+        if (mode === "refresh") await reconcileFromServer();
       } catch (e) {
         console.log("❌ Chat load failed", e);
 
@@ -193,7 +193,7 @@ export function useChatListInbox(
         setRefreshing(false);
       }
     },
-    [myId, router, hydrateCachedChats]
+    [myId, router, hydrateCachedChats, reconcileFromServer]
   );
   // Load matches (same endpoint as web)
   useEffect(() => {

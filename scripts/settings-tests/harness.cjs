@@ -58,9 +58,14 @@ function createHarness({ mode = "light" } = {}) {
       setItemAsync: async (key, value) => { stored.set(key, value); storageWrites.push([key, value]); },
       deleteItemAsync: async key => { deletedKeys.push(key); stored.delete(key); },
     },
-    "@react-native-async-storage/async-storage": { getItem: async key => stored.get(key) ?? null },
+    "@react-native-async-storage/async-storage": {
+      getItem: async key => stored.get(key) ?? null,
+      setItem: async (key, value) => { stored.set(key, value); },
+      removeItem: async key => { stored.delete(key); },
+    },
   };
   const virtual = {
+    "src/performance/diagnostics/core": { perfSpan: () => () => {} },
     "src/design/RomBuzzThemeProvider": { useRomBuzzTheme: () => React.useContext(themeContext) },
     "src/design/rombuzzTypography": {
       RBZFont: Object.fromEntries(["regular", "medium", "semiBold", "bold", "extraBold"].map(name => [name, "Manrope_" + name])),

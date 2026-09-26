@@ -1,42 +1,39 @@
 /**
  * Path: src/features/chat/list/useChatListRealtime.ts
- * Purpose: Socket registration, presence batching, unread pushes, and matched-room membership.
+ * Purpose: Socket registration, presence batching, previews, and matched-room membership.
  */
 
 import { useEffect, useRef } from "react";
 import { unstable_batchedUpdates } from "react-native";
 import { getSocket } from "@/src/lib/socket";
 import { makeRoomId, safeId } from "./chatListPresentation";
-import { applyUnreadSummary } from "./chatListPersistence";
 import { createChatListRealtimeHandlers } from "./chatListRealtimeHandlers";
 import type { ChatListState } from "./useChatListState";
 
 type RealtimeState = Pick<ChatListState,
   "user" | "myId" | "matches" | "activePeerRef" | "setMatches" |
-  "setFiltered" | "setOnlineMap" | "setUnreadMap" | "setUnreadTotal">;
+  "setFiltered" | "setOnlineMap">;
 
-export function useChatListRealtime(state: RealtimeState, reconcileFromServer: () => Promise<void>) {
-  const { user, myId, matches, setOnlineMap, setUnreadMap, setUnreadTotal } = state;
-  // ✅ Dedup unread bumps (same message arrives via chat:message + direct:message etc)
+export function useChatListRealtime(state: RealtimeState) {
+  const { user, myId, matches, setOnlineMap } = state;
+  // Deduplicate previews delivered by both message events.
   const seenMsgIdsRef = useRef<Record<string, number>>({}); // msgId -> timestamp(ms)
   const socketRef = useRef<any>(null);
 
   // ✅ Presence batching refs MUST be top-level (hooks rule)
   const presenceQueueRef = useRef<Record<string, boolean>>({});
   const presenceFlushRef = useRef<any>(null);
-  const reconcileTimerRef = useRef<any>(null);
 
   useEffect(() => {
     if (!user) return;
     let s: any;
+    let alive = true;
 
     const onConnect = () => {
       try {
         s.emit("register", myId);
       } catch { }
 
-      // ✅ socket reconnect → refresh server unread truth
-      reconcileFromServer();
     };
 
     // ✅ Batch presence changes (debounced)
@@ -68,11 +65,12 @@ export function useChatListRealtime(state: RealtimeState, reconcileFromServer: (
 
     const onOffline = ({ userId }: any) => queuePresence(userId, false);
 
-    const { bumpUnread, bumpReactionPreview } = createChatListRealtimeHandlers(
-      state, seenMsgIdsRef, reconcileTimerRef, reconcileFromServer,
+    const { updateMessagePreview, bumpReactionPreview } = createChatListRealtimeHandlers(
+      state, seenMsgIdsRef,
     );
     (async () => {
       s = await getSocket();
+      if (!alive) return;
       socketRef.current = s;
 
       s.emit("register", myId);
@@ -81,36 +79,25 @@ export function useChatListRealtime(state: RealtimeState, reconcileFromServer: (
       s.on("presence:online", onOnline);
       s.on("presence:offline", onOffline);
 
-      // ✅ Keep both (backend emits both), but bumpUnread now dedupes by msg.id
-      s.on("chat:message", bumpUnread);
-      s.on("direct:message", bumpUnread);
+      s.on("chat:message", updateMessagePreview);
+      s.on("direct:message", updateMessagePreview);
 
       // ✅ Reaction preview updates chat list instantly when someone reacts.
       // This updates the row preview/order without creating fake DB messages.
       s.on("chat:reaction-preview", bumpReactionPreview);
 
-      // ✅ Server truth pushes (prevents drift)
-      s.on("chat:unread:update", async (summary: any) => {
-        const applied = await applyUnreadSummary(summary);
-
-        // ✅ batch both updates so list renders once
-        unstable_batchedUpdates(() => {
-          setUnreadMap(applied.byPeer || {});
-          setUnreadTotal(applied.total || 0);
-        });
-      });
 
     })();
 
     return () => {
+      alive = false;
       if (!s) return;
       s.off("connect", onConnect);
       s.off("presence:online", onOnline);
       s.off("presence:offline", onOffline);
-      s.off("chat:message", bumpUnread);
-      s.off("direct:message", bumpUnread);
+      s.off("chat:message", updateMessagePreview);
+      s.off("direct:message", updateMessagePreview);
       s.off("chat:reaction-preview", bumpReactionPreview);
-      s.off("chat:unread:update");
     };
   }, [user, myId]);
 

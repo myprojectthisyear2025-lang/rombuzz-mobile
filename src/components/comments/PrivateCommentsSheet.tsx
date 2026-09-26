@@ -30,6 +30,7 @@ import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -139,8 +140,7 @@ async function authHeaders() {
 
 async function getStoredMe() {
   try {
-    const raw = await SecureStore.getItemAsync("RBZ_USER");
-    const parsed = raw ? JSON.parse(raw) : null;
+    const parsed = await getCurrentUser();
     return parsed?.user || parsed || null;
   } catch {
     return null;

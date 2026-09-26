@@ -21,7 +21,7 @@
  */
 
 import * as SecureStore from "expo-secure-store";
-import { DeviceEventEmitter } from "react-native";
+import { chatUnread } from "@/src/features/chat/unread/chatUnread";
 
 import {
   clearCachedChatThread,
@@ -39,7 +39,6 @@ type CachedInbox = {
   savedAt?: number;
 };
 
-type UnreadMap = Record<string, number>;
 
 function safeId(value: any) {
   return String(value || "").trim();
@@ -80,74 +79,6 @@ async function removePeerFromJsonArray(
       key,
       JSON.stringify(next)
     );
-  } catch {}
-}
-
-async function clearUnreadPeer(
-  peerId: string
-) {
-  try {
-    const raw =
-      await SecureStore.getItemAsync(
-        "RBZ_unread_map"
-      );
-
-    let unreadMap: UnreadMap = {};
-
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          !Array.isArray(parsed)
-        ) {
-          unreadMap = parsed as UnreadMap;
-        }
-      } catch {
-        unreadMap = {};
-      }
-    }
-
-    delete unreadMap[peerId];
-
-    const total =
-      Object.values(unreadMap).reduce<number>(
-        (sum, value) =>
-          sum +
-          (Number(value || 0) || 0),
-        0
-      );
-
-    await Promise.allSettled([
-      SecureStore.setItemAsync(
-        "RBZ_unread_map",
-        JSON.stringify(unreadMap)
-      ),
-
-      SecureStore.setItemAsync(
-        "RBZ_unread_total",
-        String(total)
-      ),
-    ]);
-
-    try {
-      DeviceEventEmitter.emit(
-        "rbz:unread:total",
-        {
-          total,
-        }
-      );
-
-      DeviceEventEmitter.emit(
-        "rbz:unread:summary",
-        {
-          total,
-          byPeer: unreadMap,
-        }
-      );
-    } catch {}
   } catch {}
 }
 
@@ -252,9 +183,7 @@ export async function clearUnavailableChatLocalState(
     );
   } catch {}
 
-  await clearUnreadPeer(
-    peerId
-  );
+  chatUnread.clearPeer(peerId, myId);
 
   await Promise.allSettled([
     removePeerFromJsonArray(

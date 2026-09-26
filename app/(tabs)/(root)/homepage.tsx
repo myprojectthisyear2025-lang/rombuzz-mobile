@@ -8,7 +8,7 @@ import { perfState } from "@/src/performance/diagnostics/core";
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import * as SecureStore from "expo-secure-store";
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useEffect, useState } from "react";
 
 import {
@@ -27,7 +27,7 @@ import HomeNotificationButton from "@/src/features/home/HomeNotificationButton";
 import { homeStyles as styles } from "@/src/features/home/homeStyles";
 import { useHomeThemeStyles } from "@/src/features/home/useHomeThemeStyles";
 
-const readHomeUser = observeCacheReader("home-greeting", () => SecureStore.getItemAsync("RBZ_USER"));
+const readHomeUser = observeCacheReader("home-greeting", getCurrentUser);
 
 function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -54,12 +54,10 @@ function HomeScreen() {
 
   const loadUser = async () => {
     try {
-      const raw =
+      const user =
         await readHomeUser();
 
-      if (!raw) return;
-
-      const user = JSON.parse(raw);
+      if (!user) return;
 
       if (user?.firstName) {
         perfState("homepage", "cache");

@@ -29,6 +29,7 @@ import GiftPicker from "@/src/components/gifts/GiftPicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -97,10 +98,9 @@ async function authHeaders() {
 
 async function getMeId() {
   try {
-    const cached = await SecureStore.getItemAsync("RBZ_USER");
+    const parsed = await getCurrentUser();
 
-    if (cached) {
-      const parsed = JSON.parse(cached);
+    if (parsed) {
       const id =
         parsed?.id ||
         parsed?._id ||

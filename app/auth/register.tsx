@@ -4,7 +4,7 @@
 // ===========================================================
 
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { setSession } from "@/src/features/auth/rbzSession";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -146,10 +146,7 @@ const verifyRes = await fetch(`${API_BASE}/auth/verify-code`, {
       return;
     }
 
-    await SecureStore.setItemAsync("RBZ_TOKEN", data.token);
-    if (data.user) {
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(data.user));
-    }
+    await setSession(data.token, data.user);
 
 router.replace("/(tabs)/(root)/homepage");
   } catch (err) {

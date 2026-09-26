@@ -13,7 +13,7 @@
 
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { setSession } from "../rbzSession";
 import { useState } from "react";
 
 import {
@@ -182,15 +182,7 @@ export function useLoginController() {
       await clearOnboardingDraft().catch(() => {});
     }
 
-    await SecureStore.setItemAsync(
-      "RBZ_TOKEN",
-      result.token,
-    );
-
-    await SecureStore.setItemAsync(
-      "RBZ_USER",
-      JSON.stringify(result.user),
-    );
+    await setSession(result.token, result.user);
 
     if (incomplete) {
       router.replace("/auth/register-full");

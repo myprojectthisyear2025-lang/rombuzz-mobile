@@ -60,8 +60,13 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
+import { useLatestCallback, useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
+import { useRetainedState } from "@/src/features/lifecycle/useRetainedState";
+import { useMicroBuzzVisuals } from "@/src/features/microbuzz/useMicroBuzzVisuals";
+import { useMicroBuzzLiveWork } from "@/src/features/microbuzz/useMicroBuzzLiveWork";
 import * as SecureStore from "expo-secure-store";
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -154,7 +159,6 @@ const TIPS = [
 ];
 
 // Fast radar refresh without hammering GPS every 2 seconds.
-const TICK_MS = 2000;
 const PRESENCE_REFRESH_MS = 5000;
 
 // MicroBuzz is always a true 100m local zone.
@@ -188,10 +192,7 @@ async function getUserId() {
 
 async function getUserFirstName() {
   try {
-    const raw = await SecureStore.getItemAsync("RBZ_USER");
-    if (!raw) return "";
-
-    const u = JSON.parse(raw);
+    const u = await getCurrentUser();
 
     return String(
       u?.firstName || ""
@@ -216,24 +217,10 @@ function metersLabel(m?: number) {
 }
 
 function MicroBuzzScreen() {
-  // Tips carousel
-  const [tipIndex, setTipIndex] = useState(0);
-  const [statusMessageIndex, setStatusMessageIndex] = useState(0);
-
-  useEffect(() => {
-    const tipTimer = setInterval(() => {
-      setTipIndex((i) => (i + 1) % TIPS.length);
-    }, 15000);
-    
-    const statusTimer = setInterval(() => {
-      setStatusMessageIndex((i) => (i + 1) % 4);
-    }, 4000);
-    
-    return () => {
-      clearInterval(tipTimer);
-      clearInterval(statusTimer);
-    };
-  }, []);
+  const activity = useScreenActivity();
+  const { isActive: isScreenActive, isForeground: isAppForeground } = activity;
+  const { tipIndex, statusMessageIndex, sweep, pulse, glowPulse, sweepValueRef } =
+    useMicroBuzzVisuals(activity.active, TIPS.length);
 
   const router = useRouter();
   const insets =
@@ -244,23 +231,23 @@ function MicroBuzzScreen() {
 
   // Permissions
   const [camPerm, requestCamPerm] = useCameraPermissions();
-  const [locGranted, setLocGranted] = useState<boolean>(false);
+  const [locGranted, setLocGranted] = useRetainedState<boolean>(activity, false);
 
   // Live state
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [coords, setCoords] = useRetainedState<{ lat: number; lng: number } | null>(activity, null);
   const [mySelfieLocalUri, setMySelfieLocalUri] = useState<string>("");
   const [previewImageUri, setPreviewImageUri] = useState<string>("");
-  const [selfieUrl, setSelfieUrl] = useState<string>("");
-  const [myFirstName, setMyFirstName] = useState("You");
+  const [selfieUrl, setSelfieUrl] = useRetainedState<string>(activity, "");
+  const [myFirstName, setMyFirstName] = useRetainedState(activity, "You");
   const [isActive, setIsActive] = useState(false);
   const [busy, setBusy] = useState<string>("");
   const [liveStartTime, setLiveStartTime] = useState<Date | null>(null);
 
   // Radar
-  const [nearby, setNearby] = useState<NearbyUser[]>([]);
+  const [nearby, setNearby] = useRetainedState<NearbyUser[]>(activity, []);
   const diagnosticScanReady = useRef(false);
   usePerfContent("microbuzz", diagnosticScanReady.current, nearby.length, nearby);
-  const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanRequestRef = useRef<AbortController | null>(null);
 
   // Camera modal
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -275,17 +262,17 @@ function MicroBuzzScreen() {
     enqueue: enqueueBuzzRequest,
     remove: removeBuzzRequest,
     clear: clearBuzzQueue,
-  } = useMicroBuzzQueue();
+  } = useMicroBuzzQueue(activity);
 
   const [toast, setToast] =
-    useState<{
+    useRetainedState<{
       title: string;
       sub?: string;
-    } | null>(null);
+    } | null>(activity, null);
 
   // Session-only radar gender override
   const [radarGender, setRadarGender] =
-    useState<MicroBuzzGender>("everyone");
+    useRetainedState<MicroBuzzGender>(activity, "everyone");
 
   const radarGenderRef =
     useRef<MicroBuzzGender>("everyone");
@@ -306,11 +293,11 @@ function MicroBuzzScreen() {
   const [reportTarget, setReportTarget] =
     useState<MicroBuzzReportTarget | null>(null);
 
-  const [matchOverlay, setMatchOverlay] = useState<{
+  const [matchOverlay, setMatchOverlay] = useRetainedState<{
     id: string;
     firstName?: string;
     selfieUrl?: string;
-  } | null>(null);
+  } | null>(activity, null);
 
   // Refs for intervals
   const isActiveRef = useRef(false);
@@ -327,6 +314,7 @@ function MicroBuzzScreen() {
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+  useEffect(() => () => { isActiveRef.current = false; }, []);
 
   useEffect(() => {
     coordsRef.current = coords;
@@ -356,7 +344,7 @@ function MicroBuzzScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [setMyFirstName]);
 
   useEffect(() => {
     let alive = true;
@@ -381,15 +369,16 @@ function MicroBuzzScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [setRadarGender]);
 
   // Permission helpers
   async function syncCurrentLocation() {
+    if (!isScreenActive()) return coordsRef.current;
     try {
       const perm = await Location.getForegroundPermissionsAsync();
       const granted = perm.status === "granted";
       setLocGranted(granted);
-      if (!granted) return null;
+      if (!granted || !isScreenActive()) return null;
 
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -481,13 +470,6 @@ function MicroBuzzScreen() {
     }
   }
 
-  // Animations
-  const sweep = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
-  const glowPulse = useRef(new Animated.Value(0)).current;
-  const orbPulse = useRef(new Animated.Value(0)).current;
-  const sweepValueRef = useRef(0);
-
   const radarSize = useMemo(() => {
     return Math.min(
       width - 28,
@@ -495,75 +477,16 @@ function MicroBuzzScreen() {
     );
   }, []);
 
-  // Setup permissions
+  const permissionSyncRef = useRef(false);
+  const syncEntryPermissions = useLatestCallback(async () => {
+    if (!isScreenActive() || permissionSyncRef.current) return;
+    permissionSyncRef.current = true;
+    try { await ensureMicroBuzzPermissionsOnEntry(); }
+    finally { permissionSyncRef.current = false; }
+  });
   useEffect(() => {
-    (async () => {
-      try {
-        // Always query the OS for the current foreground location permission and pick a location if available
-        await checkAndSyncMicroBuzzPermissions({ askCamera: false, askLocation: false });
-        await syncCurrentLocation();
-      } catch {
-        // ignore
-      }
-    })();
-  }, []);
-
-  // Silently sync permission cache when camera permission hook changes
-  useEffect(() => {
-    // run a non-asking sync whenever camera permission state reported by the hook changes
-    (async () => {
-      try {
-        await checkAndSyncMicroBuzzPermissions({ askCamera: false, askLocation: false });
-      } catch {}
-    })();
-  }, [camPerm?.granted]);
-
-  // Focus hook to ensure onboarding + not re-prompting on subsequent opens
-  useFocusEffect(
-    React.useCallback(() => {
-      ensureMicroBuzzPermissionsOnEntry();
-    }, [])
-  );
-
-  // Animations loop
-  useEffect(() => {
-    const sweepListenerId = sweep.addListener(({ value }) => {
-      sweepValueRef.current = value;
-    });
-
-    Animated.loop(
-      Animated.timing(sweep, {
-        toValue: 1,
-        duration: 8000,
-        useNativeDriver: true,
-      })
-    ).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 2000, useNativeDriver: true }),
-      ])
-    ).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowPulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
-        Animated.timing(glowPulse, { toValue: 0.3, duration: 1500, useNativeDriver: true }),
-      ])
-    ).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(orbPulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        Animated.timing(orbPulse, { toValue: 0.8, duration: 1200, useNativeDriver: true }),
-      ])
-    ).start();
-
-    return () => {
-      sweep.removeListener(sweepListenerId);
-    };
-  }, [pulse, sweep, glowPulse, orbPulse]);
+    if (activity.active) void syncEntryPermissions();
+  }, [activity.active, camPerm?.granted, syncEntryPermissions]);
 
   // API helpers
   async function apiFetch(path: string, init?: RequestInit) {
@@ -639,6 +562,7 @@ function MicroBuzzScreen() {
 
   // REFRESH LOCATION: always query OS permission state each time before getting location
   async function refreshLocation() {
+    if (!isAppForeground()) return null;
     try {
       const perm = await Location.getForegroundPermissionsAsync();
       const granted = perm.status === "granted";
@@ -654,6 +578,7 @@ function MicroBuzzScreen() {
       // granted === true
       setLocGranted(true);
 
+      if (!isAppForeground()) return null;
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       setCoords(next);
@@ -669,12 +594,13 @@ function MicroBuzzScreen() {
   }
 
   async function heartbeatActivate() {
+    if (!isAppForeground() || !isActiveRef.current) return;
     const c = coordsRef.current;
     if (!c) return;
 
     try {
       const sUrl = await ensureFreshMicroBuzzSelfieUpload();
-      if (!sUrl) return;
+      if (!sUrl || !isAppForeground() || !isActiveRef.current) return;
 
       await apiFetch("/microbuzz/activate", {
         method: "POST",
@@ -691,13 +617,15 @@ function MicroBuzzScreen() {
   }
 
   async function scanNearby() {
-    if (!isActiveRef.current) return;
+    if (!isActiveRef.current || !isScreenActive() || scanRequestRef.current) return;
 
     const c =
       coordsRef.current;
 
     if (!c) return;
 
+    const request = new AbortController();
+    scanRequestRef.current = request;
     try {
       const q =
         `?lat=${encodeURIComponent(c.lat)}` +
@@ -709,7 +637,7 @@ function MicroBuzzScreen() {
 
       const res =
         await apiFetch(
-          `/microbuzz/nearby${q}`
+          `/microbuzz/nearby${q}`, { signal: request.signal }
         );
 
       const data =
@@ -717,7 +645,7 @@ function MicroBuzzScreen() {
           .json()
           .catch(() => null);
 
-      if (!res.ok) return;
+      if (!res.ok || request.signal.aborted || !isScreenActive() || !isActiveRef.current) return;
 
       const list: NearbyUser[] =
         data?.users || [];
@@ -726,12 +654,15 @@ function MicroBuzzScreen() {
       setNearby(list);
     } catch {
       // silent
+    } finally {
+      if (scanRequestRef.current === request) scanRequestRef.current = null;
     }
   }
 
   async function tickOnce() {
     if (
       !isActiveRef.current ||
+      !isAppForeground() ||
       tickInFlightRef.current
     ) {
       return;
@@ -754,7 +685,7 @@ function MicroBuzzScreen() {
         const next =
           await refreshLocation();
 
-        if (!next) return;
+        if (!next || !isAppForeground() || !isActiveRef.current) return;
 
         lastPresenceRefreshAtRef.current =
           Date.now();
@@ -774,20 +705,15 @@ function MicroBuzzScreen() {
     }
   }
 
-  async function startScanLoop() {
-    stopScanLoop();
-    await tickOnce();
-
-    scanTimerRef.current =
-      setInterval(() => {
-        void tickOnce();
-      }, TICK_MS);
+  function cancelScan() {
+    scanRequestRef.current?.abort();
+    scanRequestRef.current = null;
   }
-
-  function stopScanLoop() {
-    if (scanTimerRef.current) clearInterval(scanTimerRef.current);
-    scanTimerRef.current = null;
-  }
+  useMicroBuzzLiveWork(isActive, activity, tickOnce, cancelScan);
+  useEffect(() => {
+    if (activity.active) void loadIncomingBuzz().catch(() => {});
+  }, [activity.active, loadIncomingBuzz]);
+  const scanOnSocketUpdate = useLatestCallback(scanNearby);
 
    // Socket setup
   useEffect(() => {
@@ -813,7 +739,7 @@ function MicroBuzzScreen() {
           );
         }
 
-        await loadIncomingBuzz();
+        if (mounted && isAppForeground()) await loadIncomingBuzz().catch(() => {});
       };
 
     const onBuzzRequest =
@@ -827,7 +753,7 @@ function MicroBuzzScreen() {
 
         if (!request) return;
 
-        Haptics.notificationAsync(
+        if (isScreenActive()) Haptics.notificationAsync(
           Haptics
             .NotificationFeedbackType
             .Success
@@ -876,7 +802,7 @@ function MicroBuzzScreen() {
           return;
         }
 
-        void scanNearby();
+        void scanOnSocketUpdate();
       };
 
     (async () => {
@@ -944,7 +870,7 @@ function MicroBuzzScreen() {
         onMicroBuzzUpdate
       );
     };
-  }, []);
+  }, [isScreenActive, isAppForeground, enqueueBuzzRequest, loadIncomingBuzz, removeBuzzRequest, scanOnSocketUpdate, setMatchOverlay]);
 
   // Activate / Deactivate
   async function activateMicroBuzz() {
@@ -984,7 +910,6 @@ function MicroBuzzScreen() {
       setToast({ title: "You're Live ⚡", sub: "Your signal is live now" });
       setTimeout(() => setToast(null), 1800);
 
-      await startScanLoop();
     } catch (e: any) {
       setBusy("");
       setToast({ title: "Go Live failed", sub: e?.message || "Try again" });
@@ -996,7 +921,7 @@ function MicroBuzzScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setBusy("Stopping…");
 
-    stopScanLoop();
+    cancelScan();
     setNearby([]);
 
     setIsActive(false);
@@ -1139,13 +1064,6 @@ function MicroBuzzScreen() {
       setBusy("");
     }
   }
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      stopScanLoop();
-    };
-  }, []);
 
   // Radar animation values
   const sweepRotate =
@@ -2369,11 +2287,11 @@ function MicroBuzzScreen() {
                 </View>
               ) : (
                 <View style={styles.cameraContainer}>
-                  <CameraView 
+                  {activity.active ? <CameraView
                     ref={cameraRef} 
                     style={styles.cameraView} 
                     facing="front"
-                  />
+                  /> : null}
 
                   <View style={styles.cameraControls}>
                     <Pressable
@@ -2428,7 +2346,7 @@ function MicroBuzzScreen() {
 
         {/* Match Celebrate Overlay */}
         <MatchCelebrateOverlay
-          visible={!!matchOverlay}
+          visible={activity.active && !!matchOverlay}
           matchUser={matchOverlay}
           myAvatar={
             mySelfieLocalUri

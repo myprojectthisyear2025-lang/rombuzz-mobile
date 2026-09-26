@@ -4,7 +4,7 @@
  * 🎯 Purpose: Account settings (name + email update, like web)
  * ============================================================================
  */
-import * as SecureStore from "expo-secure-store";
+import { persistCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
@@ -65,7 +65,7 @@ export default function AccountSettings() {
       });
       const updated = j?.user || j;
       setMe(updated);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(updated));
+      await persistCurrentUser(updated);
       alert("Saved", "Your name was updated.");
     } catch (e: any) {
       alert("Failed", e.message || "Failed to update name");
@@ -96,7 +96,7 @@ export default function AccountSettings() {
       });
       const updated = j?.user || j;
       setMe(updated);
-      await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(updated));
+      await persistCurrentUser(updated);
       setCode("");
       setNewEmail("");
       setEmailStep("idle");

@@ -1,5 +1,5 @@
+import { perfMark } from "@/src/performance/diagnostics/core";
 import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network";
-import { perfMark, perfSpan } from "@/src/performance/diagnostics/core";
 /**
  * ============================================================
  * 📁 File: app/_layout.tsx
@@ -20,7 +20,8 @@ import {
   useRomBuzzTheme,
 } from "@/src/design/RomBuzzThemeProvider";
 import AppUpdateGate from "@/src/features/appUpdate/AppUpdateGate";
-import { hasOnboardingDraft } from "@/src/features/auth/onboarding/rbzOnboardingDraft";
+import { useRootAuth } from "@/src/features/auth/useRootAuth";
+import { useChatUnreadLifecycle } from "@/src/features/chat/unread/useChatUnreadLifecycle";
 import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
 import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallMiniStore";
 import { VideoCallProvider } from "@/src/features/videoCall/VideoCallProvider";
@@ -189,13 +190,9 @@ function RootLayout() {
     };
   }, [colors, isDark]);
 
-  const [ready, setReady] = useState(false);
-  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
-  const [onboardingPending, setOnboardingPending] =
-    useState<boolean | null>(null);
+  const { ready, loggedIn, onboardingPending, authToken, authUserId } = useRootAuth();
+  useChatUnreadLifecycle(ready && loggedIn === true && onboardingPending === false);
   const [splashDone, setSplashDone] = useState(false);
-  const [authToken, setAuthToken] = useState("");
-  const [authUserId, setAuthUserId] = useState("");
 
   const pushSyncInFlightRef = useRef(false);
   const lastSessionRef = useRef<{ token: string; userId: string }>({
@@ -212,57 +209,8 @@ function RootLayout() {
   }, [loggedIn, onboardingPending]);
 
   useEffect(() => {
-    let mounted = true;
-
-    const syncAuth = async () => {
-      const stopAuthStorage = perfSpan("startup.auth-storage");
-      try {
-        const [tokenValue, rawUser, pendingDraft] = await Promise.all([
-          SecureStore.getItemAsync("RBZ_TOKEN"),
-          SecureStore.getItemAsync("RBZ_USER"),
-          hasOnboardingDraft(),
-        ]);
-
-        const token = tokenValue || "";
-        let userId = "";
-
-        if (rawUser) {
-          try {
-            const parsed = JSON.parse(rawUser);
-            userId = String(parsed?.id || parsed?._id || "").trim();
-          } catch {}
-        }
-
-        if (!mounted) return;
-
-        setAuthToken(token);
-        setAuthUserId(userId);
-        setLoggedIn(!!token);
-        setOnboardingPending(pendingDraft);
-
-        if (token) {
-          lastSessionRef.current = { token, userId };
-        }
-      } catch {
-        if (!mounted) return;
-        setAuthToken("");
-        setAuthUserId("");
-        setLoggedIn(false);
-        setOnboardingPending(false);
-      } finally {
-        stopAuthStorage();
-        if (mounted) setReady(true);
-      }
-    };
-
-    syncAuth();
-    const interval = setInterval(syncAuth, 400);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+    if (authToken) lastSessionRef.current = { token: authToken, userId: authUserId };
+  }, [authToken, authUserId]);
 
   useEffect(() => {
     if (
@@ -403,7 +351,7 @@ function RootLayout() {
   ]);
 
   useEffect(() => {
-    if (loggedIn !== false) return;
+    if (!ready || loggedIn !== false) return;
 
     const removeOnLogout = async () => {
       const lastToken = lastSessionRef.current.token;
@@ -422,7 +370,7 @@ function RootLayout() {
     };
 
     removeOnLogout();
-  }, [loggedIn]);
+  }, [ready, loggedIn]);
 
   useEffect(() => {
     if (!Notifications) return;

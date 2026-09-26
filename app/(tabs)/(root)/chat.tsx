@@ -62,7 +62,7 @@ function ChatTab() {
   } = state;
   const reconcileFromServer = useChatListUnread(state);
   const { loadChats } = useChatListInbox(state, router, reconcileFromServer);
-  useChatListRealtime(state, reconcileFromServer);
+  useChatListRealtime(state);
   useChatListFilter(state);
   const {
     togglePinPeer, toggleMutePeer, toggleAlertPeer, toggleReadPeer,

@@ -11,6 +11,7 @@ import {
 } from "@/src/config/api";
 
 import * as SecureStore from "expo-secure-store";
+import { getSessionSnapshot, initializeSession, subscribeSession } from "@/src/features/auth/rbzSession";
 
 import {
   io,
@@ -26,6 +27,15 @@ import {
 } from "@/src/features/chat/thread/chatUnavailableCache";
 
 let socket: Socket | null = null;
+
+// Session events replace the old assumption that storage alone updates auth.
+// Keep listeners on the live socket when its token changes.
+subscribeSession(({ token }) => {
+  if (!socket || typeof socket.auth === "function" || socket.auth.token === token) return;
+  socket.auth = { ...socket.auth, token };
+  socket.disconnect();
+  if (token) socket.connect();
+});
 
 type NotificationPayload = any;
 
@@ -444,17 +454,12 @@ async function getUserIdSafe(): Promise<string> {
 }
 
 export async function getSocket(): Promise<Socket> {
-  if (
-    socket &&
-    socket.connected
-  ) {
-    return socket;
-  }
-
-  const token =
-    await SecureStore.getItemAsync(
-      "RBZ_TOKEN",
-    );
+  // Reuse the instance during session-driven reconnects so mounted listeners
+  // do not remain attached to an abandoned socket with an old token.
+  if (socket) return socket;
+  await initializeSession();
+  if (socket) return socket;
+  const token = getSessionSnapshot().token;
 
   socket = io(
     SOCKET_URL,

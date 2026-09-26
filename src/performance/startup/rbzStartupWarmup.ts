@@ -11,23 +11,21 @@
  */
 
 import {
-  rbzApiJson,
-  rbzGetAuthToken,
-  rbzGetCurrentUser,
-  rbzPrimeCurrentUser,
-} from "@/src/performance/api/rbzApiClient";
-import {
   writeCachedLetsBuzzFeed,
   writeCachedLetsBuzzMeId,
 } from "@/src/features/performance/letsbuzz/rbzLetsBuzzFeedCache";
 import { writeCachedViewProfileFromUser } from "@/src/features/performance/viewProfile/rbzViewProfileCache";
+import {
+  rbzApiJson,
+  rbzGetAuthToken,
+  rbzGetCurrentUser,
+} from "@/src/performance/api/rbzApiClient";
+import { persistCurrentUser } from "@/src/features/auth/rbzSession";
 import { rbzCacheKey, rbzCacheSet } from "@/src/performance/cache/rbzCache";
 import * as SecureStore from "expo-secure-store";
 import { DeviceEventEmitter } from "react-native";
 let warmupStarted = false;
 
-const UNREAD_MAP_KEY = "RBZ_unread_map";
-const UNREAD_TOTAL_KEY = "RBZ_unread_total";
 const NOTIFICATIONS_CACHE_KEY = "RBZ_PERF_NOTIFICATIONS";
 const NOTIF_UNREAD_TOTAL_KEY = "RBZ_notif_unread_total";
 
@@ -166,39 +164,7 @@ async function warmProfileFull() {
       user,
     });
 
-    await SecureStore.setItemAsync("RBZ_USER", JSON.stringify(user)).catch(() => {});
-
-    try {
-      rbzPrimeCurrentUser(user);
-    } catch {}
-  } catch {}
-}
-
-async function warmUnreadSummary() {
-  try {
-    const summary = await rbzApiJson<any>("/chat/unread-summary");
-
-    const rawByPeer =
-      summary?.byPeer && typeof summary.byPeer === "object"
-        ? summary.byPeer
-        : {};
-
-    const safeByPeer: Record<string, number> = {};
-    Object.keys(rawByPeer || {}).forEach((k) => {
-      safeByPeer[String(k)] = Math.max(0, Number(rawByPeer[k] || 0) || 0);
-    });
-
-    const total = Object.values(safeByPeer).reduce((sum, n) => {
-      return sum + Math.max(0, Number(n || 0) || 0);
-    }, 0);
-
-    await SecureStore.setItemAsync(UNREAD_MAP_KEY, JSON.stringify(safeByPeer)).catch(() => {});
-    await SecureStore.setItemAsync(UNREAD_TOTAL_KEY, String(total)).catch(() => {});
-
-    DeviceEventEmitter.emit("rbz:unread:summary", {
-      total,
-      byPeer: safeByPeer,
-    });
+    await persistCurrentUser(user).catch(() => {});
   } catch {}
 }
 
@@ -266,7 +232,6 @@ export async function rbzStartupWarmup() {
 
         // Run useful network warmups in parallel.
     await Promise.allSettled([
-      warmUnreadSummary(),
       warmNotifications(),
       warmSocialStats(),
       warmChatInbox(meId),

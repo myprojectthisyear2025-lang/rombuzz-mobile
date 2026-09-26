@@ -10,7 +10,7 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 
 import { lookingForKeyFromValue } from "../../constants/lookingFor";
 
@@ -18,11 +18,9 @@ const FILTER_KEY_PREFIX = "RBZ_DISCOVER_FILTERS_V1";
 
 async function getCurrentUserStorageId(): Promise<string> {
   try {
-    const rawUser = await SecureStore.getItemAsync("RBZ_USER");
+    const user = await getCurrentUser();
 
-    if (!rawUser) return "anonymous";
-
-    const user = JSON.parse(rawUser);
+    if (!user) return "anonymous";
 
     const id = String(
       user?.id ||
