@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
+import { useChatThreadMessages } from "@/src/features/chat/thread/useChatThreadMessages";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { maybeDecode } from "@/src/features/chat/thread/chatPayload";
 import { getReplyPreviewText } from "@/src/features/chat/thread/chatReplyUtils";
-import type { Msg } from "@/src/features/chat/thread/chatTypes";
 import { useChatMediaSender } from "@/src/features/chat/thread/useChatMediaSender";
 import { useChatThreadFastOpen } from "@/src/features/chat/thread/useChatThreadFastOpen";
 import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
@@ -41,7 +42,8 @@ export function useChatWindowController() {
   const { myId, peerName } = identity;
   const roomId = useMemo(() => makeRoomId(myId, peerId), [myId, peerId]);
   const participants = { myId, peerId, roomId };
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const activity = useScreenActivity();
+  const { messages, setMessages, getCurrentMessages } = useChatThreadMessages(activity);
   const [loading, setLoading] = useState(true);
   // The viewport intentionally receives newest-first data for its inverted list.
   const chatListMessages = useMemo(() => [...messages].reverse(), [messages]);
@@ -58,6 +60,7 @@ export function useChatWindowController() {
     messages,
     loading,
     setMessages,
+    getCurrentMessages,
     setLoading,
     settleToLatest,
   });

@@ -1,4 +1,5 @@
 import { perfState } from "@/src/performance/diagnostics/core";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 /**
  * ============================================================
  * 📁 File: src/features/chat/thread/useChatThreadFastOpen.ts
@@ -93,6 +94,7 @@ type ParsedChatRoomResponse = {
 };
 
 type UseChatThreadFastOpenArgs = {
+  getCurrentMessages?: () => Msg[];
   myId: string;
   peerId: string;
   roomId: string;
@@ -1002,11 +1004,14 @@ export function useChatThreadFastOpen({
   roomId,
   focusMsgId = "",
   messages,
+  getCurrentMessages,
   loading,
   setMessages,
   setLoading,
   settleToLatest,
 }: UseChatThreadFastOpenArgs) {
+  const { active, isActive } = useScreenActivity();
+  const hydratedRoomRef = useRef("");
   const router =
     useRouter();
 
@@ -1056,7 +1061,13 @@ export function useChatThreadFastOpen({
     useRef("");
 
   latestMessagesRef.current =
-    messages;
+    getCurrentMessages?.() || messages;
+
+  useEffect(() => () => {
+    if (roomId && hydratedRoomRef.current === roomId && unavailableHandledRoomRef.current !== roomId) {
+      void persistMessagesForCache(roomId, getCurrentMessages?.() || latestMessagesRef.current);
+    }
+  }, [roomId, getCurrentMessages]);
 
   const handlePeerUnavailable =
     useCallback(
@@ -1219,6 +1230,7 @@ export function useChatThreadFastOpen({
   const loadOlderMessages =
     useCallback(
       async () => {
+        if (!isActive()) return;
         if (
           !myId ||
           !peerId ||
@@ -1274,7 +1286,7 @@ export function useChatThreadFastOpen({
           const token =
             await rbzGetAuthToken();
 
-          if (!token) {
+          if (!token || controller.signal.aborted || !isActive()) {
             return;
           }
 
@@ -1312,6 +1324,8 @@ export function useChatThreadFastOpen({
                 .catch(
                   () => ({}),
                 );
+
+            if (controller.signal.aborted || !isActive()) return;
 
             if (
               !response.ok
@@ -1474,14 +1488,13 @@ export function useChatThreadFastOpen({
           ) {
             olderRequestControllerRef.current =
               null;
+            loadingOlderRef.current = false;
           }
-
-          loadingOlderRef.current =
-            false;
         }
       },
 
       [
+        isActive,
         focusMsgId,
         myId,
         peerId,
@@ -1491,6 +1504,7 @@ export function useChatThreadFastOpen({
     );
 
   useEffect(() => {
+    if (!active) return;
     if (
       !myId ||
       !peerId ||
@@ -1503,17 +1517,18 @@ export function useChatThreadFastOpen({
       "";
 
     let alive = true;
+    const firstEntry = hydratedRoomRef.current !== roomId;
 
     const controller =
       new AbortController();
 
     const shouldSnapLatest =
-      !String(
+      firstEntry && !String(
         focusMsgId || "",
       ).trim();
 
     const shouldUsePagination =
-      shouldSnapLatest;
+      !String(focusMsgId || "").trim();
 
     cacheReadyRoomRef.current =
       "";
@@ -1544,15 +1559,16 @@ export function useChatThreadFastOpen({
 
     async function hydrateThread() {
       let showedCache =
-        false;
+        !firstEntry && latestMessagesRef.current.length > 0;
 
       try {
         const cached =
-          await readCachedChatThread(
+          firstEntry ? await readCachedChatThread(
             roomId,
-          );
+          ) : null;
 
-        if (!alive) return;
+        if (!alive || !isActive()) return;
+        hydratedRoomRef.current = roomId;
 
         cacheReadyRoomRef.current =
           roomId;
@@ -1585,6 +1601,7 @@ export function useChatThreadFastOpen({
           ) {
             requestAnimationFrame(
               () => {
+                if (!alive || !isActive()) return;
                 settleToLatest?.(
                   false,
                 );
@@ -1599,6 +1616,7 @@ export function useChatThreadFastOpen({
         }
       }
 
+      if (!alive || !isActive()) return;
       if (!showedCache) {
         setLoading(true);
       }
@@ -1606,6 +1624,8 @@ export function useChatThreadFastOpen({
       try {
         const token =
           await rbzGetAuthToken();
+
+        if (!alive || !isActive()) return;
 
         if (!token) {
           if (
@@ -1660,6 +1680,8 @@ export function useChatThreadFastOpen({
             .catch(
               () => ({}),
             );
+
+        if (!alive || controller.signal.aborted || !isActive()) return;
 
         if (!response.ok) {
           const handledUnavailable =
@@ -1776,6 +1798,7 @@ export function useChatThreadFastOpen({
         ) {
           requestAnimationFrame(
             () => {
+              if (!alive || !isActive()) return;
               settleToLatest?.(
                 false,
               );
@@ -1849,6 +1872,8 @@ export function useChatThreadFastOpen({
       }
     };
   }, [
+    active,
+    isActive,
     focusMsgId,
     myId,
     peerId,

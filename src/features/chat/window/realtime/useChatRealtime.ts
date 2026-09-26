@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSocket } from "@/src/lib/socket";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 import type { Msg } from "../../thread/chatTypes";
 import { createChatMessageHandlers } from "./chatMessageHandlers";
 import { createChatMetadataHandlers } from "./chatMetadataHandlers";
@@ -27,6 +28,7 @@ export function useChatRealtime({
   setMessages,
   settleToLatest,
 }: UseChatRealtimeArgs) {
+  const { active, isActive } = useScreenActivity();
   const socketRef = useRef<any>(null);
   const [typing, setTyping] = useState(false);
   const typingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -38,25 +40,25 @@ export function useChatRealtime({
   const emitTyping = useCallback(
     (next: boolean) => {
       const socket = socketRef.current;
-      if (!socket || !myId || !peerId) return;
+      if (!socket || !myId || !peerId || (next && !isActive())) return;
       try {
         socket.emit("typing", { roomId, from: myId, to: peerId, typing: next });
       } catch {}
     },
-    [myId, peerId, roomId],
+    [myId, peerId, roomId, isActive],
   );
 
   const markSeen = useCallback(
     (msgId: string) => {
       const socket = socketRef.current;
-      if (!socket || !msgId || !myId || !peerId) return;
+      if (!socket || !msgId || !myId || !peerId || !isActive()) return;
       if (lastSeenEmitRef.current === msgId) return;
       lastSeenEmitRef.current = msgId;
       try {
         socket.emit("message:seen", { roomId, msgId, from: myId, to: peerId });
       } catch {}
     },
-    [myId, peerId, roomId],
+    [myId, peerId, roomId, isActive],
   );
 
   useEffect(() => {
@@ -66,8 +68,9 @@ export function useChatRealtime({
     lastSeenEmitRef.current = null;
     setTyping(false);
 
-    const followLatest = (animated?: boolean) =>
-      latestRef.current.settleToLatest(animated);
+    const followLatest = (animated?: boolean) => {
+      if (isActive()) latestRef.current.settleToLatest(animated);
+    };
     const messageHandlers = createChatMessageHandlers({
       peerId,
       roomId,
@@ -81,10 +84,18 @@ export function useChatRealtime({
       settleToLatest: followLatest,
     });
     const onTyping = (payload: any) => {
-      if (String(payload?.from) === String(peerId))
+      if (isActive() && String(payload?.from) === String(peerId))
         setTyping(!!payload?.typing);
     };
+    const onConnect = () => {
+      if (!alive) return;
+      socket.emit("joinRoom", roomId);
+      lastSeenEmitRef.current = null;
+      const latestId = getLatestPeerMessageId(latestRef.current.messages, peerId);
+      if (latestId && !latestRef.current.loading) markSeen(latestId);
+    };
     const listeners: [string, (payload: any) => void][] = [
+      ["connect", onConnect],
       ["chat:message", messageHandlers.onIncoming],
       ["message", messageHandlers.onIncoming],
       ["message:edit", messageHandlers.onEdited],
@@ -148,13 +159,22 @@ export function useChatRealtime({
       } catch {}
       listeners.forEach(([event, handler]) => socket.off(event, handler));
     };
-  }, [myId, peerId, roomId, setMessages, markSeen]);
+  }, [myId, peerId, roomId, setMessages, markSeen, isActive]);
 
   useEffect(() => {
-    if (!myId || !peerId || loading || !messages.length) return;
+    if (active) return;
+    if (typingStopRef.current) clearTimeout(typingStopRef.current);
+    typingStopRef.current = null;
+    if (isTypingRef.current) emitTyping(false);
+    isTypingRef.current = false;
+    setTyping(false);
+  }, [active, emitTyping]);
+
+  useEffect(() => {
+    if (!active || !myId || !peerId || loading || !messages.length) return;
     const latestId = getLatestPeerMessageId(messages, peerId);
     if (latestId) markSeen(latestId);
-  }, [loading, messages, myId, peerId, markSeen]);
+  }, [active, loading, messages, myId, peerId, markSeen]);
 
   return {
     socketRef,

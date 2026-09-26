@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import * as SecureStore from "expo-secure-store";
 import { API_BASE } from "@/src/config/api";
+import { getSessionSnapshot, subscribeSession } from "@/src/features/auth/rbzSession";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 
 type IdentityParams = { peerId: string; name?: string; avatar?: string };
 
@@ -13,7 +15,8 @@ export function useChatIdentity({ peerId, name, avatar }: IdentityParams) {
     avatar?: string;
   } | null>(null);
 
-  const [me, setMe] = useState<any>(null);
+  const { user: me, token } = useSyncExternalStore(subscribeSession, getSessionSnapshot, getSessionSnapshot);
+  const { active, isActive } = useScreenActivity();
   const [nickname, setNickname] = useState("");
 
   const profileFullName = [peerProfile?.firstName, peerProfile?.lastName]
@@ -47,26 +50,17 @@ export function useChatIdentity({ peerId, name, avatar }: IdentityParams) {
     meId && pid ? `RBZ_nick_${meId}_${pid}` : "";
 
   const myId = useMemo(() => String(me?.id || me?._id || ""), [me]);
-  // Load me
-  useEffect(() => {
-    (async () => {
-      const raw = await SecureStore.getItemAsync("RBZ_USER");
-      setMe(raw ? JSON.parse(raw) : null);
-    })();
-  }, []);
-
   // Load real peer profile so header works even when route params are missing
   useEffect(() => {
-    if (!peerId) return;
+    if (!peerId || !active || !token) return;
 
     let alive = true;
+    const controller = new AbortController();
 
     (async () => {
       try {
-        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-        if (!token) return;
-
-        const r = await fetch(`${API_BASE}/users/${peerId}`, {
+        const r = await fetch(`${API_BASE}/users/${encodeURIComponent(peerId)}`, {
+          signal: controller.signal,
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -75,7 +69,7 @@ export function useChatIdentity({ peerId, name, avatar }: IdentityParams) {
         const j = await r.json().catch(() => ({}));
         const u = j?.user || null;
 
-        if (!alive || !u) return;
+        if (!r.ok || !alive || !isActive() || !u) return;
 
         setPeerProfile({
           firstName: String(u.firstName || "").trim(),
@@ -89,18 +83,20 @@ export function useChatIdentity({ peerId, name, avatar }: IdentityParams) {
 
     return () => {
       alive = false;
+      controller.abort();
     };
-  }, [peerId]);
+  }, [peerId, active, isActive, token]);
   useEffect(() => {
     if (!myId || !peerId) return;
 
     const key = nickKey(myId, peerId);
     if (!key) return;
-
+    let alive = true;
     (async () => {
       const n = (await SecureStore.getItemAsync(key)) || "";
-      setNickname(n);
+      if (alive) setNickname(n);
     })();
+    return () => { alive = false; };
   }, [myId, peerId]);
   useEffect(() => {
     const handler = (e: any) => {
