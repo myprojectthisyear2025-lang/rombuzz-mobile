@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { Buffer } = require("node:buffer");
 const { createHarness, act } = require("./harness.cjs");
 const USER_KEY = "RBZ_SESSION_USER_V1";
 const user = { id: "member-a", firstName: "Alex", avatar: "https://example.invalid/me.jpg" };
