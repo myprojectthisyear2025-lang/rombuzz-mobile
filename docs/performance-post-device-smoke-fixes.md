@@ -36,8 +36,22 @@ Backend files: `server/routes/chatRooms.js`, `server/services/chatPinnedQuery.js
 
 Validation: 7 new mobile tests; 10 existing thread/media tests; new backend integration test; mobile TypeScript/scoped lint; backend changed-file syntax; both diff checks. The timestamp fixture caught and corrected millisecond ordering for native Mongo Date values before checkpointing.
 
-Checkpoints: mobile `fix: load pinned messages from a focused cache and endpoint`; backend `perf: project pinned messages without full history hydration` (hashes recorded in the next checkpoint).
+Checkpoints: mobile `e670067` — `fix: load pinned messages from a focused cache and endpoint`; backend `75dcebe` — `perf: project pinned messages without full history hydration`.
+
+## 3. Preview / View Profile false unavailable state
+
+Observed: Preview → After Match showed a terminal unavailable message before a successful profile.
+
+Exact state bug: focus selected `silent` whenever **any** profile was held in a ref. A changed route then cleared that different user's profile, while blocking loading was enabled only for `initial`. The resulting `!user && !loading` render unconditionally claimed unavailable. Separate profile/user/matched setters, absent focus cleanup, and an unguarded catch also allowed obsolete requests to alert/navigate. A fresh promise started before awaited cache hydration could reject before its catch was attached. Cache keys included target ID but not the viewing account.
+
+Before → after: a scoped read state owns profile, loading/ready/unavailable/error and request cancellation. Route/account/preview changes render neutral loading synchronously, before effects; cached same-user data stays visible during refresh. Only confirmed 403/404/410 marks unavailable and removes cached access. Network/malformed-data errors have a separate retry state. HTTP status is preserved on the shared API Error without changing its existing auth handling. Cache and network run concurrently with rejection handlers; late cache never replaces fresh data, and blur/background/route/account changes abort and reject stale work. New account-scoped cache keys avoid cross-viewer privacy leakage (old entries are left on disk but no longer read). Profile/media/matched data commits together, using the existing Fix #9 URL merge. Changing the profile scope closes old media viewers. Before Match routing, matched entry gates, actions, media parsing and provider configuration remain intact.
+
+Files: `app/(tabs)/view-profile.tsx`, `src/features/viewProfile/useViewProfileRead.ts`, `src/features/performance/viewProfile/rbzViewProfileCache.ts`, `src/performance/api/rbzApiClient.ts`, `scripts/performance-fixes/profile-state-smoke.test.cjs`, this document.
+
+Validation: 6 new state/cache tests (including actual screen route → loading → successful profile), 6 existing Fix #9 media tests and all 11 auth tests pass. Checks cover cache refresh, confirmed 404, network retry, rapid preview/user/account changes, focus cancellation and late disk/API work. TypeScript and scoped lint are checked before checkpoint; existing unused `height` and `getStreamUid` warnings are compared in final lint validation.
+
+Checkpoint: `fix: distinguish profile loading from confirmed unavailability` (hash recorded in the next checkpoint).
 
 ## Remaining work in this batch
 
-Preview request states; unknown profile gallery counts; Shared Media video previews; final complete validation and checkpoint inventory.
+Unknown profile gallery counts; Shared Media video previews; final complete validation and checkpoint inventory.

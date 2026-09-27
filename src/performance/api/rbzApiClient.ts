@@ -72,7 +72,7 @@ export async function rbzApiJson<T = any>(
       await rbzHandleExpiredAuth(message, token);
     }
 
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
 
   return json as T;

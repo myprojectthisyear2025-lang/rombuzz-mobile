@@ -13,13 +13,15 @@
 
 import { rbzApiJson } from "@/src/performance/api/rbzApiClient";
 import { preserveMediaUrl as preserveSignedUrl } from "./preserveMediaUrl";
+import { getSessionSnapshot } from "@/src/features/auth/rbzSession";
 import {
   rbzCacheGet,
   rbzCacheKey,
   rbzCacheSet,
+  rbzCacheRemove,
 } from "@/src/performance/cache/rbzCache";
 
-const VIEW_PROFILE_CACHE_PREFIX = "RBZ_PERF_VIEW_PROFILE";
+const VIEW_PROFILE_CACHE_PREFIX = "RBZ_PERF_VIEW_PROFILE_V2";
 const VIEW_PROFILE_CACHE_MAX_AGE_MS = 90 * 60 * 1000;
 
 type CachedViewProfileBundle = {
@@ -28,7 +30,12 @@ type CachedViewProfileBundle = {
 };
 
 function viewProfileCacheKey(userId: string) {
-  return rbzCacheKey(VIEW_PROFILE_CACHE_PREFIX, userId);
+  const account = getSessionSnapshot().user;
+  return rbzCacheKey(VIEW_PROFILE_CACHE_PREFIX, String(account?.id || account?._id || "signed-out"), userId);
+}
+
+export function clearCachedViewProfile(userId: string) {
+  return rbzCacheRemove(viewProfileCacheKey(userId));
 }
 
 function stripSignedUrlQuery(value: any) {
@@ -205,6 +212,9 @@ export async function writeCachedViewProfileFromUser(
   const user = pickProfileUser(rawUser);
   if (!user?.id) return null;
 
+  const key = viewProfileCacheKey(user.id);
+  const token = getSessionSnapshot().token;
+
   const existing = await readCachedViewProfile(user.id).catch(() => null);
   const existingUser = existing?.profile?.user || {};
 
@@ -232,12 +242,14 @@ export async function writeCachedViewProfileFromUser(
     savedAt: Date.now(),
   };
 
-  await rbzCacheSet(viewProfileCacheKey(user.id), bundle);
+  if (getSessionSnapshot().token === token) await rbzCacheSet(key, bundle);
 
   return bundle;
 }
 
-export async function fetchFreshViewProfile(userId: string) {
+export async function fetchFreshViewProfile(userId: string, signal?: AbortSignal) {
+  const key = viewProfileCacheKey(userId);
+  const token = getSessionSnapshot().token;
   const encodedUserId = encodeURIComponent(String(userId || ""));
 
   if (!encodedUserId) {
@@ -245,10 +257,10 @@ export async function fetchFreshViewProfile(userId: string) {
   }
 
   // This is the only request that should be allowed to control first render.
-  const profileData = await rbzApiJson<any>(`/users/${encodedUserId}`);
+  const profileData = await rbzApiJson<any>(`/users/${encodedUserId}`, { signal });
 
-  if (!profileData?.user) {
-    throw new Error("Profile unavailable");
+  if (!profileData?.user || String(profileData.user.id || profileData.user._id || "") !== userId) {
+    throw new Error("Invalid profile response");
   }
 
   const bundle: CachedViewProfileBundle = {
@@ -260,8 +272,8 @@ export async function fetchFreshViewProfile(userId: string) {
   };
 
   // Never block first render on AsyncStorage persistence.
-  rbzCacheSet(
-    viewProfileCacheKey(userId),
+  if (!signal?.aborted && getSessionSnapshot().token === token) rbzCacheSet(
+    key,
     bundle
   ).catch(() => {});
 

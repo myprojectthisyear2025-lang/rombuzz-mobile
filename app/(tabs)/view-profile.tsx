@@ -1,4 +1,4 @@
-import { perfState } from "@/src/performance/diagnostics/core";
+import { useViewProfileRead } from "@/src/features/viewProfile/useViewProfileRead";
 import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 
 /**
@@ -11,7 +11,7 @@ import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/sc
 
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -42,11 +42,6 @@ import RBZReportSheet from "@/src/components/reporting/RBZReportSheet";
 import { API_BASE } from "@/src/config/api";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { RBZFont } from "@/src/design/rombuzzTypography";
-import {
-  fetchFreshViewProfile,
-  mergeStableViewProfile,
-  readCachedViewProfile,
-} from "@/src/features/performance/viewProfile/rbzViewProfileCache";
 import ProfilePreviewBar from "@/src/features/profile/preview/ProfilePreviewBar";
 import ViewProfileHero from "@/src/features/viewProfile/hero/ViewProfileHero";
 import ViewProfileDetailsInfo from "@/src/features/viewProfile/info/ViewProfileDetailsInfo";
@@ -419,20 +414,19 @@ function ViewProfile() {
     router.replace("/(tabs)/(root)/profile" as any);
   }, [router, returnTo]);
 
-  const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<ProfileResponse | null>(null);
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const profileRead = useViewProfileRead(userId, isProfilePreview);
+  const profile = profileRead.profile as ProfileResponse | null;
+  const user = profile?.user || null;
+  const matched = !!profile?.matched;
+  const loading = profileRead.status === "loading";
+  const refreshing = profileRead.refreshing;
+  const refreshProfile = profileRead.refresh;
   usePerfContent("view-profile", !!user, undefined, user);
-  const [matched, setMatched] = useState(false);
   const [buzzMeta, setBuzzMeta] = useState<BuzzPokeMeta>({
     count: 0,
     lastBuzz: null,
     lastBuzzLabel: "No buzz yet",
   });
-
-  const profileRef = useRef<ProfileResponse | null>(null);
-  const requestSeqRef = useRef(0);
-  const hydratedCacheForRef = useRef("");
 
    // voice intro
    const soundRef = useRef<Audio.Sound | null>(null);
@@ -451,7 +445,13 @@ function ViewProfile() {
   const [videoViewerIndex, setVideoViewerIndex] = useState(0);
   const [videoViewerItems, setVideoViewerItems] = useState<RBZVideoViewerItem[]>([]);
 
-  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => {
+    setImageViewerOpen(false);
+    setImageViewerItems([]);
+    setVideoViewerOpen(false);
+    setVideoViewerItems([]);
+  }, [profileRead.scope]);
+
 
   // ✅ 3-dot menu as true overlay (so it never hides under About)
   const [showMenu, setShowMenu] = useState(false);
@@ -463,8 +463,8 @@ function ViewProfile() {
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
 
   useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
+    setVoiceDurationSec(Number(user?.voiceDurationSec || 0));
+  }, [user?.id, user?.voiceDurationSec]);
 
   // Calculate age from DOB
   const age = useMemo(() => {
@@ -624,132 +624,6 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
   // ---------------------------------------------------------------------------
   // DATA LOADING
   // ---------------------------------------------------------------------------
-  const applyProfileBundle = useCallback(
-    (bundle: { profile: ProfileResponse }) => {
-      const nextProfile = mergeStableViewProfile(
-        profileRef.current,
-        bundle.profile
-      ) as ProfileResponse;
-
-      profileRef.current = nextProfile;
-
-      setProfile(nextProfile);
-      setUser(nextProfile.user);
-      setMatched(!!nextProfile.matched);
-      setVoiceDurationSec(Number(nextProfile?.user?.voiceDurationSec || 0));
-    },
-    []
-  );
-
-  const loadProfile = useCallback(
-    async (mode: "initial" | "silent" | "refresh" = "initial") => {
-      if (!userId) {
-        setLoading(false);
-        return;
-      }
-
-      const requestId = ++requestSeqRef.current;
-      const visibleProfileId = String(profileRef.current?.user?.id || "");
-      const hasVisibleProfileForThisUser = visibleProfileId === userId;
-      const hasDifferentProfileVisible = !!visibleProfileId && visibleProfileId !== userId;
-
-      const shouldShowBlockingLoader =
-        mode === "initial" && !hasVisibleProfileForThisUser;
-
-      if (hasDifferentProfileVisible) {
-        profileRef.current = null;
-        setProfile(null);
-        setUser(null);
-        setMatched(false);
-        setVoiceDurationSec(0);
-      }
-
-      if (shouldShowBlockingLoader) {
-        setLoading(true);
-      }
-
-      if (mode === "refresh") {
-        setRefreshing(true);
-      }
-
-      try {
-        const shouldTryCache =
-          mode !== "refresh" &&
-          hydratedCacheForRef.current !== userId;
-
-        // Start fresh data immediately while cache is checked.
-        const freshProfilePromise =
-          fetchFreshViewProfile(
-            userId
-          );
-
-        if (shouldTryCache) {
-          const cached =
-            await readCachedViewProfile(
-              userId
-            );
-
-          if (
-            cached?.profile?.user &&
-            requestId ===
-              requestSeqRef.current
-          ) {
-            hydratedCacheForRef.current =
-              userId;
-
-            perfState("view-profile", "cache");
-            applyProfileBundle({
-              profile: cached.profile,
-            });
-
-            setLoading(false);
-          }
-        }
-
-        const fresh =
-          await freshProfilePromise;
-
-        if (
-          requestId !==
-          requestSeqRef.current
-        ) {
-          return;
-        }
-
-        hydratedCacheForRef.current =
-          userId;
-
-        perfState("view-profile", "fresh");
-        applyProfileBundle({
-          profile: fresh.profile,
-        });
-      } catch (e: any) {
-        const currentVisibleId = String(profileRef.current?.user?.id || "");
-
-        if (!profileRef.current?.user || currentVisibleId !== userId) {
-          Alert.alert("Error", e?.message || "Failed to load profile");
-          handleGoBack();
-        }
-      } finally {
-        if (requestId === requestSeqRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [applyProfileBundle, handleGoBack, userId]
-  );
-
-  const refreshProfile = useCallback(async () => {
-    await loadProfile("refresh");
-  }, [loadProfile]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadProfile(profileRef.current?.user ? "silent" : "initial");
-    }, [loadProfile])
-  );
-
   useEffect(() => {
     return () => {
       (async () => {
@@ -883,7 +757,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               );
               
               // Refresh profile to update blocked status
-              await loadProfile();
+              await refreshProfile();
               setShowMenu(false);
               
             } catch (e: any) {
@@ -1116,7 +990,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             },
           ]}
         >
-          Profile unavailable
+          {profileRead.status === "unavailable" ? "Profile unavailable" : "Could not load profile"}
         </Text>
 
         <Text
@@ -1128,11 +1002,11 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
             },
           ]}
         >
-          This profile could not be loaded.
+          {profileRead.status === "unavailable" ? "This profile is unavailable." : "Please check your connection and try again."}
         </Text>
 
         <Pressable
-          onPress={handleGoBack}
+          onPress={profileRead.status === "error" ? refreshProfile : handleGoBack}
           style={[
             styles.backButton,
             {
@@ -1146,7 +1020,7 @@ const reels = useMemo(() => allMedia.filter((m) => m.type === "reel"), [allMedia
               styles.backButtonText
             }
           >
-            Go back
+            {profileRead.status === "error" ? "Retry" : "Go back"}
           </Text>
         </Pressable>
       </View>
