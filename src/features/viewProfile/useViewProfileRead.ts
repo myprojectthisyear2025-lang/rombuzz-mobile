@@ -33,7 +33,9 @@ export function useViewProfileRead(userId: string, preview: boolean) {
       return true;
     };
     const cached = previous.profile ? Promise.resolve() : readCachedViewProfile(userId).then(bundle => {
-      if (!freshCommitted) apply(bundle, "cache");
+      // Lightweight match rows cannot establish authoritative gallery counts
+      // or missing profile fields. Keep the neutral initial presentation.
+      if (!freshCommitted && bundle?.complete) apply(bundle, "cache");
     }).catch(() => {});
     try {
       const fresh = await fetchFreshViewProfile(userId, controller.signal);

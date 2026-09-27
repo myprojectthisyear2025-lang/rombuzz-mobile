@@ -27,6 +27,7 @@ const VIEW_PROFILE_CACHE_MAX_AGE_MS = 90 * 60 * 1000;
 type CachedViewProfileBundle = {
   profile: any;
   savedAt?: number;
+  complete: boolean;
 };
 
 function viewProfileCacheKey(userId: string) {
@@ -216,21 +217,19 @@ export async function writeCachedViewProfileFromUser(
   const token = getSessionSnapshot().token;
 
   const existing = await readCachedViewProfile(user.id).catch(() => null);
+  // A /matches row is a preview, even when it supplies empty media arrays.
+  // It cannot downgrade or extend the lifetime of an authoritative profile.
+  if (existing?.complete) return existing;
   const existingUser = existing?.profile?.user || {};
 
   const nextUser = {
     ...existingUser,
     ...removeUndefinedFields(user),
 
-    // Do not let lightweight match/discover rows erase richer cached media.
-    media: Array.isArray(user.media) ? user.media : existingUser.media || [],
-    photos: Array.isArray(user.photos) ? user.photos : existingUser.photos || [],
-    reels: Array.isArray(user.reels) ? user.reels : existingUser.reels || [],
-    gallery: Array.isArray(user.gallery) ? user.gallery : existingUser.gallery || [],
-    uploads: Array.isArray(user.uploads) ? user.uploads : existingUser.uploads || [],
   };
 
   const bundle: CachedViewProfileBundle = {
+    complete: false,
     profile: {
       ...(existing?.profile || {}),
       user: nextUser,
@@ -264,6 +263,7 @@ export async function fetchFreshViewProfile(userId: string, signal?: AbortSignal
   }
 
   const bundle: CachedViewProfileBundle = {
+    complete: true,
     profile: {
       ...profileData,
       matched: !!profileData?.matched,

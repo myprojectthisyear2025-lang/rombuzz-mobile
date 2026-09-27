@@ -50,8 +50,22 @@ Files: `app/(tabs)/view-profile.tsx`, `src/features/viewProfile/useViewProfileRe
 
 Validation: 6 new state/cache tests (including actual screen route → loading → successful profile), 6 existing Fix #9 media tests and all 11 auth tests pass. Checks cover cache refresh, confirmed 404, network retry, rapid preview/user/account changes, focus cancellation and late disk/API work. TypeScript and scoped lint are checked before checkpoint; existing unused `height` and `getStreamUid` warnings are compared in final lint validation.
 
-Checkpoint: `fix: distinguish profile loading from confirmed unavailability` (hash recorded in the next checkpoint).
+Checkpoint: `bd661a6` — `fix: distinguish profile loading from confirmed unavailability`.
+
+## 4. Unknown profile metadata / Photos (0)
+
+Observed: matched-profile transitions displayed Photos (0) and incomplete fields before populated data arrived.
+
+Root cause: startup warms View Profile from lightweight `/matches` rows. `writeCachedViewProfileFromUser` invented empty media/photos/reels/gallery/uploads arrays when absent, treated the preview as a full profile, and could overwrite rich cached media with empty preview arrays. The screen accepted any cached user, so gallery `.length` looked authoritative while the full `/users/:id` request was pending. That endpoint supplies the actual visible gallery.
+
+Before → after: cache bundles explicitly track completeness. Only the full user endpoint marks a bundle complete. Warmed previews keep unknown fields absent and never downgrade a complete cached profile or extend its lifetime. The screen retains a complete cached profile or its existing neutral loading presentation until full data is known. The gallery itself and its real zero counts are unchanged; no counts are invented and Fix #9 URL merging remains intact.
+
+Files: `src/features/performance/viewProfile/rbzViewProfileCache.ts`, `src/features/viewProfile/useViewProfileRead.ts`, `scripts/performance-fixes/profile-state-smoke.test.cjs`, this document.
+
+Validation: two additional tests cover an incomplete warm cache → loaded gallery, a genuinely empty gallery, and warm rows failing to overwrite complete media URLs/metadata. All 14 profile state/media tests pass; TypeScript passes; lint has only the pre-existing unused-helper warning.
+
+Checkpoint: `fix: keep incomplete profile previews in neutral loading` (hash recorded in the next checkpoint).
 
 ## Remaining work in this batch
 
-Unknown profile gallery counts; Shared Media video previews; final complete validation and checkpoint inventory.
+Shared Media video previews; final complete validation and checkpoint inventory.

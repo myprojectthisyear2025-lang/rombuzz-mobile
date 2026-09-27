@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createHarness,React,act,deferred}=require('./harness.cjs');
 const {screenHarness}=require('./screenHarness.cjs');
-const bundle=(id,extra={})=>({profile:{user:{id,firstName:id,...extra},matched:true}});
+const bundle=(id,extra={})=>({complete:true,profile:{user:{id,firstName:id,...extra},matched:true}});
 function setup(screen=false){
   const h=screen?screenHarness():createHarness(),requests=[],cache=new Map();let state,setRoute;
   h.mocks['@/src/features/performance/viewProfile/rbzViewProfileCache']={
@@ -71,4 +71,22 @@ test('View Profile cache is account scoped and an aborted response cannot write 
   assert.ok(await api.readCachedViewProfile('peer'));await h.session({token:'bob',user:{id:'bob'}});assert.equal(await api.readCachedViewProfile('peer'),null);
   const abort=new AbortController(),pending=api.fetchFreshViewProfile('peer',abort.signal);abort.abort();gate.resolve(bundle('peer').profile);await pending;
   assert.equal(await api.readCachedViewProfile('peer'),null);
+});
+test('incomplete warmed profile stays neutral until gallery is known, including a confirmed zero',async()=>{
+  const s=setup(true);s.cache.set('alice',{...bundle('alice',{media:[]}),complete:false});await s.h.mount(s.Component);
+  assert.match(JSON.stringify(s.h.tree.toJSON()),/Loading profile/);assert.equal(s.h.tree.root.findAllByType('ViewProfileGallery').length,0);
+  await act(async()=>s.requests[0].resolve(bundle('alice',{media:[{id:'photo',url:'photo.jpg',type:'image'}]})));
+  assert.equal(s.h.tree.root.findByType('ViewProfileGallery').props.photos.length,1);
+  await s.change('bob');assert.equal(s.h.tree.root.findAllByType('ViewProfileGallery').length,0);
+  await act(async()=>s.requests[1].resolve(bundle('bob',{media:[]})));
+  assert.equal(s.h.tree.root.findByType('ViewProfileGallery').props.photos.length,0);await s.h.unmount();
+});
+test('match warming neither fabricates empty media nor overwrites a full profile or its media URLs',async()=>{
+  const h=createHarness(),data=new Map();
+  h.mocks['@/src/performance/cache/rbzCache']={rbzCacheKey:(...p)=>p.join(':'),rbzCacheGet:async key=>({hit:data.has(key),value:data.get(key)}),rbzCacheSet:async(k,v)=>data.set(k,v)};
+  const api=h.load('src/features/performance/viewProfile/rbzViewProfileCache.ts');
+  const partial=await api.writeCachedViewProfileFromUser({id:'peer',firstName:'Peer'});assert.equal(partial.complete,false);assert.equal(partial.profile.user.media,undefined);
+  h.mocks['@/src/performance/api/rbzApiClient'].rbzApiJson=async()=>bundle('peer',{media:[{id:'photo',url:'https://media.invalid/photo.jpg'}],bio:'Full bio'}).profile;
+  const full=await api.fetchFreshViewProfile('peer');assert.equal(full.complete,true);
+  const warmed=await api.writeCachedViewProfileFromUser({id:'peer',media:[],bio:''});assert.deepEqual(warmed,full);
 });
