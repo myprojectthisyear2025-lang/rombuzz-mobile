@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import React, { useEffect, useMemo, useState } from "react";
+import React from "react";
 import {
   FlatList,
   Image,
@@ -14,12 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { API_BASE } from "@/src/config/api";
-import {
-  readCachedChatThread,
-  writeCachedChatThread,
-} from "@/src/features/chat/thread/rbzChatThreadCache";
-import { getSocket } from "@/src/lib/socket";
+import { usePinnedMessages } from "@/src/features/chat/pinned/usePinnedMessages";
 
 const RBZ = {
   c1: "#b1123c",
@@ -33,27 +27,7 @@ const RBZ = {
   line: "rgba(0,0,0,0.08)",
 };
 
-function makeRoomId(a: string, b: string) {
-  return [String(a), String(b)].sort().join("_");
-}
-
 const RBZ_TAG = "::RBZ::";
-
-type PinnedMessage = {
-  id: string;
-  from: string;
-  text?: string;
-  type?: string;
-  url?: string | null;
-  mediaType?: string | null;
-  mediaUrl?: string | null;
-  createdAt?: any;
-  time?: any;
-  deleted?: boolean;
-  _temp?: boolean;
-  pinned?: boolean;
-  pinnedAt?: any;
-};
 
 const maybeDecode = (m: any) => {
   if (!m) return m;
@@ -105,16 +79,6 @@ const getPinnedPreview = (m: any) => {
   return text.length > 120 ? `${text.slice(0, 117).trimEnd()}...` : text;
 };
 
-function buildPinnedMessages(list: any[]): PinnedMessage[] {
-  return (Array.isArray(list) ? list : [])
-    .filter((m: any) => !!m?.pinned && !m?.deleted && !m?._temp)
-    .sort(
-      (a: any, b: any) =>
-        toMs(b?.pinnedAt || b?.createdAt || b?.time) -
-        toMs(a?.pinnedAt || a?.createdAt || a?.time)
-    );
-}
-
 export default function PinnedMessagesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -128,111 +92,7 @@ export default function PinnedMessagesScreen() {
   const peerName = String(params.name || "RomBuzz User");
   const peerAvatar = String(params.avatar || "https://i.pravatar.cc/200?img=12");
 
-  const [me, setMe] = useState<any>(null);
-  const myId = useMemo(() => String(me?.id || me?._id || ""), [me]);
-  const roomId = useMemo(() => makeRoomId(myId, peerId), [myId, peerId]);
-
-  const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<PinnedMessage[]>([]);
-
-  useEffect(() => {
-    (async () => {
-      const raw = await SecureStore.getItemAsync("RBZ_USER");
-      setMe(raw ? JSON.parse(raw) : null);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!myId || !peerId || !roomId) return;
-
-    let alive = true;
-
-    (async () => {
-      let showedCached = false;
-
-      setLoading(true);
-
-      try {
-        const cached = await readCachedChatThread(roomId);
-
-        if (cached?.messages?.length && alive) {
-          const cachedPinned = buildPinnedMessages(cached.messages);
-
-          if (cachedPinned.length) {
-            showedCached = true;
-            setItems(cachedPinned);
-            setLoading(false);
-          }
-        }
-
-        const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-        const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await r.json().catch(() => []);
-        const list = Array.isArray(data) ? data : [];
-
-        if (!alive) return;
-
-        writeCachedChatThread(roomId, list).catch(() => {});
-        setItems(buildPinnedMessages(list));
-      } catch {
-        if (!showedCached && alive) {
-          setItems([]);
-        }
-      } finally {
-        if (alive) {
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [myId, peerId, roomId]);
-
-  useEffect(() => {
-    if (!roomId) return;
-
-    let alive = true;
-    let s: any;
-
-    const onPin = (payload: any) => {
-      const nextRoomId = String(payload?.roomId || "");
-      const msg = payload?.message || payload;
-      if (nextRoomId && nextRoomId !== roomId) return;
-      if (!msg?.id) return;
-
-      setItems((prev) => {
-        const next = prev.filter((x) => String(x.id) !== String(msg.id));
-
-        if (msg?.pinned && !msg?.deleted && !msg?._temp) {
-          next.push(msg);
-        }
-
-        return next.sort(
-          (a, b) =>
-            toMs(b?.pinnedAt || b?.createdAt || b?.time) -
-            toMs(a?.pinnedAt || a?.createdAt || a?.time)
-        );
-      });
-    };
-
-    (async () => {
-      s = await getSocket();
-      if (!alive || !s) return;
-      s.on("message:pin", onPin);
-      s.on("chat:pin", onPin);
-    })();
-
-    return () => {
-      alive = false;
-      if (!s) return;
-      s.off("message:pin", onPin);
-      s.off("chat:pin", onPin);
-    };
-  }, [roomId]);
+  const { myId, loading, items, error, reload } = usePinnedMessages(peerId);
 
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
@@ -256,7 +116,7 @@ export default function PinnedMessagesScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{peerName}</Text>
           <Text style={styles.sub}>
-            {items.length === 1 ? "1 pinned message" : `${items.length} pinned messages`}
+            {loading ? "Pinned messages" : items.length === 1 ? "1 pinned message" : `${items.length} pinned messages`}
           </Text>
         </View>
       </View>
@@ -264,6 +124,11 @@ export default function PinnedMessagesScreen() {
       {loading ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Loading pinned messages…</Text>
+        </View>
+      ) : error && items.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyText}>{error}</Text>
+          <Pressable onPress={reload}><Text style={styles.emptyTitle}>Retry</Text></Pressable>
         </View>
       ) : items.length === 0 ? (
         <View style={styles.emptyWrap}>
