@@ -4,7 +4,6 @@
  *  Purpose: Fullscreen photo viewer used by the gallery modal.
  * ============================================================
  */
-import { ResizeMode, Video } from "expo-av";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -204,14 +203,14 @@ function PassiveVideoItem({
   mediaHeight: number;
 }) {
   return (
-    <Video
-      source={{ uri: item?.url }}
+    <View
       style={[styles.media, { width: mediaWidth, height: mediaHeight }]}
-      resizeMode={ResizeMode.CONTAIN}
-      shouldPlay={false}
-      isLooping={false}
-      useNativeControls={false}
-    />
+    >
+      {(item?.thumbnailUrl || item?.cloudflareStream?.thumbnailUrl) ? (
+        <Animated.Image source={{ uri: item.thumbnailUrl || item.cloudflareStream.thumbnailUrl }}
+          style={styles.preview} resizeMode="contain" />
+      ) : null}
+    </View>
   );
 }
 
@@ -299,6 +298,7 @@ export default function GalleryPhotoViewer({
 }
 
 const styles = StyleSheet.create({
+  preview: { width: "100%", height: "100%" },
   page: {
     justifyContent: "center",
     alignItems: "center",

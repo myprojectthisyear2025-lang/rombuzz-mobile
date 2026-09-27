@@ -1,4 +1,5 @@
-import { diagnosticVideo } from "@/src/performance/diagnostics/media";
+import { ActiveViewerVideo } from "./ActiveViewerVideo";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 /**
  * ============================================================
  * 📁 File: src/components/media/RBZVideoViewer.tsx
@@ -49,7 +50,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const PerfVideo = diagnosticVideo("video-viewer");
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -146,6 +146,10 @@ export default function RBZVideoViewer({
   onIndexChange,
   FooterComponent,
 }: RBZVideoViewerProps) {
+  const activity = useScreenActivity();
+  const { isActive: isScreenActive } = activity;
+  const enabled = visible && activity.active;
+  const canUpdate = useCallback(() => visible && isScreenActive(), [visible, isScreenActive]);
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<RBZVideoViewerItem>>(null);
   const videoRefs = useRef<VideoRefsMap>({});
@@ -155,6 +159,8 @@ export default function RBZVideoViewer({
   const [sessionMuted, setSessionMuted] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
+  const selectedIndexRef = useRef(activeIndex);
+  selectedIndexRef.current = activeIndex;
 
   const [playbackByIndex, setPlaybackByIndex] = useState<
     Record<
@@ -219,12 +225,6 @@ export default function RBZVideoViewer({
       setActiveIndex(safeInitialIndex);
       setControlsVisible(true);
 
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToIndex({
-          index: safeInitialIndex,
-          animated: false,
-        });
-      });
     }
 
     if (!visible && openHandledRef.current) {
@@ -238,11 +238,13 @@ export default function RBZVideoViewer({
   }, [visible, safeInitialIndex]);
 
   useEffect(() => {
-    if (!visible) return;
-    pauseAllExcept(activeIndex);
-    playActive(activeIndex);
-    startControlsAutoHide();
-  }, [activeIndex, visible]);
+    if (!enabled) return;
+    const frame = requestAnimationFrame(() => {
+      if (!canUpdate()) return;
+      flatListRef.current?.scrollToIndex({ index: selectedIndexRef.current, animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [enabled, canUpdate]);
 
   const clearControlsTimer = useCallback(() => {
     if (controlsHideTimerRef.current) {
@@ -253,10 +255,16 @@ export default function RBZVideoViewer({
 
   const startControlsAutoHide = useCallback(() => {
     clearControlsTimer();
+    if (!canUpdate()) return;
     controlsHideTimerRef.current = setTimeout(() => {
-      setControlsVisible(false);
+      if (canUpdate()) setControlsVisible(false);
     }, 2500);
-  }, [clearControlsTimer]);
+  }, [clearControlsTimer, canUpdate]);
+
+  useEffect(() => {
+    if (enabled) startControlsAutoHide();
+    return clearControlsTimer;
+  }, [activeIndex, enabled, clearControlsTimer, startControlsAutoHide]);
 
   const handleClose = useCallback(() => {
     clearControlsTimer();
@@ -265,25 +273,6 @@ export default function RBZVideoViewer({
     });
     onClose();
   }, [clearControlsTimer, onClose]);
-
-  const pauseAllExcept = useCallback((keepIndex: number) => {
-    Object.entries(videoRefs.current).forEach(([key, ref]) => {
-      const index = Number(key);
-      if (index !== keepIndex) {
-        ref?.pauseAsync?.().catch(() => {});
-      }
-    });
-  }, []);
-
-  const playActive = useCallback(async (index: number) => {
-    const ref = videoRefs.current[index];
-    if (!ref) return;
-    try {
-      await ref.playAsync();
-    } catch {
-      // ignore playback race errors
-    }
-  }, []);
 
   const togglePlayPause = useCallback(async () => {
     const ref = videoRefs.current[activeIndex];
@@ -535,7 +524,9 @@ export default function RBZVideoViewer({
               }}
             >
               {videoUri ? (
-                <PerfVideo
+                <ActiveViewerVideo
+                  active={enabled && active}
+                  canUpdate={canUpdate}
                   ref={(ref) => {
                     videoRefs.current[index] = ref;
                   }}
@@ -784,6 +775,8 @@ export default function RBZVideoViewer({
       togglePlayPause,
       updatePlaybackState,
       visible,
+      enabled,
+      canUpdate,
     ]
   );
 

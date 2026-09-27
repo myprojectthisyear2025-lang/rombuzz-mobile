@@ -18,8 +18,10 @@
  * ============================================================
  */
 import { Ionicons } from "@expo/vector-icons";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
+import { useGalleryVideoSource } from "@/src/features/profile/gallery/useGalleryVideoSource";
 import { ResizeMode, Video } from "expo-av";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useSharedValue } from "react-native-reanimated";
@@ -96,92 +98,53 @@ function ActiveVideoItem({
   rowIndex,
   activeIndex,
   isActive,
+  isScreenActive,
   mediaWidth,
   mediaHeight,
   insets,
   itemsLength,
   onChangeIndex,
-  listRef,
-  screenHeight,
   apiFetch,
 }: {
   item: any;
   rowIndex: number;
   activeIndex: number;
   isActive: boolean;
+  isScreenActive: () => boolean;
   mediaWidth: number;
   mediaHeight: number;
   insets: EdgeInsets;
   itemsLength: number;
   onChangeIndex: (i: number) => void;
-  listRef: React.RefObject<Animated.FlatList<any> | null>;
-  screenHeight: number;
   apiFetch?: (path: string, init?: RequestInit) => Promise<any>;
 }) {
   const videoRef = useRef<Video | null>(null);
   const videoLoaded = useRef(false);
+  const setVideoRef = useCallback((ref: Video | null) => {
+    videoRef.current = ref;
+    videoLoaded.current = false;
+  }, []);
 
   const [paused, setPaused] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
-  const [resolvedUrl, setResolvedUrl] = useState(() => getVideoPlayableUrl(item));
-  const [resolving, setResolving] = useState(false);
+  const { url: resolvedUrl, resolving } = useGalleryVideoSource(getVideoPlayableUrl(item), getStreamUid(item), isActive, apiFetch);
+  const lastPosition = useRef(0);
+  const resumePosition = useRef(0);
   const seeking = useSharedValue(false);
+  const player = useRef({ url: resolvedUrl, generation: 0 });
+  if (player.current.url !== resolvedUrl) player.current = { url: resolvedUrl, generation: player.current.generation + 1 };
+  const playerGeneration = player.current.generation;
 
   useEffect(() => {
-    let alive = true;
-
-    async function resolveStreamPlayback() {
-      const existing = getVideoPlayableUrl(item);
-      if (existing) {
-        setResolvedUrl(existing);
-        return;
-      }
-
-      const uid = getStreamUid(item);
-      if (!uid || !apiFetch) {
-        setResolvedUrl("");
-        return;
-      }
-
-      try {
-        setResolving(true);
-        const data = await apiFetch(`/stream/${uid}/playback`);
-        const nextUrl = String(
-          data?.playback?.hls ||
-            data?.playback?.dash ||
-            ""
-        ).trim();
-
-        if (alive) setResolvedUrl(nextUrl);
-      } catch (err) {
-        console.log("Stream playback resolve failed:", err);
-        if (alive) setResolvedUrl("");
-      } finally {
-        if (alive) setResolving(false);
-      }
+    if (!isActive) resumePosition.current = lastPosition.current;
+    if (rowIndex !== activeIndex) {
+      resumePosition.current = 0;
+      lastPosition.current = 0;
+      setPaused(false);
+      setPosition(0);
     }
-
-    resolveStreamPlayback();
-
-    return () => {
-      alive = false;
-    };
-  }, [item?.id, item?.streamUid, item?.cloudflareStream?.uid, apiFetch]);
-
-  useEffect(() => {
-    if (!videoRef.current || !videoLoaded.current) return;
-
-    if (isActive) {
-      if (!paused) videoRef.current.playAsync?.();
-      return;
-    }
-
-    videoRef.current.pauseAsync?.();
-    videoRef.current.setPositionAsync?.(0);
-    setPaused(false);
-    setPosition(0);
-  }, [activeIndex, isActive, paused]);
+  }, [activeIndex, isActive, rowIndex]);
 
   const scrubGesture = useMemo(() => {
     return Gesture.Pan()
@@ -227,37 +190,30 @@ function ActiveVideoItem({
         </View>
       ) : (
       <Video
-        ref={(ref) => {
-          videoRef.current = ref;
-          if (ref) videoLoaded.current = false;
-        }}
+        ref={setVideoRef}
         key={`video-${item?.id || item?.streamUid || item?.url}-${rowIndex}`}
         source={{ uri: resolvedUrl }}
         onLoad={() => {
+          if (player.current.generation !== playerGeneration) return;
           videoLoaded.current = true;
-          if (isActive && !paused) videoRef.current?.playAsync?.();
         }}
         style={{ width: mediaWidth, height: mediaHeight, alignSelf: "center" }}
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isActive && !paused}
+        positionMillis={resumePosition.current}
         isLooping={false}
         useNativeControls={false}
         onPlaybackStatusUpdate={(s: any) => {
           if (!s.isLoaded) return;
-          if (!isActive) return;
+          if (!isActive || !isScreenActive() || player.current.generation !== playerGeneration) return;
 
+          lastPosition.current = s.positionMillis || 0;
           setPosition(s.positionMillis || 0);
           setDuration(s.durationMillis || 0);
 
           if (s.didJustFinish && activeIndex < itemsLength - 1) {
             const nextIndex = activeIndex + 1;
             onChangeIndex(nextIndex);
-            setTimeout(() => {
-              listRef.current?.scrollToOffset({
-                offset: nextIndex * screenHeight,
-                animated: true,
-              });
-            }, 80);
           }
         }}
         onError={(e) => console.log("Video error:", e)}
@@ -324,10 +280,11 @@ export default function GalleryVideoViewer({
   insets,
   apiFetch,
 }: GalleryVideoViewerProps) {
+  const activity = useScreenActivity();
   const listRef = useRef<Animated.FlatList<any>>(null);
 
   useEffect(() => {
-    if (!screenHeight) return;
+    if (!screenHeight || !activity.active) return;
     const t = setTimeout(() => {
       listRef.current?.scrollToOffset({
         offset: index * screenHeight,
@@ -335,13 +292,13 @@ export default function GalleryVideoViewer({
       });
     }, 0);
     return () => clearTimeout(t);
-  }, [index, screenHeight]);
+  }, [index, screenHeight, activity.active]);
 
   return (
     <Animated.FlatList
       ref={listRef}
       data={items}
-      extraData={activeIndex}
+      extraData={`${activeIndex}:${activity.active}`}
       horizontal={false}
       pagingEnabled
       snapToInterval={screenHeight}
@@ -358,7 +315,7 @@ export default function GalleryVideoViewer({
         if (nextIndex !== activeIndex) onChangeIndex(nextIndex);
       }}
       renderItem={({ item: rowItem, index: rowIndex }) => {
-        const isActive = rowIndex === activeIndex;
+        const isActive = rowIndex === activeIndex && activity.active;
 
         return (
           <View
@@ -376,13 +333,12 @@ export default function GalleryVideoViewer({
                 rowIndex={rowIndex}
                 activeIndex={activeIndex}
                 isActive={isActive}
+                isScreenActive={activity.isActive}
                 mediaWidth={mediaWidth}
                 mediaHeight={mediaHeight}
                 insets={insets}
                 itemsLength={items.length}
                 onChangeIndex={onChangeIndex}
-                listRef={listRef}
-                screenHeight={screenHeight}
                 apiFetch={apiFetch}
               />
             ) : (

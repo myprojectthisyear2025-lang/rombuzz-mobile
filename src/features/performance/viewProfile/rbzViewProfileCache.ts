@@ -12,6 +12,7 @@
  */
 
 import { rbzApiJson } from "@/src/performance/api/rbzApiClient";
+import { preserveMediaUrl as preserveSignedUrl } from "./preserveMediaUrl";
 import {
   rbzCacheGet,
   rbzCacheKey,
@@ -79,22 +80,6 @@ function getStableMediaKey(entry: any) {
       entry?._id ||
       stripSignedUrlQuery(url)
   ).trim();
-}
-
-function preserveSignedUrl(oldValue: any, freshValue: any) {
-  const oldUrl = String(oldValue || "").trim();
-  const freshUrl = String(freshValue || "").trim();
-
-  if (!oldUrl || !freshUrl) return freshUrl || oldUrl;
-
-  const oldBase = stripSignedUrlQuery(oldUrl);
-  const freshBase = stripSignedUrlQuery(freshUrl);
-
-  if (oldBase && freshBase && oldBase === freshBase) {
-    return oldUrl;
-  }
-
-  return freshUrl;
 }
 
 function mergeMediaArray(oldItems: any[], freshItems: any[]) {
