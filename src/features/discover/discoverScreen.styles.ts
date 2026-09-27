@@ -196,33 +196,5 @@ export function createDiscoverScreenStyles(
       width: "100%",
     },
 
-    refreshPill: {
-      position: "absolute",
-      top: 4,
-      zIndex: 20,
-      elevation: 20,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 7,
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-      borderRadius: 999,
-      backgroundColor: colors.surfaceRaised,
-      borderWidth: 1,
-      borderColor: colors.border,
-      shadowColor: colors.overlay,
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      shadowOffset: {
-        width: 0,
-        height: 4,
-      },
-    },
-
-    refreshPillText: {
-      color: colors.text,
-      fontSize: 12,
-      fontFamily: RBZFont.bold,
-    },
   });
 }

@@ -1,3 +1,4 @@
+import { discoverUserId, reconcileDiscoverDeck } from "@/src/features/discover/reconcileDiscoverDeck";
 import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 import { createDiscoverRequestOwner, discoverTimeout } from "@/src/features/discover/discoverRequestOwner";
 import { perfState } from "@/src/performance/diagnostics/core";
@@ -390,37 +391,6 @@ function applyClientOnlyFilters(list: any[], filters: DiscoverFilters) {
   });
 }
 
-function getUserStableId(user: any) {
-  return String(user?.id || user?._id || "").trim();
-}
-
-function sameUserOrder(a: any[], b: any[]) {
-  if (!Array.isArray(a) || !Array.isArray(b)) return false;
-  if (a.length !== b.length) return false;
-
-  return a.every((item, index) => {
-    const left = getUserStableId(item);
-    const right = getUserStableId(b[index]);
-    return !!left && left === right;
-  });
-}
-
-function keepVisibleCardStable(prev: any[], fresh: any[]) {
-  if (!Array.isArray(prev) || prev.length === 0) return fresh;
-  if (!Array.isArray(fresh) || fresh.length === 0) return fresh;
-
-  if (sameUserOrder(prev, fresh)) return fresh;
-
-  const currentId = getUserStableId(prev[0]);
-  if (!currentId) return fresh;
-
-  const freshCurrent = fresh.find((u) => getUserStableId(u) === currentId);
-  if (!freshCurrent) return fresh;
-
-  const rest = fresh.filter((u) => getUserStableId(u) !== currentId);
-  return [freshCurrent, ...rest];
-}
-
 function DiscoverSwipeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -515,7 +485,6 @@ const nextScale = useAnimatedStyle(() => ({
   const [phase, setPhase] = useState<"strict" | "fallback">("strict");
   const [expandedSearch, setExpandedSearch] = useState(false);
   const [message, setMessage] = useState<string>("");
-  const [quietRefreshing, setQuietRefreshing] = useState(false);
   const [buzzing, setBuzzing] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
 
@@ -692,9 +661,6 @@ const nextScale = useAnimatedStyle(() => ({
       // becomes a quiet background refresh instead of blocking the deck.
       let backgroundRefresh = silent;
 
-      if (backgroundRefresh) {
-        setQuietRefreshing(true);
-      }
 
       try {
         const lookingFor =
@@ -736,6 +702,7 @@ const nextScale = useAnimatedStyle(() => ({
           hadUsableCache = false;
           usersRef.current = [];
           setUsers([]);
+          setLoading(true);
         }
         const cached = displayedCacheKey.current === cacheKey
           ? { hit: false, users: [] }
@@ -744,16 +711,16 @@ const nextScale = useAnimatedStyle(() => ({
 
         if (cached.hit && (displayedCacheKey.current !== cacheKey || !usersRef.current.length)) {
           displayedCacheKey.current = cacheKey;
-          hadUsableCache = true;
+          hadUsableCache = cached.users.length > 0;
           backgroundRefresh = true;
 
           // Show the small cached deck immediately.
           perfState("discover", "cache");
+          usersRef.current = cached.users;
           setUsers(cached.users);
           setReveal(0);
           setPhotoIndex(0);
           setLoading(false);
-          setQuietRefreshing(true);
           preloadDiscoverImages(cached.users);
         } else if (!silent && !usersRef.current.length) {
           setLoading(true);
@@ -836,23 +803,23 @@ const nextScale = useAnimatedStyle(() => ({
           throw new Error(msg);
         }
 
-           const serverList = Array.isArray(data?.users) ? data.users : [];
+        if (!Array.isArray(data?.users)) throw new Error("Invalid Discover response");
+        const serverList = data.users;
         const finalList = applyClientOnlyFilters(serverList, effective);
 
         displayedCacheKey.current = cacheKey;
         perfState("discover", "fresh");
-        setUsers((prev) => {
-          const next = backgroundRefresh
-            ? keepVisibleCardStable(prev, finalList)
-            : finalList;
-
-          usersRef.current = next;
-          return next;
-        });
-
-        if (!backgroundRefresh) {
+        const previous = usersRef.current;
+        const next = backgroundRefresh ? reconcileDiscoverDeck(previous, finalList) : finalList;
+        // Publish one complete deck. No empty intermediary or photo reset for
+        // the same candidate, including the sequential moved-GPS request.
+        usersRef.current = next;
+        setUsers(next);
+        if (discoverUserId(previous[0]) !== discoverUserId(next[0])) {
           setReveal(0);
           setPhotoIndex(0);
+        } else {
+          setPhotoIndex(index => Math.min(index, getUserImages(next[0]).length - 1));
         }
 
         saveCachedDiscoverDeck(requestCacheInput, finalList);
@@ -871,13 +838,7 @@ const nextScale = useAnimatedStyle(() => ({
         }
          } finally {
         if (valid()) {
-        if (backgroundRefresh) {
-          setQuietRefreshing(false);
-        }
-
-        if (!backgroundRefresh) {
           setLoading(false);
-        }
         }
       }
       });
@@ -927,6 +888,7 @@ const handleExpandSearch = useCallback(async () => {
 const removeTopCard = useCallback(() => {
   setUsers((prev) => {
     const next = prev.slice(1);
+    usersRef.current = next;
 
     persistDiscoverDeck(next);
 
@@ -1124,7 +1086,9 @@ const swipeGesture = Gesture.Pan()
     setPhase("strict");
     setExpandedSearch(false);
     setMessage("");
+    usersRef.current = [];
     setUsers([]);
+    setLoading(true);
     setReveal(0);
 
     // The top Looking For row is part of Discover filtering,
@@ -1280,13 +1244,6 @@ const swipeGesture = Gesture.Pan()
           </View>
         ) : (
               <GestureHandlerRootView style={styles.deck}>
-                {quietRefreshing ? (
-                  <View pointerEvents="none" style={styles.refreshPill}>
-                    <ActivityIndicator size="small" color={colors.brand} />
-                    <Text style={styles.refreshPillText}>Refreshing nearby</Text>
-                  </View>
-                ) : null}
-
                 {/* Next card (peek) */}
                  {users[1] ? (
                   <Animated.View style={[styles.card, styles.cardBehind, nextScale]}>
@@ -1314,7 +1271,7 @@ const swipeGesture = Gesture.Pan()
       onLongPress={openProfile}
     >
       <PerfImage
-        source={{ uri: getUserImages(current)[photoIndex] }}
+        source={{ uri: getUserImages(current)[Math.min(photoIndex, getUserImages(current).length - 1)] }}
         style={styles.cardImg}
         blurRadius={blurRadius}
         fadeDuration={0}

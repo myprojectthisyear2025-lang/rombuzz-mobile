@@ -47,6 +47,7 @@ function createHarness() {
     return module.exports;
   }
   return{load,mocks,requests,storage,socket,socketEvents,socketListeners,socketGate,alerts,routes,timers,
+    get tree(){return tree;},
     setFetch:fn=>{fetcher=fn;},
     async mount(Component){await act(async()=>{tree=renderer.create(React.createElement(Component));});},
     async unmount(){await act(async()=>tree?.unmount());},
