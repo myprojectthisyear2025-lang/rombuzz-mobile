@@ -33,7 +33,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -51,52 +51,13 @@ import { API_BASE } from "@/src/config/api";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import { usePurchasedMediaStyles } from "@/src/features/chat/purchasedMedia/usePurchasedMediaStyles";
-import {
-  readCachedChatThread,
-  writeCachedChatThread,
-} from "@/src/features/chat/thread/rbzChatThreadCache";
+import { useChatMedia } from "@/src/features/chat/mediaHub/useChatMedia";
+import { ChatMediaRow as MediaRow, chatMediaRow } from "@/src/features/chat/mediaHub/chatMediaRows";
 
 const PerfImage = diagnosticImage("purchased-media");
 
 
-function makeRoomId(a: string, b: string) {
-  return [String(a), String(b)].sort().join("_");
-}
-
-
-type AnyMsg = any;
-
-type MediaRow = {
-  id: string;
-  url: string;
-  mediaType: "image" | "video";
-  createdAtMs: number;
-  giftLocked: boolean;
-  giftPriceBC: number;
-  fromId: string;
-  toId: string;
-  unlockedBy: string[];
-};
-
 const SCREEN_W = Dimensions.get("window").width;
-
-function isEphemeral(m: AnyMsg) {
-  const mv = m?.ephemeral?.maxViews;
-  const mode = String(m?.ephemeral?.mode || "");
-  const viewsLeft = Number(m?.ephemeral?.viewsLeft || 0);
-
-  if (mv === 1 || mv === 2) return true;
-  if (mode === "once" || mode === "twice") return true;
-  if (Number.isFinite(viewsLeft) && viewsLeft > 0) return true;
-
-  return false;
-}
-
-function toMs(ts: any) {
-  const d = ts || ts === 0 ? new Date(ts) : null;
-  const n = d ? d.getTime() : 0;
-  return Number.isFinite(n) ? n : 0;
-}
 
 function guessExt(url: string, mediaType: "image" | "video") {
   const lower = String(url || "").toLowerCase();
@@ -106,146 +67,6 @@ function guessExt(url: string, mediaType: "image" | "video") {
   if (lower.includes(".jpeg")) return "jpeg";
   if (lower.includes(".jpg")) return "jpg";
   return "jpg";
-}
-
-function parseRBZ(text: any): any | null {
-  const s = String(text || "");
-  if (!s.startsWith("::RBZ::")) return null;
-  try {
-    return JSON.parse(s.replace(/^::RBZ::/, ""));
-  } catch {
-    return null;
-  }
-}
-
-function pickMediaUrl(m: AnyMsg): string {
-  const p = parseRBZ(m?.text);
-
-  const isStreamVideo =
-    String(m?.provider || m?.storage || p?.provider || p?.storage || "").toLowerCase() ===
-      "cloudflare_stream" ||
-    !!m?.streamUid ||
-    !!m?.cloudflareStream?.uid ||
-    !!p?.streamUid ||
-    !!p?.cloudflareStream?.uid;
-
-  if (isStreamVideo) {
-    const streamUrl = String(
-      m?.playback?.hls ||
-        p?.playback?.hls ||
-        m?.url ||
-        p?.url ||
-        ""
-    ).trim();
-
-    if (streamUrl) return streamUrl;
-  }
-
-  const direct = String(m?.url || m?.mediaUrl || "");
-  if (direct) return direct;
-
-  return (
-    String(
-      p?.url ||
-        p?.mediaUrl ||
-        p?.media?.url ||
-        p?.media?.secure_url ||
-        p?.secure_url ||
-        ""
-    ) || ""
-  );
-}
-
-function pickMediaType(m: AnyMsg): "image" | "video" {
-  const direct = String(m?.mediaType || "").toLowerCase();
-  if (direct === "video") return "video";
-
-  const p = parseRBZ(m?.text);
-  const t = String(p?.mediaType || p?.type || p?.kind || "").toLowerCase();
-  if (t === "video") return "video";
-
-  return "image";
-}
-
-function pickGiftLocked(m: AnyMsg): boolean {
-  if (!!m?.gift?.locked) return true;
-  const p = parseRBZ(m?.text);
-  return !!(p?.gift?.locked || p?.locked);
-}
-
-function pickGiftPriceBC(m: AnyMsg): number {
-  const p = parseRBZ(m?.text);
-  const n = Math.floor(
-    Number(
-      m?.gift?.priceBC ??
-        m?.gift?.amount ??
-        p?.gift?.priceBC ??
-        p?.gift?.amount ??
-        p?.priceBC ??
-        0
-    ) || 0
-  );
-
-  return n > 0 ? n : 0;
-}
-
-function pickUnlockedBy(m: AnyMsg): string[] {
-  const direct = Array.isArray(m?.gift?.unlockedBy)
-    ? m.gift.unlockedBy.map((x: any) => String(x))
-    : [];
-
-  const p = parseRBZ(m?.text);
-  const nested = Array.isArray(p?.gift?.unlockedBy)
-    ? p.gift.unlockedBy.map((x: any) => String(x))
-    : [];
-
-  return Array.from(new Set([...direct, ...nested]));
-}
-
-function buildPurchasedMediaRows(arr: AnyMsg[]): MediaRow[] {
-  return (Array.isArray(arr) ? arr : [])
-    .filter((m) => {
-      if (!m) return false;
-      if (m?.deleted) return false;
-      if (isEphemeral(m)) return false;
-
-      const type = String(m?.type || "");
-      const url = pickMediaUrl(m);
-      const giftLocked = pickGiftLocked(m);
-      const giftPriceBC = pickGiftPriceBC(m);
-      const isMedia = type === "media" || !!url;
-
-      if (!isMedia) return false;
-      if (!url) return false;
-
-      // ✅ Purchased Media means paid/gifted media.
-      // It must stay here after unlock too, so do not depend only on gift.locked.
-      if (!giftLocked && giftPriceBC <= 0) return false;
-
-      return true;
-    })
-    .map((m) => {
-      const id = String(m?.id || m?._id || "");
-      const url = pickMediaUrl(m);
-      const createdAtMs = toMs(m?.createdAt || m?.time);
-      const mediaType = pickMediaType(m);
-      const giftLocked = pickGiftLocked(m);
-      const giftPriceBC = pickGiftPriceBC(m);
-
-      return {
-        id,
-        url,
-        mediaType,
-        createdAtMs,
-        giftLocked,
-        giftPriceBC,
-        fromId: String(m?.from || m?.senderId || ""),
-        toId: String(m?.to || m?.receiverId || ""),
-        unlockedBy: pickUnlockedBy(m),
-      } as MediaRow;
-    })
-    .filter((x) => !!x.id && !!x.url)
-    .sort((a, b) => b.createdAtMs - a.createdAtMs);
 }
 
 function PurchasedMediaHub() {
@@ -265,18 +86,12 @@ function PurchasedMediaHub() {
   const peerName = String(params.name || "RomBuzz User");
   const peerAvatar = String(params.avatar || "https://i.pravatar.cc/200?img=12");
 
-  const [me, setMe] = useState<any>(null);
-  const myId = useMemo(() => String(me?.id || me?._id || ""), [me]);
-  const roomId = useMemo(() => makeRoomId(myId, peerId), [myId, peerId]);
-
-  const [loading, setLoading] = useState(true);
   const [mediaTab, setMediaTab] = useState<"photos" | "videos">("photos");
-
-  const [purchased, setPurchased] = useState<MediaRow[]>([]);
+  const { rows: purchased, setRows: setPurchased, myId, roomId, loading, busy, error, counts, hasMore, load, loadMore, active } = useChatMedia(peerId, "purchased", mediaTab === "photos" ? "image" : "video");
   usePerfContent("purchased-media", !loading, purchased.length);
-  const [unlockingId, setUnlockingId] = useState("");
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unlockingId, setUnlockingId] = useState("");
   const [menuItem, setMenuItem] = useState<MediaRow | null>(null);
 
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
@@ -291,57 +106,6 @@ function PurchasedMediaHub() {
     const totalGap = gap * (col - 1);
     return Math.floor((SCREEN_W - pad * 2 - totalGap) / col);
   }, []);
-
-  useEffect(() => {
-    (async () => {
-      const raw = await SecureStore.getItemAsync("RBZ_USER");
-      setMe(raw ? JSON.parse(raw) : null);
-    })();
-  }, []);
-
-   const load = async () => {
-    if (!myId || !peerId || !roomId) return;
-
-    let showedCached = false;
-
-    setLoading(true);
-
-    try {
-      const cached = await readCachedChatThread(roomId);
-
-      if (cached?.messages?.length) {
-        const cachedRows = buildPurchasedMediaRows(cached.messages);
-
-        if (cachedRows.length) {
-          showedCached = true;
-          setPurchased(cachedRows);
-          setLoading(false);
-        }
-      }
-
-      const token = await SecureStore.getItemAsync("RBZ_TOKEN");
-      const r = await fetch(`${API_BASE}/chat/rooms/${roomId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const list = (await r.json()) as AnyMsg[];
-      const arr = Array.isArray(list) ? list : [];
-
-      writeCachedChatThread(roomId, arr).catch(() => {});
-      setPurchased(buildPurchasedMediaRows(arr));
-    } catch {
-      if (!showedCached) {
-        setPurchased([]);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!myId || !peerId) return;
-    load();
-  }, [myId, peerId]);
 
   const openMenu = (item: MediaRow) => {
     setMenuItem(item);
@@ -421,6 +185,7 @@ function PurchasedMediaHub() {
           String(x.id) === String(item.id)
             ? {
                 ...x,
+                ...(chatMediaRow(j?.message) || {}),
                 giftLocked: false,
                 unlockedBy: Array.from(
                   new Set([...x.unlockedBy.map(String), String(myId)])
@@ -538,7 +303,7 @@ function PurchasedMediaHub() {
     );
   };
 
-  const MediaTile = ({ item }: { item: MediaRow }) => {
+  const renderMediaTile = (item: MediaRow) => {
     const lockedForMe = isLockedForMe(item);
     const unlockingThis = unlockingId === item.id;
 
@@ -559,18 +324,18 @@ function PurchasedMediaHub() {
         onLongPress={() => openMenu(item)}
         style={[styles.tile, { width: tileW, height: tileW }]}
       >
-                {item.mediaType === "video" ? (
-          <Video
+                {item.mediaType === "video" && !item.thumbnailUrl ? (
+          active ? <Video
             source={{ uri: item.url }}
             style={[styles.thumb, lockedForMe ? styles.lockedThumb : null]}
             resizeMode={ResizeMode.COVER}
             shouldPlay={false}
             isMuted
             useNativeControls={false}
-          />
+          /> : <View style={styles.thumb} />
         ) : (
           <PerfImage
-            source={{ uri: item.url }}
+            resizeMethod="resize" source={{ uri: item.mediaType === "video" ? item.thumbnailUrl : item.url }}
             style={[styles.thumb, lockedForMe ? styles.lockedThumb : null]}
           />
         )}
@@ -633,8 +398,8 @@ function PurchasedMediaHub() {
       </View>
 
       <View style={styles.tabsWrap}>
-        <MediaTabBtn id="photos" label="Photos" count={photos.length} />
-        <MediaTabBtn id="videos" label="Videos" count={videos.length} />
+        <MediaTabBtn id="photos" label="Photos" count={counts.image} />
+        <MediaTabBtn id="videos" label="Videos" count={counts.video} />
       </View>
 
       {loading ? (
@@ -652,6 +417,7 @@ function PurchasedMediaHub() {
           <Text style={styles.emptyTitle}>
             {mediaTab === "photos" ? "No purchased photos yet." : "No purchased videos yet."}
           </Text>
+          {hasMore || error ? <Pressable onPress={error ? load : loadMore}><Text>{error ? "Retry loading media" : "Load older media"}</Text></Pressable> : null}
           <Text style={styles.emptySub}>Only locked / purchased media appears here.</Text>
         </View>
       ) : (
@@ -671,7 +437,10 @@ function PurchasedMediaHub() {
             gap,
             paddingBottom: insets.bottom + 18,
           }}
-          renderItem={({ item }) => <MediaTile item={item} />}
+          renderItem={({ item }) => renderMediaTile(item)}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={busy ? <ActivityIndicator color={colors.brand} /> : error || hasMore ? <Pressable onPress={error ? load : loadMore}><Text>{error ? "Retry loading media" : "Load older media"}</Text></Pressable> : null}
         />
       )}
 
@@ -761,7 +530,7 @@ function PurchasedMediaHub() {
       </Modal>
 
       <RBZImageViewer
-        visible={imageViewerOpen}
+        visible={imageViewerOpen && active}
         items={imageViewerItems}
         initialIndex={imageViewerIndex}
         title="Photo"
@@ -771,9 +540,9 @@ function PurchasedMediaHub() {
         }}
       />
 
-         {videoViewerItem ? (
+         {videoViewerItem && active ? (
         <MediaViewer
-          visible={videoViewerOpen}
+          visible={videoViewerOpen && active}
           onClose={() => {
             setVideoViewerOpen(false);
             setVideoViewerItem(null);
