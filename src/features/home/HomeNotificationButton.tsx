@@ -6,14 +6,10 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import React, {
-    useEffect,
-    useState,
-} from "react";
+import { useNotificationUnread } from "@/src/features/notifications/notificationState";
+import React from "react";
 
 import {
-    DeviceEventEmitter,
     Pressable,
     StyleSheet,
     Text,
@@ -28,8 +24,6 @@ import {
     RBZFont,
 } from "@/src/design/rombuzzTypography";
 
-const UNREAD_KEY =
-  "RBZ_notif_unread_total";
 
 export default function HomeNotificationButton() {
   const router = useRouter();
@@ -37,49 +31,7 @@ export default function HomeNotificationButton() {
   const { colors } =
     useRomBuzzTheme();
 
-  const [unread, setUnread] =
-    useState(0);
-
-  useEffect(() => {
-    let alive = true;
-
-    SecureStore.getItemAsync(
-      UNREAD_KEY
-    )
-      .then((raw) => {
-        if (!alive) return;
-
-        const count =
-          Math.max(
-            0,
-            Number(raw || 0) || 0
-          );
-
-        setUnread(count);
-      })
-      .catch(() => {});
-
-    const sub =
-      DeviceEventEmitter.addListener(
-        "rbz:notif:unread-total",
-        (payload: any) => {
-          const count =
-            Math.max(
-              0,
-              Number(
-                payload?.total || 0
-              ) || 0
-            );
-
-          setUnread(count);
-        }
-      );
-
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
+  const unread = useNotificationUnread();
 
   return (
     <Pressable

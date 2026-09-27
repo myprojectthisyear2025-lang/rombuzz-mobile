@@ -21,6 +21,7 @@ import {
 } from "@/src/design/RomBuzzThemeProvider";
 import AppUpdateGate from "@/src/features/appUpdate/AppUpdateGate";
 import { useRootAuth } from "@/src/features/auth/useRootAuth";
+import { useNotificationLifecycle } from "@/src/features/notifications/notificationState";
 import { useChatUnreadLifecycle } from "@/src/features/chat/unread/useChatUnreadLifecycle";
 import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
 import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallMiniStore";
@@ -192,6 +193,7 @@ function RootLayout() {
 
   const { ready, loggedIn, onboardingPending, authToken, authUserId } = useRootAuth();
   useChatUnreadLifecycle(ready && loggedIn === true && onboardingPending === false);
+  useNotificationLifecycle(ready && loggedIn === true && onboardingPending === false);
   const [splashDone, setSplashDone] = useState(false);
 
   const pushSyncInFlightRef = useRef(false);

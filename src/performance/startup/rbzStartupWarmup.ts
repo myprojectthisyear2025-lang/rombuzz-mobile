@@ -22,35 +22,12 @@ import {
 } from "@/src/performance/api/rbzApiClient";
 import { persistCurrentUser } from "@/src/features/auth/rbzSession";
 import { rbzCacheKey, rbzCacheSet } from "@/src/performance/cache/rbzCache";
-import * as SecureStore from "expo-secure-store";
 import { DeviceEventEmitter } from "react-native";
 let warmupStarted = false;
 
-const NOTIFICATIONS_CACHE_KEY = "RBZ_PERF_NOTIFICATIONS";
-const NOTIF_UNREAD_TOTAL_KEY = "RBZ_notif_unread_total";
 
 const CHAT_INBOX_CACHE_PREFIX = "RBZ_PERF_CHAT_INBOX";
 const PROFILE_FULL_CACHE_KEY = "RBZ_PERF_PROFILE_FULL";
-
-function normalizeNotifications(data: any) {
-  const list = Array.isArray(data)
-    ? data
-    : Array.isArray(data?.notifications)
-    ? data.notifications
-    : [];
-
-  return [...list].sort(
-    (a: any, b: any) =>
-      new Date(b?.createdAt || 0).getTime() -
-      new Date(a?.createdAt || 0).getTime()
-  );
-}
-
-function unreadNotificationsTotal(list: any[]) {
-  return (Array.isArray(list) ? list : []).reduce((acc, n) => {
-    return !n?.read ? acc + 1 : acc;
-  }, 0);
-}
 
 function normalizeChatMatches(data: any) {
   const raw = Array.isArray(data)
@@ -168,21 +145,6 @@ async function warmProfileFull() {
   } catch {}
 }
 
-async function warmNotifications() {
-  try {
-    const data = await rbzApiJson<any>("/notifications");
-    const list = normalizeNotifications(data);
-    const unread = unreadNotificationsTotal(list);
-
-    await rbzCacheSet(NOTIFICATIONS_CACHE_KEY, list);
-    await SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, String(unread)).catch(() => {});
-
-    DeviceEventEmitter.emit("rbz:notif:unread-total", {
-      total: unread,
-    });
-  } catch {}
-}
-
 async function warmSocialStats() {
   try {
     let social: any = null;
@@ -232,7 +194,6 @@ export async function rbzStartupWarmup() {
 
         // Run useful network warmups in parallel.
     await Promise.allSettled([
-      warmNotifications(),
       warmSocialStats(),
       warmChatInbox(meId),
       warmProfileFull(),

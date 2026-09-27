@@ -1,4 +1,3 @@
-import { perfState } from "@/src/performance/diagnostics/core";
 import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
 /**
  * =============================================================================
@@ -22,18 +21,20 @@ import { API_BASE } from "@/src/config/api";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import { useNotificationThemeStyles } from "@/src/features/notifications/useNotificationThemeStyles";
-import { useCachedNotifications } from "@/src/features/performance/useCachedNotifications";
-import { getSocket, onNotification } from "@/src/lib/socket";
-import { rbzApiJson, rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
+import { useNotifications } from "@/src/features/notifications/notificationState";
+import { NotificationItem } from "@/src/features/notifications/createNotificationStore";
+import { getSessionSnapshot, subscribeSession } from "@/src/features/auth/rbzSession";
+import { rbzApiJson } from "@/src/performance/api/rbzApiClient";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Dimensions,
   Modal,
   ScrollView,
+  FlatList,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -68,43 +69,6 @@ type NotificationType =
   | "share"
   | "system"
   | string;
-
-interface NotificationItem {
-  id: string;
-  toId: string;
-  fromId?: string;
-  type: NotificationType;
-  message: string;
-  href?: string;
-  postId?: string;
-  postOwnerId?: string;
-  ownerId?: string;
-  targetOwnerId?: string;
-  targetType?: string;
-  targetId?: string;
-  commentId?: string;
-  parentId?: string;
-  replyId?: string;
-  routeContext?: "author_profile" | "letsbuzz" | string;
-  entity?: string;
-  entityId?: string;
-  read?: boolean;
-  createdAt: string | Date;
-  via?: string;
-}
-
-function toNotificationItems(list: any[]): NotificationItem[] {
-  return (Array.isArray(list) ? list : [])
-    .map((n: any) => ({
-      ...n,
-      id: String(n?.id || n?._id || ""),
-      toId: String(n?.toId || n?.to || ""),
-      type: (n?.type || "system") as NotificationType,
-      message: String(n?.message || ""),
-      createdAt: n?.createdAt || new Date().toISOString(),
-    }))
-    .filter((n: NotificationItem) => !!n.id);
-}
 
 const FILTERS: NotificationType[] = [
   "all",
@@ -182,125 +146,19 @@ function NotificationsScreen() {
   const { colors } = useRomBuzzTheme();
   const theme = useNotificationThemeStyles(fontsLoaded);
 
-   const [token, setToken] = useState<string>("");
-  const [currentUserId, setCurrentUserId] = useState<string>("");
-   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot);
+  const token = session.token;
+  const currentUserId = String(session.user?.id || session.user?._id || "");
+  const { items: notifications, busy: refreshing, loaded, refresh: fetchNotifications, setItems: setNotifications, active } = useNotifications();
+  const loading = !loaded && refreshing;
   usePerfContent("notifications", !loading || notifications.length > 0, notifications.length, notifications);
   const [filter, setFilter] = useState<NotificationType>("all");
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [expandedNotification, setExpandedNotification] = useState<NotificationItem | null>(null);
 
    // For menu positioning
   const menuRefs = useRef<{ [key: string]: { x: number, y: number, width: number, height: number } }>({});
   
-  // de-dupe guard for real-time (avoid double inserts)
-  const seenIds = useRef(new Set<string>());
-
-  const notificationPerf = useCachedNotifications();
-
-  const rememberNotifications = (list: NotificationItem[]) => {
-    notificationPerf.writeCachedNotifications(list).catch(() => {});
-  };
-
-  // ---------------------------
-  // Load token once
-  // ---------------------------
-    useEffect(() => {
-    (async () => {
-      const t = await rbzGetAuthToken();
-      setToken(t);
-
-      try {
-        const parsedUser = await rbzGetCurrentUser();
-        setCurrentUserId(String(parsedUser?.id || parsedUser?._id || ""));
-      } catch {
-        setCurrentUserId("");
-      }
-    })();
-  }, []);
-
-  // ---------------------------
-  // Fetch notifications
-  // ---------------------------
-  const fetchNotifications = async () => {
-    if (!token) return;
-
-    try {
-      // ✅ Show cached notifications first so the page does not feel like a reload.
-      const cached = await notificationPerf.readCachedNotifications();
-
-       if (cached.hit) {
-        const cachedList = toNotificationItems(cached.notifications);
-
-        seenIds.current.clear();
-        cachedList.forEach((n) => n?.id && seenIds.current.add(n.id));
-        perfState("notifications", "cache");
-        setNotifications(cachedList);
-        setLoading(false);
-      }
-
-      // ✅ Fresh backend data refreshes quietly.
-      const fresh = await notificationPerf.fetchNotificationsFresh();
-      const freshList = toNotificationItems(fresh);
-
-      seenIds.current.clear();
-      freshList.forEach((n) => n?.id && seenIds.current.add(n.id));
-
-      perfState("notifications", "fresh");
-      setNotifications(freshList);
-    } catch (err) {
-      console.warn("Fetch notifications failed:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!token) return;
-    fetchNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  // ---------------------------
-  // Real-time socket listener
-  // ---------------------------
-  useEffect(() => {
-    if (!token) return;
-
-    let unsub: null | (() => void) = null;
-
-    (async () => {
-      // ensures singleton socket exists & authed
-      await getSocket();
-
-      // subscribe to notifications coming from socket.ts
-      unsub = onNotification((n: NotificationItem) => {
-        if (!n?.id) return;
-        if (seenIds.current.has(n.id)) return;
-        seenIds.current.add(n.id);
-
-                setNotifications((prev) => {
-          const next = [n, ...prev];
-          next.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-
-          rememberNotifications(next as NotificationItem[]);
-          return next;
-        });
-      });
-    })();
-
-    return () => {
-      try {
-        unsub?.();
-      } catch {}
-    };
-  }, [token]);
-
   // ---------------------------
   // Counts + filtering
   // ---------------------------
@@ -328,7 +186,7 @@ function NotificationsScreen() {
     // optimistic
     setNotifications((prev) => {
       const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
-      rememberNotifications(next as NotificationItem[]);
+
       return next;
     });
     setSelectedMenuId(null);
@@ -340,7 +198,7 @@ function NotificationsScreen() {
     } catch {
       setNotifications((prev) => {
         const next = prev.map((n) => (n.id === id ? { ...n, read: false } : n));
-        rememberNotifications(next as NotificationItem[]);
+
         return next;
       });
     }
@@ -350,7 +208,7 @@ function NotificationsScreen() {
     // optimistic
     setNotifications((prev) => {
       const next = prev.map((n) => (n.id === id ? { ...n, read: false } : n));
-      rememberNotifications(next as NotificationItem[]);
+
       return next;
     });
     setSelectedMenuId(null);
@@ -362,7 +220,7 @@ function NotificationsScreen() {
     } catch {
       setNotifications((prev) => {
         const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
-        rememberNotifications(next as NotificationItem[]);
+
         return next;
       });
     }
@@ -373,7 +231,7 @@ function NotificationsScreen() {
 
     setNotifications((prev) => {
       const next = prev.map((n) => ({ ...n, read: true }));
-      rememberNotifications(next as NotificationItem[]);
+
       return next;
     });
 
@@ -392,7 +250,7 @@ function NotificationsScreen() {
     // optimistic remove
     setNotifications((prev) => {
       const next = prev.filter((n) => n.id !== id);
-      rememberNotifications(next as NotificationItem[]);
+
       return next;
     });
     setSelectedMenuId(null);
@@ -733,7 +591,6 @@ function NotificationsScreen() {
   };
 
   const onRefresh = () => {
-    setRefreshing(true);
     fetchNotifications();
   };
 
@@ -844,12 +701,18 @@ function NotificationsScreen() {
       </ScrollView>
 
       {/* Notifications List */}
-      <ScrollView
+      <FlatList
+        data={filteredNotifications}
+        keyExtractor={n => n.id}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        refreshing={refreshing && active}
+        onRefresh={onRefresh}
         style={[styles.listContainer, theme.listContainer]}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-      >
-           {filteredNotifications.map((n) => {
+        renderItem={({item: n}) => {
           const isUnread = !n.read;
           const visualType = getVisualNotificationType(n);
           const createdAtDate = n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt);
@@ -942,21 +805,13 @@ function NotificationsScreen() {
 
               {/* Menu Button */}
               <TouchableOpacity
-                ref={ref => {
-                  if (ref) {
-                    ref.measure((x, y, width, height, pageX, pageY) => {
-                      menuRefs.current[n.id] = { 
-                        x: pageX, 
-                        y: pageY, 
-                        width, 
-                        height 
-                      };
-                    });
-                  }
-                }}
                 onPress={(e) => {
                   e.stopPropagation();
-                  setSelectedMenuId(selectedMenuId === n.id ? null : n.id);
+                  const open = () => setSelectedMenuId(selectedMenuId === n.id ? null : n.id);
+                  e.currentTarget.measure((_x, _y, width, height, pageX, pageY) => {
+                    menuRefs.current[n.id] = { x: pageX, y: pageY, width, height };
+                    open();
+                  });
                 }}
                 style={styles.menuButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -970,7 +825,7 @@ function NotificationsScreen() {
 
               {/* Menu Modal (FIXED: Always on top) */}
               <Modal
-                visible={selectedMenuId === n.id}
+                visible={active && selectedMenuId === n.id}
                 transparent={true}
                 animationType="fade"
                 onRequestClose={() => setSelectedMenuId(null)}
@@ -1038,9 +893,8 @@ function NotificationsScreen() {
               </Modal>
             </TouchableOpacity>
           );
-        })}
-
-             {filteredNotifications.length === 0 && (
+        }}
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             {loading ? (
               <>
@@ -1105,12 +959,12 @@ function NotificationsScreen() {
                 </Text>
               </TouchableOpacity>
                      )}
-          </View>
-        )}
-      </ScrollView>
+          </View>}
+      />
+
 
       <Modal
-        visible={!!expandedNotification}
+        visible={active && !!expandedNotification}
         transparent={true}
         animationType="fade"
         onRequestClose={() => setExpandedNotification(null)}

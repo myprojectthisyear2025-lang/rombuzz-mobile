@@ -18,15 +18,15 @@
 import PremiumBuzzReceiverOverlay, {
   type PremiumBuzzOverlayPayload,
 } from "@/src/components/buzz/PremiumBuzzReceiverOverlay";
-import { API_BASE } from "@/src/config/api";
+import { useNotificationUnread } from "@/src/features/notifications/notificationState";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import FirstSignupTour from "@/src/features/onboarding/FirstSignupTour";
 import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
-import { getSocket, onNotification } from "@/src/lib/socket";
+import { getSocket } from "@/src/lib/socket";
 import RootBottomBar, {
   type RootTabName,
 } from "@/src/navigation/RootBottomBar";
-import { rbzGetAuthToken, rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
+import { rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
 import { useUnreadSummary } from "@/src/features/chat/unread/useUnreadSummary";
 import { rbzStartupWarmup } from "@/src/performance/startup/rbzStartupWarmup";
 import * as Haptics from "expo-haptics";
@@ -318,158 +318,7 @@ export default function TabLayout() {
 }, [segments?.join("/")]);
 
 
-  /* -------------------------------
-     ✅ NOTIFICATIONS UNREAD (BOTTOM BADGE)
-     Uses same source/logic as notifications.tsx:
-      - GET /notifications
-      - unread = count where read === false
-      - realtime bump from socket ("notification")
-  -------------------------------- */
-
-  type NotificationItem = {
-    id?: string;
-    read?: boolean;
-    type?: string;
-    createdAt?: string;
-  };
-
-  const NOTIF_UNREAD_TOTAL_KEY = "RBZ_notif_unread_total";
-
-  const [notifToken, setNotifToken] = useState("");
-  const [notifUnreadTotal, setNotifUnreadTotal] = useState(0);
-  const seenNotifIds = useRef<Set<string>>(new Set());
-  const notifUnreadFetchAtRef = useRef(0);
-
-   useEffect(() => {
-    const notifSub = DeviceEventEmitter.addListener(
-      "rbz:notif:unread-total",
-      (payload: any) => {
-        const total = Number(payload?.total || 0) || 0;
-        setNotifUnreadTotal(Math.max(0, total));
-      }
-    );
-
-    (async () => {
-      const cachedNotifRaw = await SecureStore.getItemAsync(NOTIF_UNREAD_TOTAL_KEY);
-      const cachedNotifTotal = Number(cachedNotifRaw || 0) || 0;
-      setNotifUnreadTotal(Math.max(0, cachedNotifTotal));
-
-      const t = await rbzGetAuthToken();
-      setNotifToken(t);
-    })();
-
-    return () => {
-      notifSub.remove();
-    };
-  }, []);
-
-   const fetchNotifUnreadTotal = async (force = false) => {
-    if (!notifToken) return;
-
-    try {
-      const now = Date.now();
-
-      // ✅ PERF: do not fetch the entire notifications list on every tab movement.
-      if (!force && now - notifUnreadFetchAtRef.current < 60_000) return;
-      notifUnreadFetchAtRef.current = now;
-
-      const res = await fetch(`${API_BASE}/notifications`, {
-        headers: { Authorization: `Bearer ${notifToken}` },
-      });
-      const data = await res.json().catch(() => []);
-      if (!Array.isArray(data)) {
-        setNotifUnreadTotal(0);
-        await SecureStore.setItemAsync(NOTIF_UNREAD_TOTAL_KEY, "0").catch(() => {});
-        return;
-      }
-
-      for (const n of data as NotificationItem[]) {
-        if (n?.id) seenNotifIds.current.add(n.id);
-      }
-
-      const unread = (data as NotificationItem[]).reduce((acc, n) => {
-        return !n?.read ? acc + 1 : acc;
-      }, 0);
-
-      const safeUnread = Math.max(0, unread);
-
-      setNotifUnreadTotal(safeUnread);
-
-      await SecureStore.setItemAsync(
-        NOTIF_UNREAD_TOTAL_KEY,
-        String(safeUnread)
-      ).catch(() => {});
-
-      DeviceEventEmitter.emit(
-        "rbz:notif:unread-total",
-        {
-          total: safeUnread,
-        }
-      );
-    } catch {
-      // Keep cached/stale badge instead of forcing 0 on network failure.
-    }
-  };
-
-   // ✅ PERF:
-  // Load once when token is ready.
-  // Only force refresh when entering Notifications tab, not on every tab movement.
-  useEffect(() => {
-    if (!notifToken) return;
-
-    if (tabName === "notifications") {
-      fetchNotifUnreadTotal(true);
-      return;
-    }
-
-    fetchNotifUnreadTotal(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifToken, tabName === "notifications"]);
-
-   // realtime bump
-  useEffect(() => {
-    if (!notifToken) return;
-
-    let unsub: null | (() => void) = null;
-
-    (async () => {
-      await getSocket();
-      unsub = onNotification((n: NotificationItem) => {
-        if (!n?.id) return;
-            if (seenNotifIds.current.has(n.id)) return;
-        seenNotifIds.current.add(n.id);
-
-        // if backend sends read=false (or missing), treat as unread
-        if (!n.read) {
-          setNotifUnreadTotal((c) => {
-            const next =
-              Math.max(
-                0,
-                Number(c || 0) + 1
-              );
-
-            SecureStore.setItemAsync(
-              NOTIF_UNREAD_TOTAL_KEY,
-              String(next)
-            ).catch(() => {});
-
-            DeviceEventEmitter.emit(
-              "rbz:notif:unread-total",
-              {
-                total: next,
-              }
-            );
-
-            return next;
-          });
-        }
-      });
-    })();
-
-    return () => {
-      if (unsub) unsub();
-    };
-  }, [notifToken]);
+  const notifUnreadTotal = useNotificationUnread();
 
   // ✅ Premium Buzz receiver animation.
   // Backend emits this after paid Buzz succeeds:
