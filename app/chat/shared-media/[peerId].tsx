@@ -27,7 +27,6 @@ import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/sc
 import MediaViewer from "@/src/components/chat/MediaViewer";
 import RBZImageViewer from "@/src/components/media/RBZImageViewer";
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -52,6 +51,7 @@ import { API_BASE } from "@/src/config/api";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import { useSharedMediaStyles } from "@/src/features/chat/sharedMedia/useSharedMediaStyles";
+import ChatVideoPreview from "@/src/features/chat/sharedMedia/ChatVideoPreview";
 import { useChatMedia } from "@/src/features/chat/mediaHub/useChatMedia";
 import { ChatMediaRow as MediaRow } from "@/src/features/chat/mediaHub/chatMediaRows";
 
@@ -274,17 +274,10 @@ function SharedMediaHub() {
         onLongPress={() => openMenu(item)}
         style={[styles.tile, { width: tileW, height: tileW }]}
       >
-        {item.mediaType === "video" && !item.thumbnailUrl ? (
-          active ? <Video
-            source={{ uri: item.url }}
-            style={styles.thumb}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-            isMuted
-            useNativeControls={false}
-          /> : <View style={styles.thumb} />
+        {item.mediaType === "video" ? (
+          <ChatVideoPreview item={item} />
         ) : (
-          <PerfImage resizeMethod="resize" source={{ uri: item.mediaType === "video" ? item.thumbnailUrl : item.url }} style={styles.thumb} />
+          <PerfImage resizeMethod="resize" source={{ uri: item.url }} style={styles.thumb} />
         )}
 
         {item.mediaType === "video" ? (

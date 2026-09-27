@@ -64,8 +64,22 @@ Files: `src/features/performance/viewProfile/rbzViewProfileCache.ts`, `src/featu
 
 Validation: two additional tests cover an incomplete warm cache → loaded gallery, a genuinely empty gallery, and warm rows failing to overwrite complete media URLs/metadata. All 14 profile state/media tests pass; TypeScript passes; lint has only the pre-existing unused-helper warning.
 
-Checkpoint: `fix: keep incomplete profile previews in neutral loading` (hash recorded in the next checkpoint).
+Checkpoint: `488ff46` — `fix: keep incomplete profile previews in neutral loading`.
+
+## 5. Shared Media video tile stability
+
+Observed: video tiles progressively populated or appeared empty before previews.
+
+Exact cause: every active tile without `thumbnailUrl` instantiated a paused `expo-av` Video to prepare a frame. A paused player still performs native media preparation. Existing thumbnails were used, but absent thumbnails ignored the usable Stream playback URL, and fresh-page/socket row replacement could discard a cached poster or replace only its R2 signature.
+
+Before → after: grid videos render only an image over a fixed-size themed play placeholder. Existing posters are immediate; recognized Stream manifest URLs derive the thumbnail URL using the backend's existing URL contract, retaining the token and hostname. Unknown/raw/unusable URLs remain a lightweight placeholder. Image failures also settle to the placeholder without playback lookup. Shared-media reconciliation preserves a valid cached poster for the same video, accepts expired-signature renewal and changed assets, and retains fresh row metadata. The selected existing fullscreen viewer alone owns a native player and still unmounts in the background. Pagination, cursors, totals, deletion/actions, ephemeral filtering and purchased-media behavior are unchanged. No uploads or media regeneration.
+
+Files: `app/chat/shared-media/[peerId].tsx`, `src/features/chat/sharedMedia/ChatVideoPreview.tsx`, `src/features/chat/sharedMedia/chatVideoPreviewSource.ts`, `src/features/chat/mediaHub/useChatMedia.ts`, `scripts/performance-fixes/shared-video-smoke.test.cjs`, this document.
+
+Validation: 5 new preview/screen tests plus all 11 existing media pagination and Fix #9 player tests pass. Actual grid test mounts zero native players for poster/Stream/no-poster tiles, opens exactly one selected player and releases it in the background; HTTP remains the existing paginated photo/video reads. Preview tests cover invalid URLs, failed posters, retained signatures, expired URLs and omitted fresh posters. TypeScript/scoped lint checked before checkpoint; the existing unused `saveToPhone` warning is retained.
+
+Checkpoint: `fix: use lightweight stable previews for shared videos` (hash recorded in final validation).
 
 ## Remaining work in this batch
 
-Shared Media video previews; final complete validation and checkpoint inventory.
+Final complete validation and checkpoint inventory.

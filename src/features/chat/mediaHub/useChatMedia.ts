@@ -6,6 +6,7 @@ import { getSocket } from "@/src/lib/socket";
 import { readCachedChatThread } from "@/src/features/chat/thread/rbzChatThreadCache";
 import { ChatMediaKind, ChatMediaRow, chatMediaRow, chatMediaRows } from "./chatMediaRows";
 import { requestMediaPage } from "./chatMediaRequest";
+import { preserveChatVideoPreview } from "../sharedMedia/chatVideoPreviewSource";
 
 type Type = "image" | "video";
 type State = { rows: ChatMediaRow[]; counts: { image: number; video: number }; more: Record<Type, boolean>; cursors: Record<Type, string | null> };
@@ -48,7 +49,8 @@ export function useChatMedia(peerId: string, kind: ChatMediaKind, mediaType: Typ
         const oldest = page.items.at(-1)?.createdAtMs ?? 0;
         for (const row of rows.values()) if (row.mediaType === mediaType && (!page.hasMore || row.createdAtMs >= oldest)) rows.delete(row.id);
       }
-      page.items.forEach(row => rows.set(row.id, row));
+      const previousById = new Map(previous.rows.map(row => [row.id, row]));
+      page.items.forEach(row => rows.set(row.id, kind === "shared" ? preserveChatVideoPreview(previousById.get(row.id), row) : row));
       const merged = [...rows.values()].sort(sort);
       publish({ rows: merged, counts: page.counts || { image: merged.filter(row => row.mediaType === "image").length, video: merged.filter(row => row.mediaType === "video").length }, more: { ...previous.more, [mediaType]: page.hasMore }, cursors: { ...previous.cursors, [mediaType]: page.nextCursor } });
     } catch (e: any) { if (valid()) setError(e?.message || "Unable to load media"); }
@@ -99,8 +101,9 @@ export function useChatMedia(peerId: string, kind: ChatMediaKind, mediaType: Typ
       const incoming = (event: any) => {
         const message = event?.message || event;
         if (!isActive() || !(belongs(event) || belongs(message))) return;
-        const row = chatMediaRow(message);
-        if (!row || (row.giftLocked || row.giftPriceBC > 0) !== (kind === "purchased")) return;
+        const incomingRow = chatMediaRow(message);
+        if (!incomingRow || (incomingRow.giftLocked || incomingRow.giftPriceBC > 0) !== (kind === "purchased")) return;
+        const row = kind === "shared" ? preserveChatVideoPreview(stateRef.current.rows.find(r => r.id === incomingRow.id), incomingRow) : incomingRow;
         if (JSON.stringify(stateRef.current.rows.find(r => r.id === row.id)) === JSON.stringify(row)) return;
         setRows(rows => [...rows.filter(r => r.id !== row.id), row].sort(sort));
         void load();

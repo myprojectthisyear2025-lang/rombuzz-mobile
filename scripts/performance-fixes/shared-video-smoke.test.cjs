@@ -1,0 +1,62 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {React,act}=require('./harness.cjs');
+const {screenHarness}=require('./screenHarness.cjs');
+const row=(id,extra={})=>({id,url:`https://media.invalid/${id}.mp4`,thumbnailUrl:'',mediaType:'video',createdAtMs:100,giftLocked:false,giftPriceBC:0,fromId:'bob',toId:'alice',unlockedBy:[],...extra});
+test('video preview uses existing posters or authorized Stream URLs and never treats playback as an image',()=>{
+  const h=screenHarness(),{chatVideoThumbnail}=h.load('src/features/chat/sharedMedia/chatVideoPreviewSource.ts');
+  assert.equal(chatVideoThumbnail(row('r2')), '');
+  assert.equal(chatVideoThumbnail(row('r2',{thumbnailUrl:'https://media.invalid/poster.jpg'})),'https://media.invalid/poster.jpg');
+  assert.equal(chatVideoThumbnail(row('r2',{thumbnailUrl:'https://media.invalid/video.mp4'})), '');
+  const stream='https://customer-test.cloudflarestream.com/signed.token.value/manifest/video.m3u8';
+  assert.equal(chatVideoThumbnail(row('stream',{url:stream})),stream.replace('/manifest/video.m3u8','/thumbnails/thumbnail.jpg'));
+  assert.equal(chatVideoThumbnail(row('external',{url:'https://unrelated.invalid/uid/manifest/video.m3u8'})),'');
+});
+test('preview renewal preserves valid cached URI, accepts expired/changed posters and drops missing expired signatures',()=>{
+  const h=screenHarness(),{preserveChatVideoPreview}=h.load('src/features/chat/sharedMedia/chatVideoPreviewSource.ts');
+  const date=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z/,'Z');
+  const signed=sig=>`https://test.r2.cloudflarestorage.com/poster.jpg?X-Amz-Date=${date}&X-Amz-Expires=3600&X-Amz-Signature=${sig}`;
+  const old=row('a',{thumbnailUrl:signed('old')}),fresh=row('a',{thumbnailUrl:signed('new')});
+  assert.equal(preserveChatVideoPreview(old,fresh).thumbnailUrl,old.thumbnailUrl);
+  assert.equal(preserveChatVideoPreview(old,row('a')).thumbnailUrl,old.thumbnailUrl);
+  const expired={...old,thumbnailUrl:old.thumbnailUrl.replace(date,'20200101T000000Z')};
+  assert.equal(preserveChatVideoPreview(expired,fresh).thumbnailUrl,fresh.thumbnailUrl);
+  assert.equal(preserveChatVideoPreview(expired,row('a')).thumbnailUrl,'');
+  assert.equal(preserveChatVideoPreview(old,row('a',{url:'https://media.invalid/replacement.mp4'})).thumbnailUrl,'');
+});
+test('failed thumbnail keeps a dimensionally stable lightweight placeholder and a new URI can retry',async()=>{
+  const h=screenHarness(),Preview=h.load('src/features/chat/sharedMedia/ChatVideoPreview.tsx').default;let update;
+  await h.mount(()=>{const[item,set]=React.useState(row('a',{thumbnailUrl:'https://media.invalid/poster.jpg'}));update=set;return React.createElement(Preview,{item});});
+  assert.equal(h.tree.root.findAllByType('Image').length,1);
+  await act(async()=>h.tree.root.findByType('Image').props.onError());
+  assert.equal(h.tree.root.findAllByType('Image').length,0);assert.equal(h.tree.root.findByType('Icon').props.name,'play-circle-outline');
+  assert.equal(h.tree.root.findByType('View').props.style[0].height,'100%');
+  await act(async()=>update(row('a',{thumbnailUrl:'https://media.invalid/new.jpg'})));assert.equal(h.tree.root.findAllByType('Image').length,1);
+  assert.equal(h.requests.length,0);await h.unmount();
+});
+test('shared media reconciliation retains a cached poster omitted by the fresh page',async()=>{
+  const h=screenHarness();let state;
+  h.storage.set('RBZ_MEDIA_V1:alice:alice_bob:shared',JSON.stringify([row('cached',{thumbnailUrl:'https://media.invalid/poster.jpg'})]));
+  h.setFetch(async()=>({items:[row('cached')],counts:{image:0,video:1},hasMore:false,nextCursor:null}));
+  const {useChatMedia}=h.load('src/features/chat/mediaHub/useChatMedia.ts');
+  await h.mount(()=>{state=useChatMedia('bob','shared','video');return null;});
+  assert.equal(state.rows[0].thumbnailUrl,'https://media.invalid/poster.jpg');assert.equal(h.requests.length,1);await h.unmount();
+});
+test('actual Shared Media grid has zero native players; only selected viewer owns one and blur releases it',async()=>{
+  const h=screenHarness();h.mocks['expo-router'].useLocalSearchParams=()=>({peerId:'bob'});
+  h.mocks['expo-av']={Video:'NativeVideo',ResizeMode:{CONTAIN:'contain'}};
+  h.mocks['expo-file-system']={};h.mocks['expo-media-library']={};h.mocks['expo-sharing']={};
+  h.mocks['@/src/components/media/RBZImageViewer']={__esModule:true,default:'ImageViewer'};
+  const rows=[row('poster',{thumbnailUrl:'https://media.invalid/poster.jpg'}),row('stream',{url:'https://videodelivery.net/token/manifest/video.m3u8'}),row('no-poster')];
+  h.storage.set('RBZ_MEDIA_V1:alice:alice_bob:shared',JSON.stringify(rows));
+  h.setFetch(url=>({items:url.includes('mediaType=video')?rows:[],counts:{image:0,video:3},hasMore:false,nextCursor:null}));
+  await h.mount(h.load('app/chat/shared-media/[peerId].tsx').default);
+  const videos=h.tree.root.findAllByType('Pressable').find(p=>p.findAllByType('Text').some(t=>t.children.includes('Videos')));
+  await act(async()=>videos.props.onPress());
+  assert.equal(h.tree.root.findAllByType('NativeVideo').length,0);
+  assert.equal(h.tree.root.findAllByType('Image').length,2,'poster plus direct Stream thumbnail, no video preparation');
+  assert.equal(h.requests.length,2,'only the existing paginated photo/video reads');
+  const tiles=h.tree.root.findByType('List').findAllByType('Pressable').filter(p=>p.props.onLongPress);
+  await act(async()=>tiles[2].props.onPress());assert.equal(h.tree.root.findAllByType('NativeVideo').length,1);
+  assert.equal(h.tree.root.findByType('NativeVideo').props.source.uri,rows[2].url);
+  await h.appState('background');assert.equal(h.tree.root.findAllByType('NativeVideo').length,0);await h.unmount();
+});
