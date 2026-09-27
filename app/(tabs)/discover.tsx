@@ -1,3 +1,5 @@
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
+import { createDiscoverRequestOwner, discoverTimeout } from "@/src/features/discover/discoverRequestOwner";
 import { perfState } from "@/src/performance/diagnostics/core";
 import { diagnosticImage } from "@/src/performance/diagnostics/media";
 import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
@@ -33,9 +35,9 @@ import { useCachedDiscoverDeck } from "@/src/features/performance/useCachedDisco
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { clearSession } from "@/src/features/auth/rbzSession";
+import { clearSession, getSessionSnapshot } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -407,7 +409,7 @@ function keepVisibleCardStable(prev: any[], fresh: any[]) {
   if (!Array.isArray(prev) || prev.length === 0) return fresh;
   if (!Array.isArray(fresh) || fresh.length === 0) return fresh;
 
-  if (sameUserOrder(prev, fresh)) return prev;
+  if (sameUserOrder(prev, fresh)) return fresh;
 
   const currentId = getUserStableId(prev[0]);
   if (!currentId) return fresh;
@@ -489,6 +491,10 @@ const nextScale = useAnimatedStyle(() => ({
   ],
 }));
 
+  const { active, isActive } = useScreenActivity();
+  const requestOwner = useMemo(() => createDiscoverRequestOwner(isActive), [isActive]);
+  const lastCoords = useRef<{ lat: number; lng: number } | null>(null);
+  const displayedCacheKey = useRef("");
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<any[]>([]);
   usePerfContent("discover", !loading || users.length > 0, users.length, users);
@@ -524,7 +530,7 @@ const nextScale = useAnimatedStyle(() => ({
 
   const discoverCacheInput = useMemo(
     () => ({
-      filters: appliedFilters as Record<string, any>,
+      filters: (expandedSearch || phase === "fallback" ? buildExpandedFilters(appliedFilters) : appliedFilters) as Record<string, any>,
       lookingFor: expandedSearch || phase === "fallback" ? "" : filterLookingFor,
       phase,
       expanded: expandedSearch || phase === "fallback",
@@ -535,9 +541,9 @@ const nextScale = useAnimatedStyle(() => ({
   const persistDiscoverDeck = useCallback(
     (nextUsers: any[]) => {
       saveCachedDiscoverDeck(discoverCacheInput, nextUsers);
-      preloadDiscoverImages(nextUsers);
+      if (isActive()) preloadDiscoverImages(nextUsers);
     },
-    [discoverCacheInput, preloadDiscoverImages, saveCachedDiscoverDeck]
+    [discoverCacheInput, preloadDiscoverImages, saveCachedDiscoverDeck, isActive]
   );
 
   useEffect(() => {
@@ -593,36 +599,6 @@ const nextScale = useAnimatedStyle(() => ({
     };
   }, [hasIncomingFilters, parsedFilters]);
 
-  useEffect(() => {
-    if (!filtersReady) return;
-
-    let alive = true;
-
-    const hydrateDeckBeforeNetwork = async () => {
-      const cached = await hydrateCachedDiscoverDeck(discoverCacheInput);
-
-      if (!alive || !cached.hit) return;
-
-      perfState("discover", "cache");
-      setUsers(cached.users);
-      setReveal(0);
-      setPhotoIndex(0);
-      setLoading(false);
-      preloadDiscoverImages(cached.users);
-    };
-
-    hydrateDeckBeforeNetwork();
-
-    return () => {
-      alive = false;
-    };
-  }, [
-    discoverCacheInput,
-    filtersReady,
-    hydrateCachedDiscoverDeck,
-    preloadDiscoverImages,
-  ]);
-
   const authHeaders = useCallback(async () => {
     const token = await SecureStore.getItemAsync("RBZ_TOKEN");
 
@@ -635,10 +611,12 @@ const nextScale = useAnimatedStyle(() => ({
     };
   }, []);
 
-   const getFreshDeviceCoords = useCallback(async () => {
+   const getFreshDeviceCoords = useCallback(async (signal?: AbortSignal, valid = isActive) => {
+    if (!valid()) return null;
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
 
+      if (!valid()) return null;
       if (permission.status !== "granted") {
         console.warn("📍 Discover GPS permission denied");
         return null;
@@ -646,15 +624,11 @@ const nextScale = useAnimatedStyle(() => ({
 
       // Do not let a slow GPS lock Discover on refresh.
       // Prefer fresh coordinates, but fall back to a recent cached device location.
-      const freshPosition = await Promise.race<any>([
-        Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        }),
-        new Promise<null>((resolve) => {
-          setTimeout(() => resolve(null), 3500);
-        }),
-      ]);
+      const freshPosition = await discoverTimeout<any>(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), 3500, null, signal
+      );
 
+      if (!valid()) return null;
       const position =
         freshPosition ||
         (await Location.getLastKnownPositionAsync({
@@ -662,6 +636,7 @@ const nextScale = useAnimatedStyle(() => ({
           requiredAccuracy: 10000,
         }));
 
+      if (!valid()) return null;
       if (!position) {
         console.warn("📍 Discover GPS timed out with no last known location");
         return null;
@@ -678,15 +653,9 @@ const nextScale = useAnimatedStyle(() => ({
       let isoCountryCode = "";
 
       try {
-        const places = await Promise.race<any>([
-          Location.reverseGeocodeAsync({
-            latitude: lat,
-            longitude: lng,
-          }),
-          new Promise<any[]>((resolve) => {
-            setTimeout(() => resolve([]), 1500);
-          }),
-        ]);
+        const places = await discoverTimeout<any>(
+          Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }), 1500, [], signal
+        );
 
         const place = Array.isArray(places) ? places[0] : null;
         country = String(place?.country || "").trim();
@@ -695,12 +664,13 @@ const nextScale = useAnimatedStyle(() => ({
         console.warn("📍 Discover reverse geocode failed:", geoErr);
       }
 
+      if (!valid()) return null;
       return { lat, lng, country, isoCountryCode };
     } catch (err) {
       console.warn("📍 Discover GPS read failed:", err);
       return null;
     }
-  }, []);
+  }, [isActive]);
 
     const fetchDiscover = useCallback(
     async (override?: {
@@ -709,8 +679,13 @@ const nextScale = useAnimatedStyle(() => ({
       expanded?: boolean;
       withFreshCoords?: boolean;
       silent?: boolean;
+      onlyIfMoved?: boolean;
     }) => {
-      let hadUsableCache = false;
+      const requestKey = JSON.stringify([discoverCacheInput, override || {}]);
+      const requestToken = getSessionSnapshot().token;
+      return requestOwner.run(requestKey, async (signal, currentRequest) => {
+      const valid = () => currentRequest() && getSessionSnapshot().token === requestToken;
+      let hadUsableCache = usersRef.current.length > 0;
       const silent = !!override?.silent;
 
       // Once cached users are available, the remaining network work
@@ -756,9 +731,19 @@ const nextScale = useAnimatedStyle(() => ({
           setMessage("");
         }
 
-        const cached = await hydrateCachedDiscoverDeck(requestCacheInput);
+        const cacheKey = JSON.stringify(requestCacheInput);
+        if (displayedCacheKey.current !== cacheKey) {
+          hadUsableCache = false;
+          usersRef.current = [];
+          setUsers([]);
+        }
+        const cached = displayedCacheKey.current === cacheKey
+          ? { hit: false, users: [] }
+          : await hydrateCachedDiscoverDeck(requestCacheInput);
+        if (!valid()) return;
 
-        if (cached.hit) {
+        if (cached.hit && (displayedCacheKey.current !== cacheKey || !usersRef.current.length)) {
+          displayedCacheKey.current = cacheKey;
           hadUsableCache = true;
           backgroundRefresh = true;
 
@@ -770,10 +755,11 @@ const nextScale = useAnimatedStyle(() => ({
           setLoading(false);
           setQuietRefreshing(true);
           preloadDiscoverImages(cached.users);
-        } else if (!silent) {
+        } else if (!silent && !usersRef.current.length) {
           setLoading(true);
         }
 
+        if (usersRef.current.length && displayedCacheKey.current === cacheKey) backgroundRefresh = true;
         const qs = new URLSearchParams();
 
         if (effectiveLookingFor) qs.set("lookingFor", effectiveLookingFor);
@@ -815,27 +801,30 @@ const nextScale = useAnimatedStyle(() => ({
           qs.set("petsPreference", effective.petsPreference[0]);
         }
 
-        if (override?.withFreshCoords === true) {
-          const freshCoords = await getFreshDeviceCoords();
-
-          if (freshCoords) {
-            qs.set("lat", String(freshCoords.lat));
-            qs.set("lng", String(freshCoords.lng));
-
-            if (freshCoords.isoCountryCode) {
-              qs.set("viewerCountry", freshCoords.isoCountryCode);
-            } else if (freshCoords.country) {
-              qs.set("viewerCountry", freshCoords.country);
-            }
-          }
+        let coords: { lat: number; lng: number; country?: string; isoCountryCode?: string } | null = null;
+        if (override?.withFreshCoords) coords = await getFreshDeviceCoords(signal, valid);
+        else {
+          try {
+            const position = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000, requiredAccuracy: 10000 });
+            if (position) coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+          } catch {}
+        }
+        if (!valid()) return;
+        if (override?.onlyIfMoved && (!coords || (lastCoords.current?.lat === coords.lat && lastCoords.current?.lng === coords.lng))) return;
+        if (coords) {
+          qs.set("lat", String(coords.lat)); qs.set("lng", String(coords.lng));
+          if (coords.isoCountryCode || coords.country) qs.set("viewerCountry", coords.isoCountryCode || coords.country || "");
         }
 
         const headers = await authHeaders();
+        if (!valid()) return;
+        lastCoords.current = coords;
         const res = await fetch(`${API_BASE}/discover?${qs.toString()}`, {
-          headers,
+          headers, signal,
         });
 
         const data = await res.json().catch(() => ({}));
+        if (!valid()) return;
         if (!res.ok) {
           const msg = data?.error || "discover_failed";
 
@@ -850,6 +839,7 @@ const nextScale = useAnimatedStyle(() => ({
            const serverList = Array.isArray(data?.users) ? data.users : [];
         const finalList = applyClientOnlyFilters(serverList, effective);
 
+        displayedCacheKey.current = cacheKey;
         perfState("discover", "fresh");
         setUsers((prev) => {
           const next = backgroundRefresh
@@ -865,11 +855,10 @@ const nextScale = useAnimatedStyle(() => ({
           setPhotoIndex(0);
         }
 
-        if (finalList.length > 0) {
-          saveCachedDiscoverDeck(requestCacheInput, finalList);
-          preloadDiscoverImages(finalList);
-        }
+        saveCachedDiscoverDeck(requestCacheInput, finalList);
+        preloadDiscoverImages(finalList);
         } catch (e: any) {
+        if (!valid()) return;
         if (!hadUsableCache && !silent) {
           setUsers([]);
         }
@@ -881,6 +870,7 @@ const nextScale = useAnimatedStyle(() => ({
           setMessage(e?.message || "Failed to load Discover");
         }
          } finally {
+        if (valid()) {
         if (backgroundRefresh) {
           setQuietRefreshing(false);
         }
@@ -888,9 +878,13 @@ const nextScale = useAnimatedStyle(() => ({
         if (!backgroundRefresh) {
           setLoading(false);
         }
+        }
       }
+      });
     },
        [
+      requestOwner,
+      discoverCacheInput,
       authHeaders,
       appliedFilters,
       expandedSearch,
@@ -905,24 +899,15 @@ const nextScale = useAnimatedStyle(() => ({
   );
 
 
-useFocusEffect(
-  useCallback(() => {
-    if (!filtersReady) return undefined;
-
-    fetchDiscover({ withFreshCoords: false });
-
-    const gpsRefreshTimer = setTimeout(() => {
-      fetchDiscover({
-        withFreshCoords: true,
-        silent: true,
-      });
-    }, 900);
-
-    return () => {
-      clearTimeout(gpsRefreshTimer);
-    };
-  }, [fetchDiscover, filtersReady])
-);
+useEffect(() => {
+  if (!active || !filtersReady) return;
+  let alive = true;
+  void (async () => {
+    await fetchDiscover({ withFreshCoords: false });
+    if (alive && isActive() && !requestOwner.isRunning()) await fetchDiscover({ withFreshCoords: true, silent: true, onlyIfMoved: true });
+  })();
+  return () => { alive = false; requestOwner.cancel(); };
+}, [active, filtersReady, fetchDiscover, isActive, requestOwner]);
 
 const canExpandSearch =
   !loading &&
@@ -936,21 +921,14 @@ const handleExpandSearch = useCallback(async () => {
   setPhase("fallback");
   setMessage("Expanding search while keeping your hard filters…");
 
-  await fetchDiscover({
-    phase: "fallback",
-    expanded: true,
-    lookingFor: "",
-  });
-}, [fetchDiscover]);
+}, []);
 
 
 const removeTopCard = useCallback(() => {
   setUsers((prev) => {
     const next = prev.slice(1);
 
-    if (next.length > 0) {
-      persistDiscoverDeck(next);
-    }
+    persistDiscoverDeck(next);
 
     return next;
   });
@@ -1143,6 +1121,9 @@ const swipeGesture = Gesture.Pan()
 
     setFilterLookingFor(key);
     setAppliedFilters(nextFilters);
+    setPhase("strict");
+    setExpandedSearch(false);
+    setMessage("");
     setUsers([]);
     setReveal(0);
 
@@ -1150,16 +1131,7 @@ const swipeGesture = Gesture.Pan()
     // so persist it just like filters applied from the Filter screen.
     await saveDiscoverFilters(nextFilters);
 
-    // Reset strict cycle whenever the intent changes.
-    setPhase("strict");
-    setExpandedSearch(false);
 
-    setMessage("");
-    await fetchDiscover({
-      lookingFor: key,
-      phase: "strict",
-      expanded: false,
-    });
   };
 
    return (
@@ -1299,7 +1271,6 @@ const swipeGesture = Gesture.Pan()
                 onPress={async () => {
                   setExpandedSearch(false);
                   setPhase("strict");
-                  await fetchDiscover({ phase: "strict", expanded: false });
                 }}
                 style={styles.secondaryBtn}
               >

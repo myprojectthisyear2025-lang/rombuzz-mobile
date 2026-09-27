@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { rbzCacheKey } from "@/src/performance/cache/rbzCache";
 import { useCallback } from "react";
 import { Image } from "react-native";
+import { getSessionSnapshot } from "@/src/features/auth/rbzSession";
 
 export type DiscoverDeckCacheInput = {
   filters: Record<string, any>;
@@ -33,8 +34,9 @@ type DiscoverDeckEnvelope = {
   savedAt: number;
 };
 
-const DISCOVER_DECK_CACHE_PREFIX = "rbz:discover:deck:v4";
-const DISCOVER_LAST_DECK_CACHE_KEY = "rbz:discover:deck:v4:last";
+const DISCOVER_DECK_CACHE_PREFIX = "rbz:discover:deck:v5";
+const accountKey = () => String(getSessionSnapshot().user?.id || getSessionSnapshot().user?._id || "signed-out");
+const lastDeckKey = () => rbzCacheKey(DISCOVER_DECK_CACHE_PREFIX, accountKey(), "last");
 
 const MAX_CACHED_DISCOVER_USERS = 6;
 const MAX_CACHED_IMAGES_PER_USER = 2;
@@ -69,6 +71,7 @@ function hashText(value: string) {
 export function getDiscoverDeckCacheKey(input: DiscoverDeckCacheInput) {
   return rbzCacheKey(
     DISCOVER_DECK_CACHE_PREFIX,
+    accountKey(),
     input.phase,
     input.expanded ? "expanded" : "strict",
     input.lookingFor || "all",
@@ -189,7 +192,7 @@ async function readDiscoverDeckKeyUnobserved(key: string) {
     const users = Array.isArray(parsed?.value?.users) ? parsed.value.users : [];
 
     return {
-      hit: users.length > 0,
+      hit: Array.isArray(parsed?.value?.users),
       users,
       savedAt: Number(parsed?.savedAt || 0) || 0,
     };
@@ -200,11 +203,7 @@ async function readDiscoverDeckKeyUnobserved(key: string) {
 
 export async function hydrateDiscoverDeckCache(input: DiscoverDeckCacheInput) {
   const exactKey = getDiscoverDeckCacheKey(input);
-  const exact = await readDiscoverDeckKey(exactKey);
-
-  if (exact.hit) return exact;
-
-  return readDiscoverDeckKey(DISCOVER_LAST_DECK_CACHE_KEY);
+  return readDiscoverDeckKey(exactKey);
 }
 
 /**
@@ -215,7 +214,7 @@ export async function hydrateDiscoverDeckCache(input: DiscoverDeckCacheInput) {
  * such as the premium homepage.
  */
 export async function hydrateLatestDiscoverDeckCache() {
-  return readDiscoverDeckKey(DISCOVER_LAST_DECK_CACHE_KEY);
+  return readDiscoverDeckKey(lastDeckKey());
 }
 
 export async function saveDiscoverDeckCache(
@@ -224,7 +223,6 @@ export async function saveDiscoverDeckCache(
 ) {
   try {
     const cleanUsers = compactDiscoverUsers(users);
-    if (!cleanUsers.length) return;
 
     const envelope: DiscoverDeckEnvelope = {
       value: { users: cleanUsers },
@@ -236,11 +234,12 @@ export async function saveDiscoverDeckCache(
 
     await Promise.allSettled([
       AsyncStorage.setItem(exactKey, raw),
-      AsyncStorage.setItem(DISCOVER_LAST_DECK_CACHE_KEY, raw),
+      AsyncStorage.setItem(lastDeckKey(), raw),
     ]);
   } catch {}
 }
 
+const prefetched = new Set<string>();
 export function preloadDiscoverDeckImages(users: any[]) {
   const seen = new Set<string>();
 
@@ -254,7 +253,10 @@ export function preloadDiscoverDeckImages(users: any[]) {
     });
 
   preloadUrls.forEach((url) => {
-    Image.prefetch(url).catch(() => {});
+    if (prefetched.has(url)) return;
+    prefetched.add(url);
+    if (prefetched.size > 200) prefetched.delete(prefetched.values().next().value!);
+    Image.prefetch(url).then(ok => { if (!ok) prefetched.delete(url); }).catch(() => { prefetched.delete(url); });
   });
 }
 
