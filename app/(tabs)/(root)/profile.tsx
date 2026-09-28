@@ -1,5 +1,5 @@
 import { perfState } from "@/src/performance/diagnostics/core";
-import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
+import { usePerfContent, withPerfScreen } from "@/src/performance/diagnostics/screens";
 /**
  * Path: app/(tabs)/profile.tsx
  * Purpose: Owner Profile orchestration shell for profile data, media, tabs, saves, and edit flows.
@@ -11,14 +11,14 @@ import ProfileInfoTab from "@/src/components/profile/ProfileInfoTab";
 import AddStoryModal from "@/src/components/story/AddStoryModal";
 import StoryViewer from "@/src/components/story/StoryViewer";
 
+import { clearSession, persistCurrentUser } from "@/src/features/auth/rbzSession";
+import { useRetainedState } from "@/src/features/lifecycle/useRetainedState";
+import { useLatestCallback, useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useLatestCallback, useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
-import { useRetainedState } from "@/src/features/lifecycle/useRetainedState";
 import * as SecureStore from "expo-secure-store";
-import { clearSession, persistCurrentUser } from "@/src/features/auth/rbzSession";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1737,7 +1737,7 @@ setStoryOpen(true);
         }}
         onWallet={() =>
           router.push(
-            "../wallet" as any
+            "/wallet"
           )
         }
         onSettings={() =>
