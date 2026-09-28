@@ -78,8 +78,51 @@ Files: `app/chat/shared-media/[peerId].tsx`, `src/features/chat/sharedMedia/Chat
 
 Validation: 5 new preview/screen tests plus all 11 existing media pagination and Fix #9 player tests pass. Actual grid test mounts zero native players for poster/Stream/no-poster tiles, opens exactly one selected player and releases it in the background; HTTP remains the existing paginated photo/video reads. Preview tests cover invalid URLs, failed posters, retained signatures, expired URLs and omitted fresh posters. TypeScript/scoped lint checked before checkpoint; the existing unused `saveToPhone` warning is retained.
 
-Checkpoint: `fix: use lightweight stable previews for shared videos` (hash recorded in final validation).
+Checkpoint: `917203e` — `fix: use lightweight stable previews for shared videos`.
 
-## Remaining work in this batch
+## Gifts / preserved scope
 
-Final complete validation and checkpoint inventory.
+The old Fix #8 transport failure did not reproduce in the user's newer recording: catalog, Red Heart selection, sending and success confirmation worked. `docs/performance-fix-8-gifts.md` now explicitly labels the prior trace historical/non-reproduced. No Gifts source, API origin, wallet behavior, provider configuration or assets changed. Cloudinary and Cloudflare R2/Stream remain in their intended roles.
+
+Fixes #1–#7 and implemented Fix #9 remain covered by their original suites. No navigation architecture change, `USE_LOCAL` edit, instrumentation removal, Redis, production configuration, push or deployment. All backend test databases were disposable local Mongo instances.
+
+## Final validation (2026-09-27)
+
+| Check | Result |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | Passed after all five fixes |
+| Mobile auth, lifecycle, unread, Chat, performance-fixes, settings, instrumentation and mobile-diagnostics suites | **156 passed, 0 failed, 0 skipped** |
+| Backend `npm test` | **47 passed, 0 failed, 0 skipped**, including full old suites and the focused pin integration |
+| Backend `npm run check` | **192 JavaScript files passed** |
+| ESLint, 20 changed TS/TSX/CJS files vs mobile `3946e07` | **0 errors → 0 errors; 3 warnings → 3 warnings; no new diagnostics** |
+| Both repositories: working diff and complete batch `git diff --check` | Passed |
+
+The three existing lint warnings are unused `height` (View Profile), `getStreamUid` (profile cache) and `saveToPhone` (Shared Media). Existing React test-renderer deprecation and backend duplicate `expiresAt` index warnings remain. No source changes were made to suppress unrelated warnings. Local lint comparison details are in ignored `.perf-work/post-device/lint-comparison.json`.
+
+Some commands required sandbox escalation for Node worker processes, backend writes and read-only Git subprocesses. Git indexes are read-only in the sandbox, so the explicitly requested local checkpoints also required escalation. This did not authorize or perform a push/deploy.
+
+## Local checkpoints
+
+| Repository | Checkpoint | Purpose |
+| --- | --- | --- |
+| Mobile | `e8b6961` | Discover refresh/card continuity |
+| Mobile | `e670067` | Focused pinned cache and compatible client |
+| Backend | `75dcebe` | Focused pinned projection, endpoint and integration fixture |
+| Mobile | `bd661a6` | Explicit scoped profile loading/error states |
+| Mobile | `488ff46` | Complete profile cache vs partial match previews |
+| Mobile | `917203e` | Lightweight Shared Media video previews |
+| Backend | `38d8889` | Final backend validation record |
+| Mobile | `docs: record post-device smoke cleanup validation` | Final documentation checkpoint containing this table; resolve by this unique commit subject |
+
+The issue sections enumerate all implementation/test files. Final documentation also updates `docs/performance-fix-8-gifts.md` and `server/docs/performance-post-device-pinned.md`. Starting untracked mobile `docs/performance-audit-2026-09-19.md` and backend `astra-mongodb-audit/` are untouched. An unrelated concurrent owner Profile edit (`app/(tabs)/(root)/profile.tsx`, import order and wallet route) appeared during the session and was left uncommitted, outside this batch.
+
+## Remaining and device test items
+
+All five source fixes and requested local checks are complete. Physical acceptance and profiling remain deferred; this session did not run the production app on a device or capture native frames. The original recording itself was not attached; investigation used the user's observations plus current code and controlled regression reproductions.
+
+- Discover: cached/uncached entry, long/failed refresh, selected photo and in-progress swipe, Buzz/skip/Preview return, changed/unchanged/denied GPS, strict → expanded → strict, filters and account changes. Verify no indicator or blank native-image frame. A truly validated empty result or incompatible filter change may legitimately remove the old deck.
+- Pins: warm/cold open with old pins beyond the last 250 messages; verify ordering, text/media labels, reply/reaction/action continuity when navigating to the thread, pin/unpin/delete/reconnect, slow request then leave, and old-backend fallback. Measure real tap-to-cache and tap-to-reconciled timings/payloads. The new focused endpoint must be released through the normal deployment process before production benefits from the reduced transfer; no deployment was performed here.
+- Preview/View Profile: Before/After Match switches, Discover/Social Matches/Chat entry, rapid user/account switches, offline retry, genuine unavailable profile, complete cache versus incomplete warm preview, real zero versus populated galleries, media URL renewal and viewer continuity.
+- Shared Media: thumbnail/Stream/R2/no-thumbnail rows, slow/broken image delivery, scrolling/paging, menu/delete/show-in-chat, select/close video, background/foreground. Check stable tile dimensions and native player counts (zero grid players; only the selected viewer).
+
+No production latency/FPS claim is made from the synthetic payload reduction. Native image behavior and the final user-visible smoothness still require the planned physical measurement.

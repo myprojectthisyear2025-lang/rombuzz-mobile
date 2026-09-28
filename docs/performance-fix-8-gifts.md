@@ -1,8 +1,10 @@
 # Fix #8 — Gifts transport failure investigation
 
-Status: **investigated, unresolved**. No production source change and no claim that the device failure is fixed. This checkpoint records the trace and regression fixtures, not a completed repair. The remaining investigation requires the failing installed build's actual origin and native network failure detail; physical testing remains deferred. Independent Fix #9 work can continue.
+Current status (2026-09-27): **older investigation; not reproduced in the latest real-device smoke test**. The user reports the catalog loaded, Red Heart was selected, sending completed, and the UI confirmed success. The tested Cloudinary-backed gift flow worked. No gift API origin, endpoints, wallet, Cloudinary assets/configuration or sending logic was changed in the cleanup batch. Resume investigation only if new failure evidence appears.
 
-## Evidence and exact current path
+Historical status at the original checkpoint: investigated, unresolved. The trace below records the earlier failing capture and its limits; it is not evidence of a current failure or a claimed repair.
+
+## Historical evidence and traced path
 
 The measured device captures showed fast wallet/catalog failures with `Network request failed`, while some gift artwork remained visible. `GiftPicker` loads `useGiftCatalog(visible)` and `useBuzzCoinWallet(visible)`. Both call `src/api/gifts.ts`; frontend artwork comes separately from the bundled catalog/Cloudinary metadata and can remain visible when either API read fails.
 
@@ -27,6 +29,6 @@ Runtime behavior is unchanged. Before, the measured failure had no complete sour
 
 Validation: all four focused Gifts tests passed; TypeScript `--noEmit` passed; the new test has zero ESLint errors/warnings against the existing baseline; `git diff --check` passed. Node test workers required execution outside the sandbox after `spawn EPERM`. Backend source is unchanged; no backend deployment is required for this investigation.
 
-## Deferred acceptance
+## If the historical failure recurs
 
-During the single final device pass, capture the installed build's sanitized Gifts origin/path and native transport error (DNS/TLS/connectivity/timeout), alongside a working app API request. Do not record tokens, query credentials or private response content. Verify catalog, wallet and all supported gift placements, insufficient funds, updated balance and one transaction per send. Do not automatically retry a failed POST with uncertain outcome. Compare production build environment values if available; do not modify production configuration as part of this work. The reported production failure remains open until its actual cause is reproduced and repaired.
+If a new failure is observed, capture the installed build's sanitized Gifts origin/path and native transport error (DNS/TLS/connectivity/timeout), alongside a working app API request. Do not record tokens, query credentials or private response content, or automatically retry a failed POST with uncertain outcome. The older failure's cause was never established; the new successful recording does not require a speculative source change.
