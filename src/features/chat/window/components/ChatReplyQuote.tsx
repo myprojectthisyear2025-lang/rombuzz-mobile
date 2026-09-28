@@ -1,7 +1,7 @@
+import { getReplyPreviewText } from "@/src/features/chat/thread/chatReplyUtils";
+import type { ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
-import type { ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
-import { getReplyPreviewText } from "@/src/features/chat/thread/chatReplyUtils";
 import { useChatWindow } from "../ChatWindowContext";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
 
@@ -27,7 +27,7 @@ export default function ChatReplyQuote({
       <View
         style={[
           styles.replyQuoteAccent,
-          onOutgoingBubble && { backgroundColor: colors.white },
+          onOutgoingBubble && { backgroundColor: colors.brand },
         ]}
       />
       <View style={styles.replyQuoteContent}>
@@ -36,7 +36,7 @@ export default function ChatReplyQuote({
           style={[
             styles.replyQuoteSender,
             isMine ? styles.replyQuoteSenderMine : styles.replyQuoteSenderPeer,
-            onOutgoingBubble && { color: colors.white },
+            onOutgoingBubble && { color: colors.text },
           ]}
         >
           {sender}
@@ -47,7 +47,7 @@ export default function ChatReplyQuote({
           style={[
             styles.replyQuoteText,
             isMine ? styles.replyQuoteTextMine : styles.replyQuoteTextPeer,
-            onOutgoingBubble && { color: colors.white },
+            onOutgoingBubble && { color: colors.textSecondary },
           ]}
         >
           {getReplyPreviewText(replyTo)}

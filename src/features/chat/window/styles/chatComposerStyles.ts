@@ -1,7 +1,7 @@
 /** Theme-aware composer styles for the mobile chat window. */
-import { StyleSheet } from "react-native";
-import { RBZFont } from "@/src/design/rombuzzTypography";
 import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { StyleSheet } from "react-native";
 
 export function createComposerStyles(
   colors: RomBuzzColors,
@@ -95,32 +95,26 @@ export function createComposerStyles(
     attachBtn: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brandSoft,
-      borderWidth: 1,
-      borderColor: colors.brandSoft,
+      backgroundColor: colors.background,
     },
     cameraBtn: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brandSoft,
-      borderWidth: 1,
-      borderColor: colors.brandSoft,
+      backgroundColor: colors.background,
     },
     voiceActionSlot: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brandSoft,
-      borderWidth: 1,
-      borderColor: colors.brandSoft,
+      backgroundColor: colors.background,
       overflow: "hidden",
     },
     input: {
@@ -143,7 +137,7 @@ export function createComposerStyles(
     sendBtn: {
       width: 44,
       height: 44,
-      borderRadius: 16,
+      borderRadius: 999,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.brand,
@@ -151,12 +145,10 @@ export function createComposerStyles(
     expandActionsBtn: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brandSoft,
-      borderWidth: 1,
-      borderColor: "rgba(0,0,0,0.08)",
+      backgroundColor: colors.background,
     },
     inlineActionsRow: {
       flexDirection: "row",
@@ -167,22 +159,18 @@ export function createComposerStyles(
     inlineActionBtn: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brandSoft,
-      borderWidth: 1,
-      borderColor: colors.brandSoft,
+      backgroundColor: colors.background,
     },
     inlineVoiceWrap: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brandSoft,
-      borderWidth: 1,
-      borderColor: colors.brandSoft,
+      backgroundColor: colors.background,
       overflow: "hidden",
     },
   });

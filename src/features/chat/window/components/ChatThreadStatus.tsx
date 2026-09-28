@@ -52,7 +52,7 @@ export function ChatFloatingControls() {
             onPress={scrollToTop}
             style={styles.scrollBtn}
           >
-            <Ionicons name="chevron-up" size={18} color={colors.white} />
+            <Ionicons name="chevron-up" size={18} color={colors.icon} />
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -60,7 +60,7 @@ export function ChatFloatingControls() {
             onPress={() => scrollToLatest(true)}
             style={styles.scrollBtn}
           >
-            <Ionicons name="chevron-down" size={18} color={colors.white} />
+            <Ionicons name="chevron-down" size={18} color={colors.icon} />
           </Pressable>
         </View>
       ) : null}

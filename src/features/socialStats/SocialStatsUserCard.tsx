@@ -458,9 +458,13 @@ export default function SocialStatsUserCard(
         ) : null}
 
         <TouchableOpacity
-          style={
-            actionStyle()
-          }
+          style={[
+            actionStyle(),
+            activeTab === "liked" ||
+            activeTab === "likedYou"
+              ? { borderColor: colors.brand }
+              : null,
+          ]}
           onPress={() =>
             props.onView(id)
           }

@@ -1,7 +1,7 @@
 /** Theme-aware shell styles for the mobile chat window. */
-import { StyleSheet } from "react-native";
-import { RBZFont } from "@/src/design/rombuzzTypography";
 import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { StyleSheet } from "react-native";
 
 export function createShellStyles(colors: RomBuzzColors, BUBBLE_MAX_W: number) {
   return StyleSheet.create({
@@ -93,7 +93,7 @@ export function createShellStyles(colors: RomBuzzColors, BUBBLE_MAX_W: number) {
     scrollBtnsWrap: {
       position: "absolute",
       right: 14,
-      gap: 10,
+      gap: 8,
       alignItems: "center",
     },
     timestampPillWrap: {
@@ -122,15 +122,15 @@ export function createShellStyles(colors: RomBuzzColors, BUBBLE_MAX_W: number) {
       fontFamily: RBZFont.extraBold,
     },
     scrollBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 999,
+      width: 40,
+      height: 40,
+      borderRadius: 14,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.brand,
+      backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
-      elevation: 3,
+      elevation: 2,
     },
   });
 }

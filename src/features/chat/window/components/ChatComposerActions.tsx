@@ -1,7 +1,7 @@
+import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Pressable, View } from "react-native";
-import VoiceRecorderButton from "@/src/components/chat/VoiceRecorderButton";
 import { useChatWindow } from "../ChatWindowContext";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
 
@@ -23,7 +23,7 @@ export default function ChatComposerActions({
         onPress={() => setPlusOpen(true)}
         style={inline ? styles.inlineActionBtn : styles.attachBtn}
       >
-        <Ionicons name="images-outline" size={20} color={colors.brand} />
+        <Ionicons name="images-outline" size={20} color={colors.icon} />
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -32,7 +32,7 @@ export default function ChatComposerActions({
         onPress={() => setCameraOpen(true)}
         style={inline ? styles.inlineActionBtn : styles.cameraBtn}
       >
-        <Ionicons name="camera-outline" size={20} color={colors.brand} />
+        <Ionicons name="camera-outline" size={20} color={colors.icon} />
       </Pressable>
       <View style={inline ? styles.inlineVoiceWrap : styles.voiceActionSlot}>
         <VoiceRecorderButton

@@ -1,7 +1,7 @@
 /** Theme-aware message styles for the mobile chat window. */
-import { StyleSheet } from "react-native";
-import { RBZFont } from "@/src/design/rombuzzTypography";
 import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { StyleSheet } from "react-native";
 
 export function createMessageStyles(
   colors: RomBuzzColors,
@@ -33,9 +33,11 @@ export function createMessageStyles(
       flexShrink: 0,
     },
     mine: {
-      backgroundColor: colors.brand,
+      backgroundColor:
+        colors.background === "#0F1012" ? "#3A2932" : "#F3E1E5",
       borderTopRightRadius: 6,
-      borderColor: colors.brand,
+      borderColor:
+        colors.background === "#0F1012" ? "#4A343E" : "#EBD4DA",
     },
     peer: {
       backgroundColor: colors.surface,
@@ -48,7 +50,7 @@ export function createMessageStyles(
       fontFamily: RBZFont.medium,
     },
     mineText: {
-      color: colors.white,
+      color: colors.text,
       fontFamily: RBZFont.medium,
     },
     peerText: {
@@ -105,10 +107,12 @@ export function createMessageStyles(
       marginBottom: 6,
       paddingHorizontal: 8,
       paddingVertical: 5,
-      borderRadius: 999,
-      backgroundColor: colors.brandSoft,
+      borderRadius: 10,
+      backgroundColor: colors.surfaceMuted,
       borderWidth: 1,
-      borderColor: colors.brandSoft,
+      borderColor: colors.border,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.brand,
     },
     pinnedMetaRowMine: {
       alignSelf: "flex-end",
