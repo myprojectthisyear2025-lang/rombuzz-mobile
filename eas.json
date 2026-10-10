@@ -31,6 +31,7 @@
       "environment": "production",
       "env": {
         "APP_VARIANT": "production",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "drhx99m5f",
         "EXPO_PUBLIC_CLOUDINARY_PRESET": "rombuzz_unsigned"
       }
