@@ -20,6 +20,7 @@
 !/package-lock.json
 !/tsconfig.json
 !/app.json
+!/app.config.js
 !/eas.json
 !/.gitignore
 !/expo-env.d.ts
