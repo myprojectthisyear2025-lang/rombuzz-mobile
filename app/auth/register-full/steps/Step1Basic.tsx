@@ -446,8 +446,10 @@ export default function Step1Basic({
 {showYearWheel && (
   <View style={styles.yearWheelBox}>
     <ScrollView
-      style={{ maxHeight: 180 }}
+      style={{ height: 160, flexShrink: 0 }}
       contentContainerStyle={{ paddingVertical: 6 }}
+      nestedScrollEnabled={true}
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={true}
     >
       {Array.from(

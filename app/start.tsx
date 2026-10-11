@@ -76,7 +76,7 @@ export default function StartScreen() {
 
           <Text style={styles.title}>Rombuzz</Text>
           <Text style={styles.subtitle}>
-            Connect with Muji people nearby, in real time
+            Connect with people nearby, in real time
           </Text>
 
           <View style={styles.actions}>
