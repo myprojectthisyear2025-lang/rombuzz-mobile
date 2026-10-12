@@ -1,3 +1,4 @@
+import { getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
 /**
  * ============================================================
  * 📁 File: src/features/performance/useCachedSocialStats.ts
@@ -93,9 +94,11 @@ export async function writeCachedSocialStats(social: CachedSocialStats) {
 }
 
 export async function fetchSocialStatsFresh() {
+  const owner = getSessionGeneration();
   const data = await rbzApiJson<any>("/social-stats");
   const social = normalizeSocialStats(data);
 
+  if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
   await writeCachedSocialStats(social);
 
   return social;
@@ -119,9 +122,11 @@ export async function writeCachedSocialList(
 }
 
 export async function fetchSocialListFresh(type: SocialStatsListType) {
+  const owner = getSessionGeneration();
   const data = await rbzApiJson<any>(`/social/${type}`);
   const list = normalizeSocialList(data);
 
+  if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
   await writeCachedSocialList(type, list);
 
   return list;

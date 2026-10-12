@@ -26,13 +26,13 @@ import { getSocket } from "@/src/lib/socket";
 import RootBottomBar, {
   type RootTabName,
 } from "@/src/navigation/RootBottomBar";
-import { rbzGetCurrentUser } from "@/src/performance/api/rbzApiClient";
+import { getSessionSnapshot, subscribeSession } from "@/src/features/auth/rbzSession";
 import { useUnreadSummary } from "@/src/features/chat/unread/useUnreadSummary";
 import { rbzStartupWarmup } from "@/src/performance/startup/rbzStartupWarmup";
 import * as Haptics from "expo-haptics";
 import { Tabs, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   Animated,
   DeviceEventEmitter,
@@ -124,6 +124,12 @@ function TabIconWrap({
 ============================================================ */
 
 export default function TabLayout() {
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot);
+  const id = String(session.user?.id || session.user?._id || "");
+  return session.token && id ? <AuthenticatedTabLayout key={id} /> : null;
+}
+
+function AuthenticatedTabLayout() {
   const router = useRouter();
   const segments = useSegments();
   const insets = useSafeAreaInsets();
@@ -274,49 +280,13 @@ export default function TabLayout() {
      PROFILE DATA
   -------------------------------- */
 
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
-  const [profileCompletion, setProfileCompletion] = useState(0.55);
-
- useEffect(() => {
-  let alive = true;
-
-   const loadTabProfile = async () => {
-    if (!alive) return;
-
-    try {
-      const u = await rbzGetCurrentUser();
-      if (!alive || !u) return;
-
-      setProfilePhoto(
-        u?.avatar ||
-          u?.avatarUrl ||
-          u?.photoUrl ||
-          u?.profilePic ||
-          u?.photos?.[0] ||
-          null
-      );
-
-      let score = 0;
-      if (u?.firstName) score += 0.15;
-      if (u?.bio) score += 0.15;
-      if (u?.photos?.length >= 2) score += 0.25;
-      if (u?.gender && u?.lookingFor) score += 0.15;
-      setProfileCompletion(Math.min(1, Math.max(0.25, score)));
-    } catch {}
-  };
-
-  // ✅ Load once now
-  loadTabProfile();
-
-  // ✅ And re-load whenever the active tab changes (instant UI update)
-  // segments changes when you navigate tabs/routes
-  // This keeps the avatar/ring fresh without slowing the UI.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => {
-    alive = false;
-  };
-}, [segments?.join("/")]);
-
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot);
+  const u = session.token ? session.user : null;
+  const photo = u?.avatar || u?.avatarUrl || u?.photoUrl || u?.profilePic || u?.photos?.[0];
+  const profilePhoto = typeof photo === "string" ? photo : photo?.url || photo?.secure_url || null;
+  const profileCompletion = u ? Math.min(1,
+    (u.firstName ? 0.15 : 0) + (u.bio ? 0.15 : 0) +
+    (u.photos?.length >= 2 ? 0.25 : 0) + (u.gender && u.lookingFor ? 0.15 : 0)) : 0;
 
   const notifUnreadTotal = useNotificationUnread();
 

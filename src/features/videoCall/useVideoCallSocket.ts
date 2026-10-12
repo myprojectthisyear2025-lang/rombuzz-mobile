@@ -18,7 +18,7 @@
  * ============================================================
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { getSocket } from "@/src/lib/socket";
 import type {
@@ -42,43 +42,45 @@ function safeCallPayload(payload: any) {
 }
 
 export function useVideoCallSocket(handlers: VideoCallSocketHandlers) {
+  const latest = useRef(handlers);
+  latest.current = handlers;
   useEffect(() => {
     let mounted = true;
     let socketRef: any = null;
 
     const onIncoming = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onIncoming?.(safe);
+      if (safe) latest.current.onIncoming?.(safe);
     };
 
     const onRinging = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onRinging?.(safe);
+      if (safe) latest.current.onRinging?.(safe);
     };
 
     const onAccepted = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onAccepted?.(safe);
+      if (safe) latest.current.onAccepted?.(safe);
     };
 
     const onDeclined = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onDeclined?.(safe);
+      if (safe) latest.current.onDeclined?.(safe);
     };
 
     const onCanceled = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onCanceled?.(safe);
+      if (safe) latest.current.onCanceled?.(safe);
     };
 
     const onEnded = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onEnded?.(safe);
+      if (safe) latest.current.onEnded?.(safe);
     };
 
     const onMissed = (payload: any) => {
       const safe = safeCallPayload(payload);
-      if (safe) handlers.onMissed?.(safe);
+      if (safe) latest.current.onMissed?.(safe);
     };
 
     (async () => {
@@ -94,7 +96,7 @@ export function useVideoCallSocket(handlers: VideoCallSocketHandlers) {
       socket.on("video-call:canceled", onCanceled);
       socket.on("video-call:ended", onEnded);
       socket.on("video-call:missed", onMissed);
-    })();
+    })().catch(() => {});
 
     return () => {
       mounted = false;
@@ -109,5 +111,5 @@ export function useVideoCallSocket(handlers: VideoCallSocketHandlers) {
       socketRef.off("video-call:ended", onEnded);
       socketRef.off("video-call:missed", onMissed);
     };
-  }, [handlers]);
+  }, []);
 }

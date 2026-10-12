@@ -1,3 +1,4 @@
+import { useLocationConsent } from "@/src/features/location/useLocationConsent";
 import { discoverUserId, reconcileDiscoverDeck } from "@/src/features/discover/reconcileDiscoverDeck";
 import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 import { createDiscoverRequestOwner, discoverTimeout } from "@/src/features/discover/discoverRequestOwner";
@@ -392,6 +393,7 @@ function applyClientOnlyFilters(list: any[], filters: DiscoverFilters) {
 }
 
 function DiscoverSwipeScreen() {
+  const locationChoice = useLocationConsent("discover");
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, styles } = useDiscoverVisuals(
@@ -581,12 +583,14 @@ const nextScale = useAnimatedStyle(() => ({
   }, []);
 
    const getFreshDeviceCoords = useCallback(async (signal?: AbortSignal, valid = isActive) => {
-    if (!valid()) return null;
+    if (!valid() || !locationChoice.isEnabled()) return null;
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!locationChoice.isEnabled()) return null;
+      const permission = await Location.getForegroundPermissionsAsync();
 
       if (!valid()) return null;
       if (permission.status !== "granted") {
+        void locationChoice.disable();
         console.warn("📍 Discover GPS permission denied");
         return null;
       }
@@ -639,7 +643,7 @@ const nextScale = useAnimatedStyle(() => ({
       console.warn("📍 Discover GPS read failed:", err);
       return null;
     }
-  }, [isActive]);
+  }, [isActive, locationChoice]);
 
     const fetchDiscover = useCallback(
     async (override?: {
@@ -650,10 +654,11 @@ const nextScale = useAnimatedStyle(() => ({
       silent?: boolean;
       onlyIfMoved?: boolean;
     }) => {
-      const requestKey = JSON.stringify([discoverCacheInput, override || {}]);
+      const requestKey = JSON.stringify([discoverCacheInput, override || {}, locationChoice.getRevision()]);
       const requestToken = getSessionSnapshot().token;
       return requestOwner.run(requestKey, async (signal, currentRequest) => {
-      const valid = () => currentRequest() && getSessionSnapshot().token === requestToken;
+      const consentRevision = locationChoice.getRevision();
+      const valid = () => currentRequest() && getSessionSnapshot().token === requestToken && consentRevision === locationChoice.getRevision();
       let hadUsableCache = usersRef.current.length > 0;
       const silent = !!override?.silent;
 
@@ -770,10 +775,11 @@ const nextScale = useAnimatedStyle(() => ({
 
         let coords: { lat: number; lng: number; country?: string; isoCountryCode?: string } | null = null;
         if (override?.withFreshCoords) coords = await getFreshDeviceCoords(signal, valid);
-        else {
+        else if (locationChoice.isEnabled()) {
           try {
-            const position = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000, requiredAccuracy: 10000 });
-            if (position) coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+            const permission = await Location.getForegroundPermissionsAsync();
+            const position = permission.status === "granted" && locationChoice.isEnabled() ? await Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000, requiredAccuracy: 10000 }) : null;
+            if (position && locationChoice.isEnabled()) coords = { lat: position.coords.latitude, lng: position.coords.longitude };
           } catch {}
         }
         if (!valid()) return;
@@ -1152,6 +1158,20 @@ const swipeGesture = Gesture.Pan()
     <Ionicons name="options" size={20} color={colors.icon} />
   </Pressable>
 
+  <Pressable
+    accessibilityRole="switch"
+    accessibilityLabel="Discover live location"
+    accessibilityState={{ checked: locationChoice.enabled }}
+    onPress={async () => {
+      if (locationChoice.isEnabled()) await locationChoice.disable();
+      else await locationChoice.enable();
+      await fetchDiscover({ withFreshCoords: true });
+    }}
+    style={styles.headerBtn}
+  >
+    <Ionicons name={locationChoice.enabled ? "location" : "location-outline"} size={18} color={colors.icon} />
+    <Text style={{ color: colors.text }}>{locationChoice.enabled ? "On" : "Off"}</Text>
+  </Pressable>
   {/* Refresh */}
   <Pressable
     onPress={() => fetchDiscover({ withFreshCoords: true })}

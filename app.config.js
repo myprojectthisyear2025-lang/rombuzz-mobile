@@ -63,6 +63,13 @@ module.exports = ({ config }) => {
     android: {
       ...baseConfig.android,
       package: variant.appId,
+      ...(process.env.GOOGLE_SERVICES_JSON
+        ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
+        : {}),
+      blockedPermissions: [
+        ...(baseConfig.android?.blockedPermissions || []),
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+      ],
     },
 
     extra: {

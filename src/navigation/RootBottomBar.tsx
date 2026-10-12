@@ -18,7 +18,7 @@ import {
   Ionicons,
 } from "@expo/vector-icons";
 
-import React from "react";
+import React, { useState } from "react";
 
 import {
   Animated,
@@ -100,6 +100,8 @@ export default function RootBottomBar({
   const { colors } =
     useRomBuzzTheme();
 
+  const [loadedPhoto, setLoadedPhoto] = useState<string | null>(null);
+
   return (
     <View
       style={[
@@ -172,17 +174,21 @@ export default function RootBottomBar({
                     },
                   ]}
                 >
-                  {profilePhoto ? (
+                  {profilePhoto && (
                     <PerfImage
+                      key={profilePhoto}
+                      onLoad={() => setLoadedPhoto(profilePhoto)}
+                      onError={() => setLoadedPhoto(null)}
                       source={{
                         uri:
                           profilePhoto,
                       }}
                       style={
-                        styles.avatarImg
+                        [styles.avatarImg, { position: "absolute", opacity: loadedPhoto === profilePhoto ? 1 : 0 }]
                       }
                     />
-                  ) : (
+                  )}
+                  {(!profilePhoto || loadedPhoto !== profilePhoto) && (
                     <Ionicons
                       name={
                         focused

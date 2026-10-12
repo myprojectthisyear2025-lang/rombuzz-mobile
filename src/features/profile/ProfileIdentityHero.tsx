@@ -193,7 +193,8 @@ export default function ProfileIdentityHero({
               {!hasStory && (
                 <MetaAction
                   icon="camera-outline"
-                  label="Edit"
+                  label="Change profile photo"
+                  iconOnly
                   onPress={onChangeAvatar}
                 />
               )}
@@ -246,19 +247,23 @@ function MetaAction({
   icon,
   label,
   onPress,
+  iconOnly = false,
 }: {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
+  iconOnly?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
       onPress={onPress}
       hitSlop={8}
       style={styles.metaAction}
     >
       <Ionicons name={icon} size={15} color="#FFFFFF" />
-      <Text style={styles.metaActionText}>{label}</Text>
+      {!iconOnly && <Text style={styles.metaActionText}>{label}</Text>}
     </Pressable>
   );
 }

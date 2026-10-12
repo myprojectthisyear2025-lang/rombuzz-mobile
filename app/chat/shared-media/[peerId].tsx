@@ -1,5 +1,5 @@
 import { diagnosticImage } from "@/src/performance/diagnostics/media";
-import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
+import { usePerfContent, withPerfScreen } from "@/src/performance/diagnostics/screens";
 /**
  * ============================================================
  * 📁 File: app/chat/shared-media/[peerId].tsx
@@ -26,9 +26,9 @@ import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/sc
 
 import MediaViewer from "@/src/components/chat/MediaViewer";
 import RBZImageViewer from "@/src/components/media/RBZImageViewer";
+import { saveMediaToPhone } from "@/src/utils/saveMediaToPhone";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
-import * as MediaLibrary from "expo-media-library";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
@@ -50,10 +50,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { API_BASE } from "@/src/config/api";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
-import { useSharedMediaStyles } from "@/src/features/chat/sharedMedia/useSharedMediaStyles";
-import ChatVideoPreview from "@/src/features/chat/sharedMedia/ChatVideoPreview";
-import { useChatMedia } from "@/src/features/chat/mediaHub/useChatMedia";
 import { ChatMediaRow as MediaRow } from "@/src/features/chat/mediaHub/chatMediaRows";
+import { useChatMedia } from "@/src/features/chat/mediaHub/useChatMedia";
+import ChatVideoPreview from "@/src/features/chat/sharedMedia/ChatVideoPreview";
+import { useSharedMediaStyles } from "@/src/features/chat/sharedMedia/useSharedMediaStyles";
 
 const PerfImage = diagnosticImage("shared-media");
 
@@ -163,29 +163,13 @@ function SharedMediaHub() {
 
   const saveToPhone = async (item: MediaRow) => {
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert("Permission required", "Allow Photos permission to save media.");
-        return;
-      }
-
       const ext = guessExt(item.url, item.mediaType);
       const FS: any = FileSystem;
       const baseDir = String(FS.cacheDirectory || FS.documentDirectory || "");
       const localPath = `${baseDir}rbz_${item.id}_${Date.now()}.${ext}`;
 
       const dl = await FileSystem.downloadAsync(item.url, localPath);
-      const asset = await MediaLibrary.createAssetAsync(dl.uri);
-
-      try {
-        const albumName = "RomBuzz";
-        const album = await MediaLibrary.getAlbumAsync(albumName);
-        if (!album) {
-          await MediaLibrary.createAlbumAsync(albumName, asset, false);
-        } else {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        }
-      } catch {}
+      await saveMediaToPhone(dl.uri);
 
       Alert.alert("Saved", "Saved to your phone.");
     } catch (e: any) {

@@ -18,9 +18,11 @@ function parseUser(raw: string | null): any | null {
   }
 }
 
-export async function persistSessionUser(user: any) {
+export async function persistSessionUser(user: any, token = "") {
   const id = sessionUserId(user);
-  const identity = JSON.stringify({ id, _id: id, rbzSessionVersion: 1 });
+  // The signature binds the secure identity to its token across interrupted writes.
+  const tokenBinding = token ? token.split(".").pop() : undefined;
+  const identity = JSON.stringify({ id, _id: id, rbzSessionVersion: 1, tokenBinding });
   // IDs from Mongo are small. Never silently truncate an unexpected identity.
   if (identity.length > 512) throw new Error("Invalid session user ID");
   await AsyncStorage.setItem(RBZ_SESSION_USER_KEY, JSON.stringify(user));
@@ -43,10 +45,14 @@ export async function readSessionStorage() {
     if (rawIdentity) await SecureStore.deleteItemAsync("RBZ_USER");
     return { token, user: null };
   }
+  if (identity.tokenBinding && identity.tokenBinding !== token.split(".").pop()) {
+    await removeSessionStorage();
+    return { token: "", user: null };
+  }
   if (identity.rbzSessionVersion !== 1) {
     // Save the entire legacy user before replacing its secure copy. A failed
     // migration leaves the original readable and retries on the next refresh.
-    await persistSessionUser(identity).catch(() => {});
+    await persistSessionUser(identity, token).catch(() => {});
     return { token, user: identity };
   }
   const cached = parseUser(await AsyncStorage.getItem(RBZ_SESSION_USER_KEY));

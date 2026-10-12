@@ -132,7 +132,7 @@ export default function Step6ReviewSections({
     .filter(Boolean);
 
   const visiblePhotos =
-    photoUris.slice(0, 5);
+    photoUris;
 
   const remainingPhotos =
     Math.max(
@@ -258,6 +258,7 @@ export default function Step6ReviewSections({
                 <Image
                   key={`${uri}-${index}`}
                   source={{ uri }}
+                  resizeMode="contain"
                   style={styles.photoThumb}
                 />
               )

@@ -9,7 +9,7 @@
 // - Uses the new backend route base: /api/meet-middle.
 // - Does NOT use old legacy /meet or meet:* backend routes.
 
-import * as SecureStore from "expo-secure-store";
+import { getSessionSnapshot } from "@/src/features/auth/rbzSession";
 import { API_BASE } from "@/src/config/api";
 import type {
   MeetMiddleApiResponse,
@@ -22,8 +22,8 @@ import type {
 
 const MEET_MIDDLE_BASE = `${API_BASE}/meet-middle`;
 
-async function getAuthToken() {
-  const token = await SecureStore.getItemAsync("RBZ_TOKEN");
+function getAuthToken() {
+  const token = getSessionSnapshot().token;
 
   if (!token) {
     throw new Error("Login required. Please sign in again.");
@@ -39,7 +39,7 @@ async function meetMiddleFetch<T = any>(
     body?: any;
   } = {}
 ): Promise<T> {
-  const token = await getAuthToken();
+  const token = getAuthToken();
 
   const res = await fetch(`${MEET_MIDDLE_BASE}${path}`, {
     method: options.method || "GET",
@@ -61,6 +61,7 @@ async function meetMiddleFetch<T = any>(
     throw new Error(message);
   }
 
+  if (getSessionSnapshot().token !== token) throw new Error("SESSION_CHANGED");
   return json as T;
 }
 

@@ -61,18 +61,7 @@ const CloudinaryUploader: React.FC<CloudinaryUploaderProps> = ({
 
   const pickImage = async () => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "Please allow photo access for RomBuzz in your phone settings."
-        );
-        onClose?.();
-        return;
-      }
-
+      // The system picker grants access to the selected photo.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true, // built-in crop/rotate editor

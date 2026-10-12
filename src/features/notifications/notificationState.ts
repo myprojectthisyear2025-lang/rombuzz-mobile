@@ -29,8 +29,14 @@ export const notificationStore = createNotificationStore({
     return { items: legacy.value.filter(n=>String(n.toId || n.to || "")===userId) };
   },
   async writeCache(userId, state) {
+    if (String(getSessionSnapshot().user?.id || getSessionSnapshot().user?._id || "") !== userId) return;
     await rbzCacheSet(`RBZ_NOTIFICATIONS_V2:${userId}`, { items: state.items, unread: state.unread });
   },
+});
+// Clear memory at the session boundary, before effects or delayed responses run.
+subscribeSession(session => {
+  const userId = String(session.user?.id || session.user?._id || "");
+  notificationStore.configure(userId, session.token);
 });
 export function useNotificationLifecycle(enabled: boolean) {
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot);

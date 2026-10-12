@@ -25,12 +25,12 @@
  * ============================================================================
  */
 
+import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -461,13 +461,7 @@ export default function PrivateCommentsSheet({
     }
 
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert("Permission needed", "Please allow photo access to upload a comment photo.");
-        return;
-      }
-
+      // The system picker grants access only to the selected comment photo.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,

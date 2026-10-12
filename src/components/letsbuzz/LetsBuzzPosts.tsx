@@ -1,3 +1,4 @@
+import { getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
 import { perfState } from "@/src/performance/diagnostics/core";
 import { diagnosticImage } from "@/src/performance/diagnostics/media";
 import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
@@ -209,6 +210,7 @@ function LetsBuzzPosts({
     [colors]
   );
 
+  const sessionOwner = useRef(getSessionGeneration()).current;
   const listRef = useRef<FlatList<BuzzPost>>(null);
 
   const [loading, setLoading] = useState(true);
@@ -273,11 +275,13 @@ function LetsBuzzPosts({
   }, [targetPostId, posts, deepLinkOpenComments, openComments]);
 
   /* ----------------------------- Loaders ----------------------------- */
-   const fetchMeId = useCallback(async () => {
+  const fetchMeId = useCallback(async () => {
     try {
       const h = await authHeaders();
+      if (!isSessionCurrent(sessionOwner)) return;
       const r = await fetch(`${API_BASE}/users/me`, { headers: h });
       const j = await r.json();
+      if (!isSessionCurrent(sessionOwner)) return;
       const id = j?.user?.id || j?.id || j?.userId;
 
       if (id) {
@@ -310,11 +314,13 @@ function LetsBuzzPosts({
         }
 
         // ✅ same matched-gallery source family as reels
+        if (!isSessionCurrent(sessionOwner)) return;
         const r = await fetch(`${API_BASE}/feed/letsbuzz`, { headers: h });
         const j = await r.json();
+        if (!isSessionCurrent(sessionOwner)) return;
 
         const raw: any[] = Array.isArray(j?.items) ? j.items : [];
-        await writeCachedLetsBuzzFeed(raw);
+        await writeCachedLetsBuzzFeed(raw, sessionOwner);
 
         const photosOnly = buildPostsFromLetsBuzzRaw(raw, myId);
 

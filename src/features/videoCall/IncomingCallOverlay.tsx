@@ -21,7 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -65,6 +65,7 @@ export default function IncomingCallOverlay() {
   const [myId, setMyId] = useState("");
   const [incomingCall, setIncomingCall] = useState<VideoCallSession | null>(null);
   const [busy, setBusy] = useState(false);
+  const dismissedCalls = useRef(new Set<string>());
 
   React.useEffect(() => {
     let alive = true;
@@ -95,6 +96,7 @@ export default function IncomingCallOverlay() {
   }, [incomingCall, myId, peerName]);
 
   const closeIfSameCall = useCallback((call: VideoCallSession) => {
+    dismissedCalls.current.add(String(call.id));
     setIncomingCall((prev) => {
       if (!prev) return prev;
       if (String(prev.id) !== String(call.id)) return prev;
@@ -104,9 +106,13 @@ export default function IncomingCallOverlay() {
 
   useVideoCallSocket({
     onIncoming: (payload) => {
-      if (!payload?.call?.id) return;
+      if (!payload?.call?.id || dismissedCalls.current.has(String(payload.call.id))) return;
+      if (payload.call.status !== "ringing") return;
 
       setIncomingCall(payload.call);
+    },
+    onAccepted: (payload) => {
+      if (payload?.call) closeIfSameCall(payload.call);
     },
     onCanceled: (payload) => {
       if (payload?.call) closeIfSameCall(payload.call);
@@ -130,7 +136,7 @@ export default function IncomingCallOverlay() {
     setBusy(true);
     try {
       await declineVideoCall(callId);
-      setIncomingCall(null);
+      closeIfSameCall(incomingCall);
     } catch (err: any) {
       Alert.alert("Video call", err?.message || "Could not decline the call.");
     } finally {
@@ -147,7 +153,7 @@ export default function IncomingCallOverlay() {
     try {
       const result = await acceptVideoCall(callId);
 
-      setIncomingCall(null);
+      closeIfSameCall(incomingCall);
 
       router.push({
         pathname: "/video-call/[callId]",

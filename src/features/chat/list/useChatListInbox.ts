@@ -1,3 +1,4 @@
+import { getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
 import { perfState } from "@/src/performance/diagnostics/core";
 /**
  * Path: src/features/chat/list/useChatListInbox.ts
@@ -11,22 +12,27 @@ import { DeviceEventEmitter } from "react-native";
 import { rbzGetAuthToken } from "@/src/performance/api/rbzApiClient";
 import { fullName, safeId, sameChatListForPaint, type MatchUser } from "./chatListPresentation";
 import {
-  CHAT_ORDER_KEY, PINNED_CHATS_KEY, applyPinnedOrder, applyStoredOrder, getJSONStore,
+  PINNED_CHATS_KEY, applyPinnedOrder, getJSONStore,
 } from "./chatListPersistence";
 import type { ChatListState } from "./useChatListState";
 
 type InboxState = Pick<ChatListState,
   "myId" | "matches" | "onlineMap" | "chatPerfRef" | "setNickMap" |
-  "setMatches" | "setFiltered" | "setLoading" | "setRefreshing" | "setOnlineMap">;
+  "inboxEventRevisionRef" | "setMatches" | "setFiltered" | "setLoading" | "setRefreshing" | "setOnlineMap">;
 
 export function useChatListInbox(
   {
-    myId, matches, onlineMap, chatPerfRef, setNickMap, setMatches,
+    myId, matches, onlineMap, chatPerfRef, inboxEventRevisionRef, setNickMap, setMatches,
     setFiltered, setLoading, setRefreshing, setOnlineMap,
   }: InboxState,
   router: ReturnType<typeof useRouter>,
   reconcileFromServer: () => Promise<void>,
 ) {
+  const owner = useRef(getSessionGeneration()).current;
+  const alive = useRef(true);
+  const requestRevision = useRef(0);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const valid = () => alive.current && isSessionCurrent(owner);
   const chatCacheHydratedRef = useRef(false);
   const inboxCacheReadyRef = useRef(false);
   const inboxCacheOwnerIdRef = useRef("");
@@ -51,7 +57,7 @@ export function useChatListInbox(
       if (n) map[pid] = n;
     }
 
-    setNickMap(map);
+    if (valid()) setNickMap(map);
   };
 
   const hydrateCachedChats = useCallback(async () => {
@@ -60,6 +66,7 @@ export function useChatListInbox(
     try {
       const cached = await chatPerfRef.current.readCachedInbox();
 
+      if (!valid()) return false;
       const cachedMatches = Array.isArray(cached?.matches)
         ? cached.matches
         : [];
@@ -88,7 +95,7 @@ export function useChatListInbox(
       // without delaying the visible chat list.
       chatPerfRef.current.readCachedPresence()
         .then((cachedPresence) => {
-          if (cachedPresence?.onlineMap) {
+          if (valid() && cachedPresence?.onlineMap) {
             setOnlineMap(cachedPresence.onlineMap);
           }
         })
@@ -101,12 +108,15 @@ export function useChatListInbox(
   }, [myId]);
 
   const loadChats = useCallback(
-    async (mode: "initial" | "refresh" = "initial") => {
-      if (!myId) return;
+    async (mode: "initial" | "refresh" | "silent" = "initial") => {
+      if (!myId || !valid()) return;
+      const revision = ++requestRevision.current;
+      const perf = chatPerfRef.current;
+      const eventRevision = inboxEventRevisionRef.current;
 
       if (mode === "refresh") {
         setRefreshing(true);
-      } else {
+      } else if (mode === "initial") {
         setLoading(true);
       }
 
@@ -118,30 +128,33 @@ export function useChatListInbox(
           await hydrateCachedChats();
         }
 
+        if (!valid()) return;
         const token = await rbzGetAuthToken();
 
+        if (!valid()) return;
         if (!token) {
           router.replace("/auth/login");
           return;
         }
 
         // ✅ PERF: fresh /matches still happens, but it no longer blocks first paint.
-        const list = await chatPerfRef.current.fetchMatchesFresh();
+        const list = await perf.fetchMatchesFresh();
+        if (!valid() || revision !== requestRevision.current || eventRevision !== inboxEventRevisionRef.current) return;
 
         // ✅ Chat list must always be based on real matched users.
         // Do NOT filter matched users with device-local hidden state.
         // Delete chat should clear messages only, not remove the person from chat list.
         const visible = list;
 
-        // ✅ Web parity: apply stored chat order after sorting fallback
-        const storedOrder = await getJSONStore(CHAT_ORDER_KEY(myId), []);
+        // Keep pinned chats first; remaining rows follow current message recency.
         const storedPinned = await getJSONStore(PINNED_CHATS_KEY(myId), []);
 
         const orderedVisible = applyPinnedOrder(
-          applyStoredOrder(visible, storedOrder),
+          visible,
           Array.isArray(storedPinned) ? storedPinned : []
         );
 
+        if (!valid() || revision !== requestRevision.current || eventRevision !== inboxEventRevisionRef.current) return;
         inboxCacheReadyRef.current = true;
         inboxCacheOwnerIdRef.current = myId;
 
@@ -159,13 +172,13 @@ export function useChatListInbox(
         setLoading(false);
 
         // Save fresh inbox for next instant open.
-        chatPerfRef.current.writeCachedInbox(orderedVisible, onlineMap).catch(() => { });
+        perf.writeCachedInbox(orderedVisible, onlineMap).catch(() => { });
 
         // ✅ PERF: presence fetch is now delayed until after chat list appears.
         // This removes the old blocking N+1 presence wait from tab navigation.
-        chatPerfRef.current.refreshPresenceAfterPaint(orderedVisible)
+        (mode === "silent" ? Promise.resolve({}) : perf.refreshPresenceAfterPaint(orderedVisible))
           .then((freshPresence) => {
-            if (!freshPresence || !Object.keys(freshPresence).length) return;
+            if (!valid() || revision !== requestRevision.current || eventRevision !== inboxEventRevisionRef.current || !freshPresence || !Object.keys(freshPresence).length) return;
 
             setOnlineMap((prev) => {
               const next = {
@@ -173,7 +186,7 @@ export function useChatListInbox(
                 ...freshPresence,
               };
 
-              chatPerfRef.current.writeCachedInbox(orderedVisible, next).catch(() => { });
+
               return next;
             });
           })
@@ -185,12 +198,11 @@ export function useChatListInbox(
         console.log("❌ Chat load failed", e);
 
         // ✅ PERF: do not wipe stale cached UI just because fresh network failed.
-        if (mode === "refresh") {
+        if (valid() && mode === "refresh") {
           setRefreshing(false);
         }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (valid() && revision === requestRevision.current) { setLoading(false); setRefreshing(false); }
       }
     },
     [myId, router, hydrateCachedChats, reconcileFromServer]
@@ -216,8 +228,10 @@ export function useChatListInbox(
       clearTimeout(inboxCacheWriteTimerRef.current);
     }
 
+    const perf = chatPerfRef.current;
     inboxCacheWriteTimerRef.current = setTimeout(() => {
-      chatPerfRef.current
+      if (!valid()) return;
+      perf
         .writeCachedInbox(matches, onlineMap)
         .catch(() => { });
 

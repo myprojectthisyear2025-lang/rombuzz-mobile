@@ -9,6 +9,7 @@ function createHarness() {
   let focused = true, now = 1000000, tree, seq = 0, fetcher = async () => ({});
   const requests=[], storage=new Map(), modules=new Map(), timers=new Map(), socketEvents=[], alerts=[], routes=[];
   const focusListeners=new Set(), appListeners=new Set(), sessionListeners=new Set(), nativeEvents=new Map(), socketListeners=new Map();
+  let generation=1;
   let session={token:"token",user:{id:"alice",firstName:"Alice"}};
   const listen=(map,name,fn)=>{if(!map.has(name))map.set(name,new Set());map.get(name).add(fn);return {remove:()=>map.get(name).delete(fn)};};
   const socketGate={promise:null};
@@ -21,13 +22,13 @@ function createHarness() {
     "react-native":{AppState,Alert:{alert:(...a)=>alerts.push(a)},DeviceEventEmitter:{addListener:(n,f)=>listen(nativeEvents,n,f),emit:(n,p)=>nativeEvents.get(n)?.forEach(f=>f(p))}},
     "@react-navigation/native":{useNavigation:()=>navigation,useIsFocused:()=>React.useSyncExternalStore(f=>{focusListeners.add(f);return()=>focusListeners.delete(f);},()=>focused)},
     "expo-router":{useRouter:()=>navigation},
-    "expo-secure-store":{getItemAsync:async key=>key==="RBZ_TOKEN"?session.token:storage.get(key)||null,setItemAsync:async(k,v)=>storage.set(k,v)},
+    "expo-secure-store":{deleteItemAsync:async key=>storage.delete(key),getItemAsync:async key=>key==="RBZ_TOKEN"?session.token:storage.get(key)||null,setItemAsync:async(k,v)=>storage.set(k,v)},
     "@react-native-async-storage/async-storage":{getItem:async k=>storage.get(k)||null,setItem:async(k,v)=>storage.set(k,v),removeItem:async k=>storage.delete(k)},
     "@/src/config/api":{API_BASE:"https://example.invalid/api"},
-    "@/src/features/auth/rbzSession":{getSessionSnapshot:()=>session,subscribeSession:f=>{sessionListeners.add(f);return()=>sessionListeners.delete(f);}},
+    "@/src/features/auth/rbzSession":{getSessionSnapshot:()=>session,getSessionGeneration:()=>generation,isSessionCurrent:owner=>owner===generation&&!!session.token,subscribeSession:f=>{sessionListeners.add(f);return()=>sessionListeners.delete(f);}},
     "@/src/performance/api/rbzApiClient":{rbzGetAuthToken:async()=>session.token,rbzGetCurrentUser:async()=>session.user},
     "@/src/performance/diagnostics/core":{perfState(){},perfTap(){}},
-    "@/src/performance/diagnostics/cache":{observeCacheReader:(_,fn)=>fn},
+    "@/src/performance/diagnostics/cache":{observeCacheReader:(_,fn)=>fn,perfCacheRead:()=>value=>value},
     "@/src/lib/socket":{getSocket:async()=>{if(socketGate.promise)await socketGate.promise;return socket;}},
     "@/src/features/chat/thread/chatUnavailableCache":{clearUnavailableChatLocalState:async()=>{}},
   };
@@ -53,7 +54,7 @@ function createHarness() {
     async unmount(){await act(async()=>tree?.unmount());},
     async focus(value){await act(async()=>{focused=value;focusListeners.forEach(f=>f());});},
     async appState(value){await act(async()=>{AppState.currentState=value;appListeners.forEach(f=>f(value));});},
-    async session(value){await act(async()=>{session=value;sessionListeners.forEach(f=>f());});},
+    async session(value){await act(async()=>{if(session.token!==value.token||session.user?.id!==value.user?.id)generation++;session=value;sessionListeners.forEach(f=>f(session));});},
     async emit(name,payload){await act(async()=>{socketListeners.get(name)?.forEach(f=>f(payload));});},
     async advance(ms){await act(async()=>{now+=ms;for(const[id,t]of[...timers])if(t.due<=now){timers.delete(id);t.fn();}});},
   };

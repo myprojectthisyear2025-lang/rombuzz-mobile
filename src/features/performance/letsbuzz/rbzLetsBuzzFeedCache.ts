@@ -1,9 +1,9 @@
 import { observeCacheReader } from "@/src/performance/diagnostics/cache";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { rbzCacheGet, rbzCacheSet } from "@/src/performance/cache/rbzCache";
+import { getSessionSnapshot, getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
 import { Image } from "react-native";
 
 const RBZ_LETSBUZZ_FEED_CACHE_KEY = "rbz:letsbuzz:feed:v1";
-const RBZ_LETSBUZZ_ME_ID_CACHE_KEY = "rbz:letsbuzz:meId:v1";
 const MAX_CACHE_ITEMS = 80;
 
 export type CachedLetsBuzzFeed = {
@@ -45,10 +45,8 @@ function isHttpUrl(value: any) {
 
 async function readCachedLetsBuzzFeedUnobserved(): Promise<CachedLetsBuzzFeed | null> {
   try {
-    const raw = await AsyncStorage.getItem(RBZ_LETSBUZZ_FEED_CACHE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
+    const cached = await rbzCacheGet<CachedLetsBuzzFeed | null>(RBZ_LETSBUZZ_FEED_CACHE_KEY, null);
+    const parsed = cached.value;
     const items = Array.isArray(parsed?.items) ? parsed.items : [];
 
     if (!items.length) return null;
@@ -62,19 +60,16 @@ async function readCachedLetsBuzzFeedUnobserved(): Promise<CachedLetsBuzzFeed | 
   }
 }
 
-export async function writeCachedLetsBuzzFeed(items: any[]) {
+export async function writeCachedLetsBuzzFeed(items: any[], owner = getSessionGeneration()) {
   try {
-    if (!Array.isArray(items)) return;
+    if (!isSessionCurrent(owner) || !Array.isArray(items)) return;
 
     const payload: CachedLetsBuzzFeed = {
       items: items.slice(0, MAX_CACHE_ITEMS),
       savedAt: Date.now(),
     };
 
-    await AsyncStorage.setItem(
-      RBZ_LETSBUZZ_FEED_CACHE_KEY,
-      JSON.stringify(payload)
-    );
+    await rbzCacheSet(RBZ_LETSBUZZ_FEED_CACHE_KEY, payload);
   } catch {
     // Cache must never break LetsBuzz.
   }
@@ -106,21 +101,11 @@ export function preloadLetsBuzzFeedImages(items: any[], limit = 8) {
   }
 }
 export async function readCachedLetsBuzzMeId() {
-  try {
-    return safeString(await AsyncStorage.getItem(RBZ_LETSBUZZ_ME_ID_CACHE_KEY));
-  } catch {
-    return "";
-  }
+  const session = getSessionSnapshot();
+  return session.token ? safeString(session.user?.id || session.user?._id) : "";
 }
 
-export async function writeCachedLetsBuzzMeId(meId: string) {
-  try {
-    const safeId = safeString(meId);
-    if (!safeId) return;
-
-    await AsyncStorage.setItem(RBZ_LETSBUZZ_ME_ID_CACHE_KEY, safeId);
-  } catch {
-    // Cache must never break LetsBuzz.
-  }
+export async function writeCachedLetsBuzzMeId(_meId: string) {
+  // Identity comes only from the authenticated session, never a feed cache.
 }
 export const readCachedLetsBuzzFeed = observeCacheReader("letsbuzz-feed", readCachedLetsBuzzFeedUnobserved);

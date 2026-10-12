@@ -13,6 +13,8 @@ import { perfCacheRead } from "../diagnostics/cache";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { getSessionSnapshot, getSessionGeneration, isSessionCurrent, subscribeSession } from "@/src/features/auth/rbzSession";
+import { sessionUserId } from "@/src/features/auth/rbzSessionStorage";
 
 type CacheEnvelope<T> = {
   value: T;
@@ -20,6 +22,18 @@ type CacheEnvelope<T> = {
 };
 
 const memory = new Map<string, CacheEnvelope<any>>();
+let memoryOwner = getSessionGeneration();
+subscribeSession(() => {
+  if (memoryOwner !== getSessionGeneration()) memory.clear();
+  memoryOwner = getSessionGeneration();
+});
+
+// Never adopt legacy unowned cache entries. Same-account caches survive restart.
+function privateKey(key: string) {
+  const session = getSessionSnapshot();
+  const id = sessionUserId(session.user);
+  return session.token && id ? `RBZ_PRIVATE_V1:${id}:${key}` : "";
+}
 
 export function rbzCacheKey(...parts: Array<string | number | null | undefined>) {
   return parts
@@ -33,6 +47,9 @@ export async function rbzCacheGet<T>(
   fallback: T
 ): Promise<{ value: T; savedAt: number; hit: boolean }> {
   const done = perfCacheRead(key);
+  const owner = getSessionGeneration();
+  key = privateKey(key);
+  if (!key) return done({ value: fallback, savedAt: 0, hit: false }, "persistent-miss");
   try {
     const mem = memory.get(key);
     if (mem) {
@@ -43,19 +60,7 @@ export async function rbzCacheGet<T>(
     // size. AsyncStorage is the primary persistent store for these JSON blobs.
     let raw = await AsyncStorage.getItem(key);
 
-    // One-time migration for smaller cache entries written by older builds.
-    if (!raw) {
-      const legacyRaw = await SecureStore.getItemAsync(key).catch(() => null);
-
-      if (legacyRaw) {
-        raw = legacyRaw;
-
-        AsyncStorage.setItem(key, legacyRaw).catch(() => {});
-        SecureStore.deleteItemAsync(key).catch(() => {});
-      }
-    }
-
-    if (!raw) {
+    if (!raw || !isSessionCurrent(owner)) {
       return done({
         value: fallback,
         savedAt: 0,
@@ -97,6 +102,8 @@ export async function rbzCacheGet<T>(
 }
 
 export async function rbzCacheSet<T>(key: string, value: T) {
+  key = privateKey(key);
+  if (!key) return;
   try {
     const envelope: CacheEnvelope<T> = {
       value,
@@ -114,6 +121,8 @@ export async function rbzCacheSet<T>(key: string, value: T) {
 }
 
 export async function rbzCacheRemove(key: string) {
+  key = privateKey(key);
+  if (!key) return;
   try {
     memory.delete(key);
 
@@ -125,6 +134,8 @@ export async function rbzCacheRemove(key: string) {
 }
 
 export function rbzCachePrime<T>(key: string, value: T) {
+  key = privateKey(key);
+  if (!key) return;
   memory.set(key, { value, savedAt: Date.now() });
 }
 

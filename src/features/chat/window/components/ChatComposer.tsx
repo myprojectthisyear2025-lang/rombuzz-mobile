@@ -31,7 +31,10 @@ export default function ChatComposer() {
     <View
       style={[
         styles.composer,
-        { marginBottom: 0, paddingBottom: COMPOSER_SAFE_BOTTOM_PAD },
+        {
+          marginBottom: 0,
+          paddingBottom: COMPOSER_SAFE_BOTTOM_PAD + 8,
+        },
       ]}
     >
       <ChatComposerContext />

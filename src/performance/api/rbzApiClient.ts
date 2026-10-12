@@ -16,7 +16,7 @@ import { perfSpan } from "../diagnostics/core";
 
 import { API_BASE } from "@/src/config/api";
 import {
-  clearSession, initializeSession, refreshSession,
+  clearSession, initializeSession, refreshSession, getSessionGeneration, getSessionSnapshot, isSessionCurrent,
 } from "@/src/features/auth/rbzSession";
 import { DeviceEventEmitter } from "react-native";
 
@@ -40,10 +40,12 @@ export async function rbzApiJson<T = any>(
 ): Promise<T> {
   const needsAuth = options?.auth !== false;
   const token = needsAuth ? await rbzGetAuthToken() : "";
+  const owner = getSessionGeneration();
 
   if (needsAuth && !token) {
     throw new Error("NO_TOKEN");
   }
+  if (needsAuth && token !== getSessionSnapshot().token) throw new Error("SESSION_CHANGED");
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -75,6 +77,9 @@ export async function rbzApiJson<T = any>(
     throw Object.assign(new Error(message), { status: response.status });
   }
 
+  if (needsAuth && (!isSessionCurrent(owner) || token !== getSessionSnapshot().token)) {
+    throw new Error("SESSION_CHANGED");
+  }
   return json as T;
 }
 

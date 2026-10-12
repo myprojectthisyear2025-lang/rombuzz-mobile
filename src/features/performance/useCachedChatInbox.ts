@@ -1,3 +1,4 @@
+import { getSessionGeneration, getSessionSnapshot, isSessionCurrent } from "@/src/features/auth/rbzSession";
 /**
  * ============================================================
  * 📁 File: src/features/performance/useCachedChatInbox.ts
@@ -61,13 +62,14 @@ async function runAfterInteractions() {
   });
 }
 
-async function fetchPresenceLimited(ids: string[], limit = 4) {
+async function fetchPresenceLimited(ids: string[], valid: () => boolean, limit = 4) {
   const token = await rbzGetAuthToken().catch(() => "");
+  if (!valid()) return {};
   const out: Record<string, boolean> = {};
   const queue = [...ids];
 
   async function worker() {
-    while (queue.length) {
+    while (queue.length && valid()) {
       const id = queue.shift();
       if (!id) continue;
 
@@ -92,20 +94,23 @@ async function fetchPresenceLimited(ids: string[], limit = 4) {
 }
 
 export function useCachedChatInbox(meId: string) {
+  const owner = getSessionGeneration();
+  const valid = () => !!meId && isSessionCurrent(owner) && String(getSessionSnapshot().user?.id || getSessionSnapshot().user?._id || "") === meId;
   const inboxKey = rbzCacheKey("RBZ_PERF_CHAT_INBOX", meId);
   const presenceKey = rbzCacheKey("RBZ_PERF_CHAT_PRESENCE", meId);
 
   const readCachedInbox = async () => {
+    if (!valid()) return { ...emptyInbox, savedAt: 0, hit: false };
     const cached = await rbzCacheGet<CachedChatInbox>(inboxKey, emptyInbox);
     return {
-      ...cached.value,
+      ...(valid() ? cached.value : emptyInbox),
       savedAt: cached.savedAt,
-      hit: cached.hit,
+      hit: valid() && cached.hit,
     };
   };
 
   const writeCachedInbox = async (matches: any[], onlineMap?: Record<string, boolean>) => {
-    if (!meId) return;
+    if (!valid()) return;
 
     await rbzCacheSet<CachedChatInbox>(inboxKey, {
       matches: Array.isArray(matches) ? matches : [],
@@ -115,20 +120,22 @@ export function useCachedChatInbox(meId: string) {
   };
 
   const readCachedPresence = async () => {
+    if (!valid()) return { onlineMap: {}, savedAt: 0, hit: false };
     const cached = await rbzCacheGet<Record<string, boolean>>(presenceKey, {});
     return {
-      onlineMap: cached.value || {},
+      onlineMap: valid() ? cached.value || {} : {},
       savedAt: cached.savedAt,
       hit: cached.hit,
     };
   };
 
   const writeCachedPresence = async (onlineMap: Record<string, boolean>) => {
-    if (!meId) return;
+    if (!valid()) return;
     await rbzCacheSet(presenceKey, onlineMap || {});
   };
 
   const fetchMatchesFresh = async () => {
+    if (!valid()) throw new Error("SESSION_CHANGED");
     const data = await rbzApiJson<any>("/matches");
 
     const raw = Array.isArray(data)
@@ -139,11 +146,13 @@ export function useCachedChatInbox(meId: string) {
       ? data.users
       : [];
 
+    if (!valid()) throw new Error("SESSION_CHANGED");
     return sortMatchesByActivity(raw);
   };
 
   const refreshPresenceAfterPaint = async (matches: any[]) => {
     await runAfterInteractions();
+    if (!valid()) return {};
 
     const ids = Array.from(
       new Set(
@@ -155,7 +164,8 @@ export function useCachedChatInbox(meId: string) {
 
     if (!ids.length) return {};
 
-    const onlineMap = await fetchPresenceLimited(ids, 4);
+    const onlineMap = await fetchPresenceLimited(ids, valid, 4);
+    if (!valid()) return {};
     await writeCachedPresence(onlineMap);
 
     return onlineMap;

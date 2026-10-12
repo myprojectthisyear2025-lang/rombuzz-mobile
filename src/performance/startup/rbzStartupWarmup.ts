@@ -20,10 +20,10 @@ import {
   rbzGetAuthToken,
   rbzGetCurrentUser,
 } from "@/src/performance/api/rbzApiClient";
-import { persistCurrentUser } from "@/src/features/auth/rbzSession";
+import { persistCurrentUser, getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
 import { rbzCacheKey, rbzCacheSet } from "@/src/performance/cache/rbzCache";
 import { DeviceEventEmitter } from "react-native";
-let warmupStarted = false;
+let warmedGeneration = -1;
 
 
 const CHAT_INBOX_CACHE_PREFIX = "RBZ_PERF_CHAT_INBOX";
@@ -85,7 +85,7 @@ function getWarmableMatchProfile(match: any, meId: string) {
   return null;
 }
 
-async function warmViewProfilesFromMatches(matches: any[], meId: string) {
+async function warmViewProfilesFromMatches(matches: any[], meId: string, owner: number) {
   try {
     const warmable = (Array.isArray(matches) ? matches : [])
       .map((match) => getWarmableMatchProfile(match, meId))
@@ -102,17 +102,19 @@ async function warmViewProfilesFromMatches(matches: any[], meId: string) {
       )
     );
 
+    if (!isSessionCurrent(owner)) return;
     DeviceEventEmitter.emit("rbz:view-profile:warmed", {
       count: warmable.length,
     });
   } catch {}
 }
 
-async function warmChatInbox(meId: string) {
+async function warmChatInbox(meId: string, owner: number) {
   try {
     if (!meId) return;
 
     const data = await rbzApiJson<any>("/matches");
+    if (!isSessionCurrent(owner)) return;
     const matches = normalizeChatMatches(data);
 
     await rbzCacheSet(rbzCacheKey(CHAT_INBOX_CACHE_PREFIX, meId), {
@@ -121,8 +123,10 @@ async function warmChatInbox(meId: string) {
       savedAt: Date.now(),
     });
 
-    await warmViewProfilesFromMatches(matches, meId);
+    if (!isSessionCurrent(owner)) return;
+    await warmViewProfilesFromMatches(matches, meId, owner);
 
+    if (!isSessionCurrent(owner)) return;
     DeviceEventEmitter.emit("rbz:chat:inbox-warmed", {
       meId,
       count: matches.length,
@@ -130,50 +134,54 @@ async function warmChatInbox(meId: string) {
   } catch {}
 }
 
-async function warmProfileFull() {
+async function warmProfileFull(owner: number) {
   try {
     const data = await rbzApiJson<any>("/profile/full");
     const user = data?.user || null;
 
-    if (!user) return;
+    if (!user || !isSessionCurrent(owner)) return;
 
-    await rbzCacheSet(PROFILE_FULL_CACHE_KEY, {
+    await rbzCacheSet(rbzCacheKey(PROFILE_FULL_CACHE_KEY, user.id || user._id), {
       user,
     });
 
-    await persistCurrentUser(user).catch(() => {});
+    await persistCurrentUser(user, owner).catch(() => {});
   } catch {}
 }
 
-async function warmSocialStats() {
+async function warmSocialStats(owner: number) {
   try {
     let social: any = null;
 
     try {
       social = await rbzApiJson<any>("/users/social-stats");
     } catch {
+      if (!isSessionCurrent(owner)) return;
       social = await rbzApiJson<any>("/social-stats");
     }
 
+    if (!isSessionCurrent(owner)) return;
     DeviceEventEmitter.emit("rbz:social-stats:warmed", {
       social,
     });
   } catch {}
 }
 
-async function warmLetsBuzzFeed(meId: string) {
+async function warmLetsBuzzFeed(meId: string, owner: number) {
   try {
     if (meId) {
       await writeCachedLetsBuzzMeId(meId);
     }
 
+    if (!isSessionCurrent(owner)) return;
     const data = await rbzApiJson<any>("/feed/letsbuzz");
     const items = Array.isArray(data?.items) ? data.items : [];
 
     if (!items.length) return;
 
-    await writeCachedLetsBuzzFeed(items);
+    await writeCachedLetsBuzzFeed(items, owner);
 
+    if (!isSessionCurrent(owner)) return;
     DeviceEventEmitter.emit("rbz:letsbuzz:feed-warmed", {
       count: items.length,
     });
@@ -181,8 +189,9 @@ async function warmLetsBuzzFeed(meId: string) {
 }
 
 export async function rbzStartupWarmup() {
-  if (warmupStarted) return;
-  warmupStarted = true;
+  const owner = getSessionGeneration();
+  if (warmedGeneration === owner) return;
+  warmedGeneration = owner;
 
   try {
     const token = await rbzGetAuthToken();
@@ -190,14 +199,15 @@ export async function rbzStartupWarmup() {
 
     // Prime user memory too. This is cheap and helps layout/profile later.
     const user = await rbzGetCurrentUser().catch(() => null);
+    if (!isSessionCurrent(owner)) return;
     const meId = String(user?.id || user?._id || "");
 
-        // Run useful network warmups in parallel.
+    // Run useful network warmups in parallel.
     await Promise.allSettled([
-      warmSocialStats(),
-      warmChatInbox(meId),
-      warmProfileFull(),
-      warmLetsBuzzFeed(meId),
+      warmSocialStats(owner),
+      warmChatInbox(meId, owner),
+      warmProfileFull(owner),
+      warmLetsBuzzFeed(meId, owner),
     ]);
   } catch {}
 }

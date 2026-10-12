@@ -10,7 +10,8 @@
 // - Does NOT render map UI.
 // - Uses backend privacy-safe response only.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Location from "expo-location";
 
 import { shareMeetMiddleLocation } from "./meetMiddleApi";
@@ -52,6 +53,9 @@ export function useMeetMiddleLocationShare(sessionId: string) {
   const [session, setSession] = useState<MeetMiddleSession | null>(null);
   const [rawResponse, setRawResponse] = useState<ShareLocationResponse | null>(null);
   const sharingInFlightRef = useRef(false);
+  const mounted = useRef(true);
+  const shareRevision = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; shareRevision.current++; }; }, [sessionId]);
 
   const cleanSessionId = String(sessionId || "").trim();
 
@@ -75,6 +79,9 @@ export function useMeetMiddleLocationShare(sessionId: string) {
    const shareLocation = useCallback(async () => {
     if (!cleanSessionId || loading || sharingInFlightRef.current) return null;
 
+    const owner = getSessionGeneration();
+    const revision = ++shareRevision.current;
+    const valid = () => mounted.current && revision === shareRevision.current && isSessionCurrent(owner);
     sharingInFlightRef.current = true;
     setError("");
     setState("requesting_permission");
@@ -82,6 +89,7 @@ export function useMeetMiddleLocationShare(sessionId: string) {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
 
+      if (!valid()) return null;
       if (permission.status !== "granted") {
         throw new Error(
           "Location permission is required to find a private midpoint."
@@ -94,6 +102,7 @@ export function useMeetMiddleLocationShare(sessionId: string) {
         accuracy: Location.Accuracy.Balanced,
       });
 
+      if (!valid()) return null;
       const lat = Number(position?.coords?.latitude);
       const lng = Number(position?.coords?.longitude);
 
@@ -108,6 +117,7 @@ export function useMeetMiddleLocationShare(sessionId: string) {
         lng,
       });
 
+       if (!valid()) return null;
        const nextSession = extractSession(response);
       const nextStatus = normalizeSessionStatus(nextSession);
 
@@ -128,6 +138,7 @@ export function useMeetMiddleLocationShare(sessionId: string) {
         session: nextSession,
       };
     } catch (err: any) {
+      if (!valid()) return null;
       const message =
         err?.message ||
         "Could not share your location. Please try again.";
@@ -174,6 +185,7 @@ export function useMeetMiddleLocationShare(sessionId: string) {
   }, []);
 
   const reset = useCallback(() => {
+    shareRevision.current++;
     sharingInFlightRef.current = false;
     setState("idle");
     setError("");

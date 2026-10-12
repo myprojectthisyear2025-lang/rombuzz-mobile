@@ -8,7 +8,6 @@ import { Audio, AVPlaybackStatus } from "expo-av";
 import React from "react";
 import {
   ActivityIndicator,
-  ScrollView,
   Text,
   TouchableOpacity,
   View,
@@ -165,10 +164,8 @@ export default function Step6Summary({
         })}
       </View>
 
-      <ScrollView
-        style={styles.reviewScroll}
-        contentContainerStyle={styles.reviewContent}
-        showsVerticalScrollIndicator={false}
+      <View
+        style={[styles.reviewScroll, styles.reviewContent]}
       >
         <Step6ReviewSections
           email={email}
@@ -192,7 +189,7 @@ export default function Step6Summary({
             </Text>
           </View>
         ) : null}
-      </ScrollView>
+      </View>
 
       <View style={styles.footer}>
         <TouchableOpacity

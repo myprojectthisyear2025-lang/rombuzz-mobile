@@ -14,7 +14,6 @@ import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network
 import { Sentry } from "@/src/monitoring/sentry";
 
 import RomBuzzSystemStatusBar from "@/src/components/system/RomBuzzSystemStatusBar";
-import { API_BASE } from "@/src/config/api";
 import {
   RomBuzzThemeProvider,
   useRomBuzzTheme,
@@ -34,14 +33,14 @@ import {
 } from "@react-navigation/native";
 import Constants from "expo-constants";
 import { Stack, useRouter, useSegments } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { getSessionSnapshot, getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
+import { shouldPresentPush, usePushRegistration } from "@/src/features/notifications/usePushRegistration";
 import React, {
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 installNetworkDiagnostics();
@@ -51,114 +50,11 @@ const Notifications: any = IS_EXPO_GO ? null : require("expo-notifications");
 
 if (Notifications) {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async (notification: any) => {
+      const show = shouldPresentPush(notification?.request?.content?.data);
+      return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
+    },
   });
-}
-
-const PUSH_TOKEN_KEY = "RBZ_PUSH_TOKEN_CURRENT";
-const PUSH_SYNC_PREFIX = "RBZ_PUSH_TOKEN_SYNC_";
-
-function getPushSyncKey(userId: string) {
-  return `${PUSH_SYNC_PREFIX}${String(userId || "").trim()}`;
-}
-
-function getProjectId() {
-  const easProjectId =
-    Constants?.expoConfig?.extra?.eas?.projectId ||
-    Constants?.easConfig?.projectId ||
-    "";
-
-  return typeof easProjectId === "string" ? easProjectId.trim() : "";
-}
-
-async function ensureNotificationChannel() {
-  if (!Notifications) return;
-  if (Platform.OS !== "android") return;
-
-  await Notifications.setNotificationChannelAsync("default", {
-    name: "default",
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#b1123c",
-  });
-}
-
-async function registerForPushNotificationsAsync() {
-  try {
-    if (!Notifications) return "";
-    await ensureNotificationChannel();
-
-    const existing = await Notifications.getPermissionsAsync();
-    let finalStatus = existing.status;
-
-    if (finalStatus !== "granted") {
-      const requested = await Notifications.requestPermissionsAsync();
-      finalStatus = requested.status;
-    }
-
-    if (finalStatus !== "granted") return "";
-
-    const projectId = getProjectId();
-    if (!projectId) return "";
-
-    const token = await Notifications.getExpoPushTokenAsync({ projectId });
-    return token?.data || "";
-  } catch (error) {
-    console.log("Push registration failed", error);
-    return "";
-  }
-}
-
-async function syncPushTokenToBackend(
-  authToken: string,
-  pushToken: string,
-  userId: string
-) {
-  if (!authToken || !pushToken || !userId) return false;
-
-  try {
-    const res = await fetch(`${API_BASE}/users/me/push-token`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        token: pushToken,
-        platform: Platform.OS,
-        appOwnership: Constants.appOwnership || "",
-      }),
-    });
-
-    return res.ok;
-  } catch (error) {
-    console.log("Push token sync failed", error);
-    return false;
-  }
-}
-
-async function removePushTokenFromBackend(authToken: string, pushToken: string) {
-  if (!authToken || !pushToken) return;
-
-  try {
-    await fetch(`${API_BASE}/users/me/push-token`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        token: pushToken,
-      }),
-    });
-  } catch (error) {
-    console.log("Push token removal failed", error);
-  }
 }
 
 function RootLayout() {
@@ -196,11 +92,6 @@ function RootLayout() {
   useNotificationLifecycle(ready && loggedIn === true && onboardingPending === false);
   const [splashDone, setSplashDone] = useState(false);
 
-  const pushSyncInFlightRef = useRef(false);
-  const lastSessionRef = useRef<{ token: string; userId: string }>({
-    token: "",
-    userId: "",
-  });
   const handledResponseIdsRef = useRef(new Set<string>());
   const loggedInRef = useRef<boolean>(false);
 
@@ -210,9 +101,7 @@ function RootLayout() {
       loggedIn === true && onboardingPending === false;
   }, [loggedIn, onboardingPending]);
 
-  useEffect(() => {
-    if (authToken) lastSessionRef.current = { token: authToken, userId: authUserId };
-  }, [authToken, authUserId]);
+  usePushRegistration(Notifications, ready && splashDone && loggedIn && !onboardingPending);
 
   useEffect(() => {
     if (
@@ -296,89 +185,13 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (
-      !ready ||
-      !splashDone ||
-      loggedIn !== true ||
-      onboardingPending !== false ||
-      !authToken ||
-      !authUserId
-    ) {
-      return;
-    }
-
-    if (pushSyncInFlightRef.current) return;
-
-    let cancelled = false;
-
-    const syncPushToken = async () => {
-      pushSyncInFlightRef.current = true;
-
-      try {
-        const syncKey = getPushSyncKey(authUserId);
-        const syncedToken = (await SecureStore.getItemAsync(syncKey)) || "";
-        let currentPushToken = (await SecureStore.getItemAsync(PUSH_TOKEN_KEY)) || "";
-
-        if (!currentPushToken || currentPushToken === syncedToken) {
-          currentPushToken = await registerForPushNotificationsAsync();
-        }
-
-        if (cancelled || !currentPushToken) return;
-
-        await SecureStore.setItemAsync(PUSH_TOKEN_KEY, currentPushToken);
-
-        if (currentPushToken === syncedToken) return;
-
-        const synced = await syncPushTokenToBackend(authToken, currentPushToken, authUserId);
-        if (!cancelled && synced) {
-          await SecureStore.setItemAsync(syncKey, currentPushToken);
-        }
-      } finally {
-        pushSyncInFlightRef.current = false;
-      }
-    };
-
-    syncPushToken();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    ready,
-    splashDone,
-    loggedIn,
-    onboardingPending,
-    authToken,
-    authUserId,
-  ]);
-
-  useEffect(() => {
-    if (!ready || loggedIn !== false) return;
-
-    const removeOnLogout = async () => {
-      const lastToken = lastSessionRef.current.token;
-      const lastUserId = lastSessionRef.current.userId;
-      const savedPushToken = (await SecureStore.getItemAsync(PUSH_TOKEN_KEY)) || "";
-
-      if (lastToken && savedPushToken) {
-        await removePushTokenFromBackend(lastToken, savedPushToken);
-      }
-
-      if (lastUserId) {
-        await SecureStore.deleteItemAsync(getPushSyncKey(lastUserId)).catch(() => {});
-      }
-
-      lastSessionRef.current = { token: "", userId: "" };
-    };
-
-    removeOnLogout();
-  }, [ready, loggedIn]);
-
-  useEffect(() => {
     if (!Notifications) return;
 
     const handleNotificationResponse = (response: any | null) => {
-      if (!response || !loggedInRef.current) return;
+      if (!response || !loggedInRef.current || !getSessionSnapshot().token) return;
+      const recipientId = String(response.notification.request.content.data?.recipientId || response.notification.request.content.data?.receiverId || "");
+      const current = getSessionSnapshot().user;
+      if (!recipientId || recipientId !== String(current?.id || current?._id || "")) return;
 
       const responseId = String(
         response.notification.request.identifier ||
@@ -422,9 +235,12 @@ function RootLayout() {
       return;
     }
 
+    const owner = getSessionGeneration();
     Notifications.getLastNotificationResponseAsync()
       .then((response: any) => {
-        if (!response) return;
+        if (!response || !isSessionCurrent(owner)) return;
+        const recipientId = String(response.notification.request.content.data?.recipientId || response.notification.request.content.data?.receiverId || "");
+        if (!recipientId || recipientId !== authUserId) return;
 
         const responseId = String(response.notification.request.identifier || "");
         if (responseId && handledResponseIdsRef.current.has(responseId)) return;
@@ -446,6 +262,8 @@ function RootLayout() {
     splashDone,
     loggedIn,
     onboardingPending,
+    authUserId,
+    authToken,
     router,
   ]);
 
@@ -470,7 +288,7 @@ function RootLayout() {
       }}
     >
       <ThemeProvider value={navigationTheme}>
-        <VideoCallProvider>
+        <VideoCallProvider key={authUserId || "signed-out"}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="start" />

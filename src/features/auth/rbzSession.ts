@@ -9,6 +9,7 @@ let initialized = false;
 let initialization: Promise<RbzSession> | null = null;
 let refresh: Promise<RbzSession> | null = null;
 let queue: Promise<unknown> = Promise.resolve();
+let generation = 0;
 const listeners = new Set<(value: RbzSession) => void>();
 
 // Serializing storage work prevents a cold read/migration from overwriting a
@@ -20,6 +21,7 @@ function serialize<T>(work: () => Promise<T>): Promise<T> {
 }
 
 function publish(next: RbzSession) {
+  if (session.token !== next.token || sessionUserId(session.user) !== sessionUserId(next.user)) generation++;
   session = next;
   initialized = true;
   listeners.forEach(listener => {
@@ -34,6 +36,8 @@ export function subscribeSession(listener: (value: RbzSession) => void) {
 }
 
 export function getSessionSnapshot() { return session; }
+export function getSessionGeneration() { return generation; }
+export function isSessionCurrent(owner: number) { return owner === generation && !!session.token; }
 
 export function initializeSession(): Promise<RbzSession> {
   if (initialized) return Promise.resolve(session);
@@ -47,49 +51,62 @@ export function initializeSession(): Promise<RbzSession> {
 // a timer or on navigation. Concurrent readers share the same native reads.
 export function refreshSession(): Promise<RbzSession> {
   if (!refresh) {
-    refresh = serialize(async () => publish(await readSessionStorage()))
+    const owner = generation;
+    refresh = serialize(async () => {
+      const stored = await readSessionStorage();
+      return owner === generation ? publish(stored) : session;
+    })
       .finally(() => { refresh = null; });
   }
   return refresh;
 }
 
 export function setSession(token: string, user: any): Promise<RbzSession> {
+  // Invalidate private UI and async work before any native storage operation.
+  generation++;
+  publish({ token: "", user: null });
+  const owner = generation;
   return serialize(async () => {
+    if (owner !== generation) return session;
     try {
-      await persistSessionUser(user || null);
+      await persistSessionUser(user || null, token);
       await SecureStore.setItemAsync("RBZ_TOKEN", token);
-      return publish({ token, user: user || null });
+      await SecureStore.deleteItemAsync("token");
+      return owner === generation ? publish({ token, user: user || null }) : session;
     } catch (error) {
       // Never leave a previous token paired with a partially written new user.
       await removeSessionStorage();
-      publish({ token: "", user: null });
+      if (owner === generation) publish({ token: "", user: null });
       throw error;
     }
   });
 }
 
-export async function persistCurrentUser(user: any) {
+export async function persistCurrentUser(user: any, owner = generation) {
   await initializeSession();
   return serialize(async () => {
-    if (!session.token || !user) return;
+    if (!isSessionCurrent(owner) || !user) return;
     const currentId = sessionUserId(session.user);
     const incomingId = sessionUserId(user);
-    if (currentId && incomingId && currentId !== incomingId) return;
-    // Some account responses contain only changed fields; retain identity.
-    const next = currentId && !incomingId ? { ...session.user, ...user } : user;
-    await persistSessionUser(next);
-    publish({ ...session, user: next });
+    // Private profile writes must carry identity, including partial responses.
+    if (!currentId || incomingId !== currentId) return;
+    const next = { ...session.user, ...user };
+    await persistSessionUser(next, session.token);
+    if (isSessionCurrent(owner)) publish({ ...session, user: next });
   });
 }
 
 // expectedToken protects a newly logged-in account from a late 401 belonging
 // to the previous session. Logout intentionally omits the argument.
 export function clearSession(expectedToken?: string): Promise<boolean> {
+  if (!initialized && expectedToken !== undefined) {
+    return initializeSession().then(() => clearSession(expectedToken));
+  }
+  if (expectedToken !== undefined && session.token !== expectedToken) return Promise.resolve(false);
+  generation++;
+  publish({ token: "", user: null });
   return serialize(async () => {
-    if (!initialized && expectedToken !== undefined) session = await readSessionStorage();
-    if (expectedToken !== undefined && session.token !== expectedToken) return false;
     await removeSessionStorage();
-    publish({ token: "", user: null });
     return true;
   });
 }

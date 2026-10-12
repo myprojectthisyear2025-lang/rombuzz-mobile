@@ -99,7 +99,7 @@ export function createStep6SummaryStyles(
     },
 
     reviewScroll: {
-      maxHeight: 510,
+      width: "100%",
     },
 
     reviewContent: {
@@ -200,14 +200,14 @@ export function createStep6SummaryStyles(
 
     photosRow: {
       flexDirection: "row",
-      gap: 6,
+      flexWrap: "wrap",
+      gap: 10,
       marginTop: 10,
-      overflow: "hidden",
     },
 
     photoThumb: {
-      width: 47,
-      height: 54,
+      width: "48%",
+      aspectRatio: 0.8,
       borderRadius: 8,
       backgroundColor:
         colors.surfaceMuted,

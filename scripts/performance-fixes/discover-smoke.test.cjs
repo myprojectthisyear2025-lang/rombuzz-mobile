@@ -1,8 +1,9 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {React,act,deferred}=require('./harness.cjs');
 const {screenHarness}=require('./screenHarness.cjs');
-function setup(){
+function setup(consented=true){
   const h=screenHarness(),gps=deferred(),snapshots=[];
+  if(consented)h.storage.set("RBZ_LOCATION_CHOICE_V1:alice:discover","true");
   h.mocks['expo-router'].useLocalSearchParams=()=>({});
   h.mocks['@/src/features/discover/useDiscoverVisuals']={useDiscoverVisuals:()=>({colors:{},styles:{}})};
   h.mocks['@/src/features/discover/DiscoverCardActions']={default:'Actions',__esModule:true};
@@ -12,7 +13,7 @@ function setup(){
   h.mocks['react-native-gesture-handler']={Gesture:{Pan:chain},GestureDetector:'Gesture',GestureHandlerRootView:'Deck'};
   h.mocks['react-native-reanimated']={__esModule:true,default:{View:'AnimatedView'},Extrapolate:{CLAMP:'clamp'},
     interpolate:()=>0,useSharedValue:value=>React.useRef({value}).current,useAnimatedStyle:f=>f(),withSpring:v=>v,withTiming:v=>v,runOnJS:f=>f};
-  h.mocks['expo-location']={Accuracy:{Balanced:1},requestForegroundPermissionsAsync:async()=>({status:'granted'}),
+  h.mocks['expo-location']={Accuracy:{Balanced:1},getForegroundPermissionsAsync:async()=>({status:"granted"}),requestForegroundPermissionsAsync:async()=>({status:'granted'}),
     getLastKnownPositionAsync:async()=>({coords:{latitude:1,longitude:1}}),getCurrentPositionAsync:()=>gps.promise,reverseGeocodeAsync:async()=>[]};
   const date=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z/,'Z');
   const url=(asset,sig)=>`https://test.r2.cloudflarestorage.com/${asset}.jpg?X-Amz-Date=${date}&X-Amz-Expires=3600&X-Amz-Signature=${sig}`;
@@ -74,4 +75,23 @@ test('network failure preserves the cached Discover card and its selected photo'
   await act(async()=>pending.reject(new Error('Offline')));
   assert.equal(top(),mounted);assert.equal(top().props.source.uri,uri);
   await h.unmount();
+});
+
+
+test('OS-granted Discover stays off by default; disabling during GPS prevents coordinate upload',async()=>{
+ const {h,Screen,gps,user}=setup(false);let gpsCalls=0,permissionAsks=0;
+ h.mocks['expo-location'].getCurrentPositionAsync=()=>{gpsCalls++;return gps.promise;};
+ h.mocks['expo-location'].requestForegroundPermissionsAsync=async()=>{permissionAsks++;return{status:'granted'};};
+ h.setFetch(()=>({users:[user]}));await h.mount(Screen);
+ const toggle=()=>h.tree.root.findAllByType('Pressable').find(p=>p.props.accessibilityLabel==='Discover live location');
+ assert.equal(toggle().props.accessibilityState.checked,false);assert.equal(gpsCalls,0);assert.equal(permissionAsks,0);
+ assert.ok(h.requests.length>0);assert.ok(h.requests.every(r=>!new URL(r.url).searchParams.has('lat')));
+ let enabling;await act(async()=>{enabling=toggle().props.onPress();});
+ assert.equal(permissionAsks,1);assert.ok(gpsCalls>0);
+ const disabledAt=h.requests.length;
+ await act(async()=>toggle().props.onPress());assert.equal(toggle().props.accessibilityState.checked,false);
+ await act(async()=>gps.resolve({coords:{latitude:40,longitude:50}}));await enabling;
+ assert.ok(h.requests.slice(disabledAt).every(r=>!new URL(r.url).searchParams.has('lat')));
+ assert.ok(h.requests.every(r=>new URL(r.url).searchParams.get('lat')!=='40'));
+ assert.equal(h.storage.get('RBZ_LOCATION_CHOICE_V1:alice:discover'),'false');await h.unmount();
 });

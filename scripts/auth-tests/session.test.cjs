@@ -19,7 +19,7 @@ test("one startup read migrates a large user losslessly and keeps legacy ID alia
   assert.equal(h.reads.filter(key => key === "RBZ_USER").length, 1);
   assert.deepEqual(JSON.parse(h.cache.get(USER_KEY)), full);
   const identity = JSON.parse(h.secure.get("RBZ_USER"));
-  assert.deepEqual(identity, { id: user.id, _id: user.id, rbzSessionVersion: 1 });
+  assert.deepEqual(identity, { id: user.id, _id: user.id, rbzSessionVersion: 1, tokenBinding: "token-a" });
   assert.ok(h.writes.every(([, value]) => Buffer.byteLength(value) <= 2048));
   const reads = h.reads.length;
   await h.session.getCurrentUser();
@@ -101,9 +101,10 @@ test("API 401 clears the current session once; a late prior-session 401 preserve
   const h = createHarness({ secure: legacy() });
   const api = h.load("src/performance/api/rbzApiClient.ts");
   const gate = deferred();
-  h.setFetch(async () => { await gate.promise; return { ok: false, status: 401, text: async () => '{"error":"jwt expired"}' }; });
+  const started = deferred();
+  h.setFetch(async () => { started.resolve(); await gate.promise; return { ok: false, status: 401, text: async () => '{"error":"jwt expired"}' }; });
   const oldRequest = api.rbzApiJson("/profile/full");
-  await h.session.initializeSession();
+  await started.promise;
   await h.session.setSession("token-b", { id: "member-b" });
   gate.resolve();
   await assert.rejects(oldRequest, /jwt expired/);

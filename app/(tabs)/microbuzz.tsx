@@ -66,7 +66,8 @@ import { useRetainedState } from "@/src/features/lifecycle/useRetainedState";
 import { useMicroBuzzVisuals } from "@/src/features/microbuzz/useMicroBuzzVisuals";
 import { useMicroBuzzLiveWork } from "@/src/features/microbuzz/useMicroBuzzLiveWork";
 import * as SecureStore from "expo-secure-store";
-import { getCurrentUser } from "@/src/features/auth/rbzSession";
+import { useLocationConsent } from "@/src/features/location/useLocationConsent";
+import { getSessionGeneration, getSessionSnapshot, isSessionCurrent, subscribeSession, getCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -111,11 +112,6 @@ const RBZ = {
   glow: "rgba(216,52,95,0.3)",
   glowIntense: "rgba(216,52,95,0.6)",
 } as const;
-
-// MicroBuzz permission cache keys
-const MBZ_CAMERA_GRANTED_KEY = "RBZ_MICROBUZZ_CAMERA_GRANTED";
-const MBZ_LOCATION_GRANTED_KEY = "RBZ_MICROBUZZ_LOCATION_GRANTED";
-const MBZ_ONBOARDED_KEY = "RBZ_MICROBUZZ_ONBOARDED";
 
 // Dynamic status messages
 const STATUS_MESSAGES = {
@@ -218,6 +214,9 @@ function metersLabel(m?: number) {
 
 function MicroBuzzScreen() {
   const activity = useScreenActivity();
+  const locationChoice = useLocationConsent("microbuzz");
+  const sessionOwner = useRef(getSessionGeneration()).current;
+  const sessionToken = useRef(getSessionSnapshot().token).current;
   const { isActive: isScreenActive, isForeground: isAppForeground } = activity;
   const { tipIndex, statusMessageIndex, sweep, pulse, glowPulse, sweepValueRef } =
     useMicroBuzzVisuals(activity.active, TIPS.length);
@@ -314,7 +313,19 @@ function MicroBuzzScreen() {
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
-  useEffect(() => () => { isActiveRef.current = false; }, []);
+  useEffect(() => {
+    const stop = () => {
+      const wasLive = isActiveRef.current;
+      isActiveRef.current = false;
+      coordsRef.current = null;
+      cancelScan();
+      if (wasLive) void fetch(`${API_BASE}/microbuzz/deactivate`, {
+        method: "POST", headers: { Authorization: `Bearer ${sessionToken}` },
+      }).catch(() => {});
+    };
+    const unsubscribe = subscribeSession(() => { if (!isSessionCurrent(sessionOwner)) stop(); });
+    return () => { unsubscribe(); stop(); };
+  }, [sessionOwner, sessionToken]);
 
   useEffect(() => {
     coordsRef.current = coords;
@@ -371,103 +382,10 @@ function MicroBuzzScreen() {
     };
   }, [setRadarGender]);
 
-  // Permission helpers
-  async function syncCurrentLocation() {
-    if (!isScreenActive()) return coordsRef.current;
-    try {
-      const perm = await Location.getForegroundPermissionsAsync();
-      const granted = perm.status === "granted";
-      setLocGranted(granted);
-      if (!granted || !isScreenActive()) return null;
-
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      setCoords(next);
-      coordsRef.current = next;
-      return next;
-    } catch {
-      return coordsRef.current;
-    }
-  }
-
-  async function persistMicroBuzzPermissionCache(cameraGranted: boolean, locationGranted: boolean) {
-    try {
-      await SecureStore.setItemAsync(MBZ_CAMERA_GRANTED_KEY, cameraGranted ? "true" : "false");
-    } catch {}
-    try {
-      await SecureStore.setItemAsync(MBZ_LOCATION_GRANTED_KEY, locationGranted ? "true" : "false");
-    } catch {}
-
-    // Keep onboarded flag in sync: only true when both are granted
-    try {
-      const onboarded = cameraGranted && locationGranted ? "true" : "false";
-      await SecureStore.setItemAsync(MBZ_ONBOARDED_KEY, onboarded);
-    } catch {}
-  }
-
-  async function checkAndSyncMicroBuzzPermissions({ askCamera = false, askLocation = false } : { askCamera?: boolean; askLocation?: boolean }) {
-    // Camera
-    let cameraGranted = !!camPerm?.granted;
-    // Only request camera if we are explicitly asking AND camera is not already granted
-    if (askCamera && !cameraGranted) {
-      try {
-        const r = await requestCamPerm();
-        cameraGranted = r?.granted === true;
-      } catch {
-        cameraGranted = !!camPerm?.granted;
-      }
-    }
-
-    // Location
-    let locationGranted = false;
-    try {
-      const current = await Location.getForegroundPermissionsAsync();
-      locationGranted = current.status === "granted";
-      if (!locationGranted && askLocation) {
-        const req = await Location.requestForegroundPermissionsAsync();
-        locationGranted = req.status === "granted";
-      }
-    } catch {
-      locationGranted = false;
-    }
-
-    // Persist a cache for quick checks (doesn't replace OS truth)
-    await persistMicroBuzzPermissionCache(cameraGranted, locationGranted);
-
-    // Update local state
-    setLocGranted(locationGranted);
-
-    // If location is granted, immediately sync coords; otherwise clear coords
-    if (locationGranted) {
-      try {
-        await syncCurrentLocation();
-      } catch {
-        // ignore
-      }
-    } else {
-      setCoords(null);
-      coordsRef.current = null;
-    }
-
-    return { cameraGranted, locationGranted };
-  }
-
+  // Entry checks OS state only when this account explicitly enabled this feature.
   async function ensureMicroBuzzPermissionsOnEntry() {
-    try {
-      const onboarded = await SecureStore.getItemAsync(MBZ_ONBOARDED_KEY);
-
-      if (onboarded !== "true") {
-        // Not onboarded: request missing permissions (ask flow)
-        await checkAndSyncMicroBuzzPermissions({ askCamera: true, askLocation: true });
-        // persistMicroBuzzPermissionCache already sets MBZ_ONBOARDED only when both granted
-      } else {
-        // Already onboarded: silently re-check OS state
-        await checkAndSyncMicroBuzzPermissions({ askCamera: false, askLocation: false });
-        // If permissions were revoked in settings, persistMicroBuzzPermissionCache will update MBZ_ONBOARDED to false
-      }
-    } catch {
-      // ignore
-    }
+    if (!locationChoice.isEnabled() || !isScreenActive()) { setLocGranted(false); return; }
+    await refreshLocation();
   }
 
   const radarSize = useMemo(() => {
@@ -486,11 +404,16 @@ function MicroBuzzScreen() {
   });
   useEffect(() => {
     if (activity.active) void syncEntryPermissions();
-  }, [activity.active, camPerm?.granted, syncEntryPermissions]);
+  }, [activity.active, locationChoice.enabled, syncEntryPermissions]);
+
+  useEffect(() => {
+    if (!locationChoice.enabled && isActiveRef.current) void deactivateMicroBuzz();
+  }, [locationChoice.enabled]);
 
   // API helpers
   async function apiFetch(path: string, init?: RequestInit) {
-    const token = await getToken();
+    if (!isSessionCurrent(sessionOwner)) throw new Error("SESSION_CHANGED");
+    const token = sessionToken;
     const res = await fetch(`${API_BASE}${path}`, {
       ...(init || {}),
       headers: {
@@ -502,7 +425,8 @@ function MicroBuzzScreen() {
   }
 
     async function uploadSelfie(uri: string) {
-    const token = await getToken();
+    if (!isSessionCurrent(sessionOwner)) throw new Error("SESSION_CHANGED");
+    const token = sessionToken;
     const form = new FormData();
 
     form.append("selfie", {
@@ -562,13 +486,15 @@ function MicroBuzzScreen() {
 
   // REFRESH LOCATION: always query OS permission state each time before getting location
   async function refreshLocation() {
-    if (!isAppForeground()) return null;
+    const consentRevision = locationChoice.getRevision();
+    if (!isAppForeground() || !locationChoice.isEnabled()) return null;
     try {
       const perm = await Location.getForegroundPermissionsAsync();
       const granted = perm.status === "granted";
 
       // If not granted, explicitly clear local coords and mark location as not granted
-      if (!granted) {
+      if (!granted || !locationChoice.isEnabled()) {
+        if (!granted) void locationChoice.disable();
         setLocGranted(false);
         setCoords(null);
         coordsRef.current = null;
@@ -580,6 +506,8 @@ function MicroBuzzScreen() {
 
       if (!isAppForeground()) return null;
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (!isAppForeground() || !locationChoice.isEnabled()) return null;
+      if (consentRevision !== locationChoice.getRevision()) return null;
       const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       setCoords(next);
       coordsRef.current = next;
@@ -594,13 +522,16 @@ function MicroBuzzScreen() {
   }
 
   async function heartbeatActivate() {
-    if (!isAppForeground() || !isActiveRef.current) return;
+    let sent = false;
+    const consentRevision = locationChoice.getRevision();
+    if (!isAppForeground() || !isActiveRef.current || !locationChoice.isEnabled()) return;
     const c = coordsRef.current;
     if (!c) return;
 
     try {
       const sUrl = await ensureFreshMicroBuzzSelfieUpload();
-      if (!sUrl || !isAppForeground() || !isActiveRef.current) return;
+      if (!sUrl || !isAppForeground() || !isActiveRef.current || !locationChoice.isEnabled() || consentRevision !== locationChoice.getRevision()) return;
+      sent = true;
 
       await apiFetch("/microbuzz/activate", {
         method: "POST",
@@ -612,12 +543,16 @@ function MicroBuzzScreen() {
         }),
       });
     } catch {
-      // silent
+      // A pending activation can finish after disable/logout. Clean it up with its original token.
+    } finally {
+      if (sent && (!isActiveRef.current || !locationChoice.isEnabled() || consentRevision !== locationChoice.getRevision())) {
+        await fetch(`${API_BASE}/microbuzz/deactivate`, { method: "POST", headers: { Authorization: `Bearer ${sessionToken}` } }).catch(() => {});
+      }
     }
   }
 
   async function scanNearby() {
-    if (!isActiveRef.current || !isScreenActive() || scanRequestRef.current) return;
+    if (!locationChoice.isEnabled() || !isActiveRef.current || !isScreenActive() || scanRequestRef.current) return;
 
     const c =
       coordsRef.current;
@@ -874,8 +809,9 @@ function MicroBuzzScreen() {
 
   // Activate / Deactivate
   async function activateMicroBuzz() {
+    const consentRevision = locationChoice.getRevision();
     try {
-      if (!locGranted) throw new Error("Location permission not granted");
+      if (!locationChoice.isEnabled() || !locGranted) throw new Error("Enable MicroBuzz location first");
       if (!coordsRef.current) throw new Error("No location yet");
       if (!mySelfieLocalUri) throw new Error("Take a selfie first");
       
@@ -888,7 +824,9 @@ function MicroBuzzScreen() {
         throw new Error("Selfie upload failed");
       }
 
-      const c = coordsRef.current!;
+      if (!isSessionCurrent(sessionOwner) || !locationChoice.isEnabled() || consentRevision !== locationChoice.getRevision()) return;
+      const c = coordsRef.current;
+      if (!c) return;
       const res = await apiFetch("/microbuzz/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -902,6 +840,10 @@ function MicroBuzzScreen() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Activate failed");
 
+      if (!isSessionCurrent(sessionOwner) || !locationChoice.isEnabled() || consentRevision !== locationChoice.getRevision()) {
+        await fetch(`${API_BASE}/microbuzz/deactivate`, { method: "POST", headers: { Authorization: `Bearer ${sessionToken}` } }).catch(() => {});
+        return;
+      }
       setIsActive(true);
       isActiveRef.current = true;
       setLiveStartTime(new Date());
@@ -1206,17 +1148,14 @@ function MicroBuzzScreen() {
   }
 
   async function handleLocationControl() {
-    Haptics.impactAsync(
-      Haptics
-        .ImpactFeedbackStyle
-        .Light
-    );
-
-    if (
-      isActiveRef.current
-    ) {
-      await tickOnce();
-    } else {
+    if (locationChoice.isEnabled()) {
+      const disabled = locationChoice.disable();
+      setLocGranted(false);
+      coordsRef.current = null;
+      setCoords(null);
+      await deactivateMicroBuzz();
+      await disabled;
+    } else if (await locationChoice.enable()) {
       await refreshLocation();
     }
   }
@@ -1661,7 +1600,7 @@ function MicroBuzzScreen() {
             getStatusMessage()
           }
           locationGranted={
-            locGranted
+            locationChoice.enabled && locGranted
           }
           radarGender={
             radarGender

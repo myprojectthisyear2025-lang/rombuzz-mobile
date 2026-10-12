@@ -139,8 +139,8 @@ export default function MicroBuzzHeader({
           }
           subtitle={
             locationGranted
-              ? "Finding people nearby"
-              : "Location permission required"
+              ? "Tap to turn location off"
+              : "Tap to enable location"
           }
           onPress={
             onLocationPress

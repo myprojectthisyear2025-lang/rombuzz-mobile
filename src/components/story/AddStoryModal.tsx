@@ -374,13 +374,14 @@ const panResponder = useRef(
   };
 
   const pickMedia = async (fromCamera: boolean) => {
-    const perm = fromCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    // Camera capture needs permission; gallery selection uses the system picker.
+    if (fromCamera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
 
-    if (perm.status !== "granted") {
-      Alert.alert("Permission required", "Please allow access to continue.");
-      return;
+      if (perm.status !== "granted") {
+        Alert.alert("Permission required", "Please allow camera access to continue.");
+        return;
+      }
     }
 
     const res = fromCamera

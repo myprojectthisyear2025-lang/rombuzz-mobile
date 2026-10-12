@@ -101,7 +101,7 @@ const LEGACY_LOOKING_FOR_ALIASES: Record<string, string> = {
 
 /**
  * Values from old explicit categories are intentionally not converted into
- * another person's romantic intent. They safely fall back to New Connections.
+ * another person's romantic intent. Preserve the saved text for display.
  */
 const LEGACY_REMOVED_VALUES = new Set([
   "gymbuddy",
@@ -143,7 +143,7 @@ export function lookingForKeyFromValue(
   }
 
   if (LEGACY_REMOVED_VALUES.has(normalized)) {
-    return "new-connections";
+    return raw;
   }
 
   return LEGACY_LOOKING_FOR_ALIASES[normalized] || raw;

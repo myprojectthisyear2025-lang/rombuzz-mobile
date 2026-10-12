@@ -11,7 +11,7 @@ import ProfileInfoTab from "@/src/components/profile/ProfileInfoTab";
 import AddStoryModal from "@/src/components/story/AddStoryModal";
 import StoryViewer from "@/src/components/story/StoryViewer";
 
-import { clearSession, persistCurrentUser } from "@/src/features/auth/rbzSession";
+import { getSessionGeneration, getSessionSnapshot, isSessionCurrent, clearSession, persistCurrentUser as persistSessionProfile } from "@/src/features/auth/rbzSession";
 import { useRetainedState } from "@/src/features/lifecycle/useRetainedState";
 import { useLatestCallback, useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
 import { Ionicons } from "@expo/vector-icons";
@@ -194,17 +194,19 @@ function computeCompletion(u: any) {
 
 
 async function getTokenOrThrow() {
-  const t = await SecureStore.getItemAsync("RBZ_TOKEN");
+  const t = getSessionSnapshot().token;
   if (!t) throw new Error("RBZ_TOKEN missing");
   return t;
 }
 
-async function apiFetch(path: string, init: RequestInit = {}) {
+async function profileApiFetch(path: string, init: RequestInit = {}, owner: number) {
+  if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
   init = init || {};
   let token: string;
 
   try {
     token = await getTokenOrThrow();
+    if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
   } catch {
     // Token missing → force logout
     await clearSession("");
@@ -220,6 +222,7 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   });
 
   const data = await res.json().catch(() => ({}));
+  if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
 
   if (!res.ok) {
     const msg = data?.error || "Request failed";
@@ -240,11 +243,13 @@ async function apiFetch(path: string, init: RequestInit = {}) {
 }
 
 
-async function apiJson(path: string, method: string, body: any) {
+async function profileApiJson(path: string, method: string, body: any, owner: number) {
+  if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
   let token: string;
 
   try {
     token = await getTokenOrThrow();
+    if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
   } catch {
     await clearSession("");
     throw new Error("SESSION_EXPIRED");
@@ -260,6 +265,7 @@ async function apiJson(path: string, method: string, body: any) {
   });
 
   const data = await res.json().catch(() => ({}));
+  if (!isSessionCurrent(owner)) throw new Error("SESSION_CHANGED");
 
   if (!res.ok) {
     const msg = data?.error || "Request failed";
@@ -512,6 +518,10 @@ function computeAgeFromDob(dob?: string) {
 }
 
 function ProfileScreen() {
+  const sessionOwner = useRef(getSessionGeneration()).current;
+  const apiFetch = useCallback((path: string, init: RequestInit = {}) => profileApiFetch(path, init, sessionOwner), [sessionOwner]);
+  const apiJson = useCallback((path: string, method: string, body: any) => profileApiJson(path, method, body, sessionOwner), [sessionOwner]);
+  const persistCurrentUser = useCallback((profile: any) => persistSessionProfile(profile, sessionOwner), [sessionOwner]);
   const activity = useScreenActivity();
   const { isActive: isScreenActive } = activity;
   const router = useRouter();
@@ -620,7 +630,7 @@ const profilePerf = useCachedProfile();
       profilePerf.writeCachedProfile(merged).catch(() => {});
 
       if (Object.prototype.hasOwnProperty.call(patch, "lookingFor")) {
-        await syncProfileLookingForToDiscover(patch.lookingFor);
+        if (isSessionCurrent(sessionOwner)) await syncProfileLookingForToDiscover(patch.lookingFor);
       }
 
       setEditingField(null);
@@ -1037,7 +1047,7 @@ useEffect(() => {
       u = await rbzGetCurrentUser().catch(() => null);
     }
 
-    if (!u) return false;
+    if (!u || !isSessionCurrent(sessionOwner)) return false;
 
     perfState("profile", "cache");
     setUser(u);
@@ -1159,6 +1169,7 @@ useEffect(() => {
       const asset = pick.assets?.[0];
       if (!asset?.uri) return;
 
+      if (!isSessionCurrent(sessionOwner)) return;
       const uploaded = await uploadRomBuzzMedia(asset.uri, "image", {
         purpose: "avatar",
       });
@@ -1295,6 +1306,7 @@ setStoryOpen(true);
         return;
       }
 
+      if (!isSessionCurrent(sessionOwner)) return;
       const uploaded = await uploadRomBuzzMedia(
         asset.uri,
         isVideo ? "video" : "image",
@@ -1384,6 +1396,7 @@ setStoryOpen(true);
 
       setUploading(true);
 
+      if (!isSessionCurrent(sessionOwner)) return;
       const uploaded = await uploadRomBuzzMedia(uri, "audio", {
         purpose: "voice-intro",
       });

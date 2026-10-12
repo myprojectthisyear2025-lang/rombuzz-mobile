@@ -81,6 +81,7 @@ export function createNotificationStore(deps: Dependencies) {
     refresh,
     setItems,
     receive(raw: any) {
+      if (!token || !userId) return;
       const item = normalizeNotifications([raw])[0];
       if (!item || (item.toId && item.toId !== userId) || state.items.some(n=>n.id===item.id)) return;
       revision++;

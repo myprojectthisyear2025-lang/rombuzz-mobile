@@ -18,9 +18,9 @@
  * ============================================================
  */
 
+import { saveMediaToPhone } from "@/src/utils/saveMediaToPhone";
 import { Ionicons } from "@expo/vector-icons";
 import { AVPlaybackStatus, ResizeMode, Video } from "expo-av";
-import * as MediaLibrary from "expo-media-library";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -236,16 +236,8 @@ export default function ChatUploadPreview({
     try {
       setDownloadBusy(true);
 
-      const permission = await MediaLibrary.requestPermissionsAsync();
-      if (!permission?.granted) {
-        Alert.alert(
-          "Permission needed",
-          "Allow photo library access to save this media to your phone."
-        );
-        return;
-      }
-
-      await MediaLibrary.saveToLibraryAsync(selected.uri);
+      // Save only this selected file without requesting gallery read access.
+      await saveMediaToPhone(selected.uri);
 
       Alert.alert(
         "Saved",

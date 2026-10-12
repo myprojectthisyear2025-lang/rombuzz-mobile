@@ -72,7 +72,7 @@ function summarizeValue(
 export default function ProfileInfoRow({
   label,
   value,
-  placeholder = "Add",
+  placeholder = "Not provided",
   onPress,
   maxItems,
 }: Props) {

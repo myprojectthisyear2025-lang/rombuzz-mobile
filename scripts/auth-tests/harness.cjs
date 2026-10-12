@@ -65,7 +65,7 @@ function createHarness({ secure = new Map(), cache = new Map() } = {}) {
     if (modules.has(absolute)) return modules.get(absolute).exports;
     const compiled = ts.transpileModule(fs.readFileSync(absolute, "utf8"), {
       fileName: absolute,
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+      compilerOptions: { jsx: ts.JsxEmit.React, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
     }).outputText;
     const module = { exports: {} }; modules.set(absolute, module);
     const localRequire = specifier => {
@@ -86,7 +86,7 @@ function createHarness({ secure = new Map(), cache = new Map() } = {}) {
     return module.exports;
   }
   return {
-    load, secure, cache, reads, writes, spans, events, faults, sockets, appListeners,
+    load, secure, cache, reads, writes, spans, events, faults, sockets, appListeners, mocks, virtual,
     session: load("src/features/auth/rbzSession.ts"),
     draft: load("src/features/auth/onboarding/rbzOnboardingDraft.ts"),
     setFetch: fn => { fetchImpl = fn; },
@@ -104,4 +104,4 @@ function createHarness({ secure = new Map(), cache = new Map() } = {}) {
     },
   };
 }
-module.exports = { createHarness, act };
+module.exports = { createHarness, act, React, renderer };

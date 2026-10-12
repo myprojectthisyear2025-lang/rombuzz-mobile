@@ -37,6 +37,7 @@ export function useChatListState() {
   const [query, setQuery] = useState("");
   const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
   const { byPeer: unreadMap, total: unreadTotal } = useUnreadSummary();
+  const inboxEventRevisionRef = useRef(0);
   const activePeerRef = useRef<string | null>(null);
   const stableAvatarByPeerRef = useRef<Record<string, string>>({});
   const myId = useMemo(() => String(user?.id || user?._id || ""), [user]);
@@ -162,7 +163,7 @@ export function useChatListState() {
     mutedPeers, setMutedPeers, alertPeers, setAlertPeers,
     manualUnreadPeers, setManualUnreadPeers, actionPeer, setActionPeer,
     query, setQuery, onlineMap, setOnlineMap,
-    unreadMap, activePeerRef, myId,
+    unreadMap, activePeerRef, inboxEventRevisionRef, myId,
     stableAvatarUrl, chatPerfRef, unreadTotal,
   };
 }

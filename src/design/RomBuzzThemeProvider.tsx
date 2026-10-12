@@ -79,10 +79,8 @@ export function RomBuzzThemeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  // TEMP: Dark-mode visual testing.
-  // Change back to "light" after Home is approved.
   const [mode, setModeState] =
-    useState<RomBuzzThemeMode>("dark");
+    useState<RomBuzzThemeMode>("system");
 
   const [
     systemScheme,

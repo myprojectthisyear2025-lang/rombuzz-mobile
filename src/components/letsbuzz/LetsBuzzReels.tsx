@@ -1,3 +1,4 @@
+import { getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
 import { perfState } from "@/src/performance/diagnostics/core";
 import { diagnosticImage } from "@/src/performance/diagnostics/media";
 import { withPerfScreen, usePerfContent } from "@/src/performance/diagnostics/screens";
@@ -218,6 +219,7 @@ function LetsBuzzReels({
   const insets = useSafeAreaInsets();
   const { colors } = useRomBuzzTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const sessionOwner = useRef(getSessionGeneration()).current;
   const listRef = useRef<FlatList<BuzzPost>>(null);
 
   const [loading, setLoading] = useRetainedState(activity, true);
@@ -404,9 +406,11 @@ function LetsBuzzReels({
     if (!isScreenActive()) return "";
     try {
       const headers = await authHeaders();
+      if (!isSessionCurrent(sessionOwner)) return "";
       if (!isScreenActive()) return "";
       const res = await fetch(`${API_BASE}/users/me`, { headers });
       const json = await res.json();
+      if (!isSessionCurrent(sessionOwner)) return "";
 
       const id = json?.user?.id || json?.id || json?.userId || "";
 
@@ -449,6 +453,7 @@ function LetsBuzzReels({
       feedRequestRef.current = request;
       try {
         const headers = await authHeaders();
+        if (!isSessionCurrent(sessionOwner)) return false;
 
         let myId = String(meIdRef.current || "");
         if (!myId) {
@@ -467,6 +472,7 @@ function LetsBuzzReels({
         );
 
         const json = await res.json();
+        if (!isSessionCurrent(sessionOwner)) return false;
         if (request.signal.aborted || !isScreenActive()) return false;
 
         const raw: any[] =
@@ -475,7 +481,7 @@ function LetsBuzzReels({
             : [];
 
         // Cache persistence must not block first paint.
-        writeCachedLetsBuzzFeed(raw).catch(
+        writeCachedLetsBuzzFeed(raw, sessionOwner).catch(
           () => {}
         );
 

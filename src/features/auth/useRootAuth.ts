@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import { perfSpan } from "@/src/performance/diagnostics/core";
 import {
@@ -8,6 +8,11 @@ import { sessionUserId } from "./rbzSessionStorage";
 import { hasOnboardingDraft, subscribeOnboardingDraft } from "./onboarding/rbzOnboardingDraft";
 
 export function useRootAuth() {
+  // External-store reads prevent a render with the previous account's identity.
+  const identity = useSyncExternalStore(subscribeSession, () => {
+    const value = getSessionSnapshot();
+    return JSON.stringify([value.token, sessionUserId(value.user)]);
+  });
   const [auth, setAuth] = useState({
     ready: false, authToken: "", authUserId: "", loggedIn: false, onboardingPending: false,
   });
@@ -67,5 +72,6 @@ export function useRootAuth() {
     };
   }, []);
 
-  return auth;
+  const [authToken, authUserId] = JSON.parse(identity) as [string, string];
+  return { ...auth, authToken, authUserId, loggedIn: !!authToken };
 }

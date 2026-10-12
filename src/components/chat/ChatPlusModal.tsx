@@ -23,8 +23,7 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
-  View,
+  Text
 } from "react-native";
 
 import * as ImagePicker from "expo-image-picker";
@@ -102,19 +101,7 @@ export default function ChatPlusModal({
       try {
         setLoading(true);
 
-        const current = await ImagePicker.getMediaLibraryPermissionsAsync();
-
-        if (!current?.granted) {
-          const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-          if (!req?.granted) {
-            setLoading(false);
-            Alert.alert("Gallery", "Permission is required to access your photos.");
-            closeAll();
-            return;
-          }
-        }
-
+        // The system picker grants access to the selected photo or video.
         const res = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.All,
           quality: 1,

@@ -519,15 +519,6 @@ export default function Step2Prefs({
       );
     })}
 
-    {/* + Add Interest button */}
-    {!showAdd && (
-      <TouchableOpacity
-        style={styles.addChip}
-        onPress={() => setShowAdd(true)}
-      >
-        <Text style={styles.addChipText}>+ Add Interest</Text>
-      </TouchableOpacity>
-    )}
   </ScrollView>
 
   {/* Text input for adding interest */}
