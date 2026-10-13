@@ -19,7 +19,7 @@
  * ============================================================================
  */
 
-import * as ImagePicker from "expo-image-picker";
+import { pickSignupPhotos } from "@/src/features/auth/onboarding/pickSignupPhotos";
 import React, { useState } from "react";
 import {
   Alert,
@@ -77,10 +77,11 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
     }
   };
 
-  const updatePhotoAt = (index: number, value: string) => {
-    const next = [...photos];
-    next[index] = value;
-    syncPhotos(next);
+  const applyPickedPhotos = (
+    result: { photos: string[]; avatar: string }
+  ) => {
+    syncPhotos(result.photos);
+    setField("avatar", result.avatar);
   };
 
   const addSlot = () => {
@@ -119,17 +120,14 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
 
   const choosePhotoForIndex = async (index: number) => {
     try {
-      const pick = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.85,
-      });
+      const result = await pickSignupPhotos(
+        photos,
+        index,
+        form.avatar,
+        MAX_PHOTOS,
+      );
 
-      if (pick.canceled) return;
-
-      const asset = pick.assets?.[0];
-      if (!asset?.uri) return;
-
-      updatePhotoAt(index, asset.uri);
+      if (result) applyPickedPhotos(result);
     } catch (err: any) {
       Alert.alert(
         "Photos",
@@ -167,8 +165,9 @@ function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
       >
         <Text style={styles.title}>Add your photos</Text>
         <Text style={styles.subtitle}>
-          Add at least {MIN_PHOTOS} clear photos. Tap a slot to choose from your
-          gallery. First one becomes your profile photo (you can change it).
+          Choose {MIN_PHOTOS}–{MAX_PHOTOS} clear photos. Tap an empty slot to
+          select several at once, or tap a photo to replace it. You can choose
+          which photo becomes your profile picture.
         </Text>
 
               {photos.map((url, index) => {

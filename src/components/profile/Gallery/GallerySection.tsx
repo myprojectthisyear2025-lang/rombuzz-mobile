@@ -186,6 +186,11 @@ useEffect(() => {
 const [publishOpen, setPublishOpen] = useState(false);
 
   const [pickedAsset, setPickedAsset] = useState<{ uri: string; isVideo: boolean } | null>(null);
+  const remainingAssetsRef = useRef<
+    { uri: string; isVideo: boolean }[]
+  >([]);
+  const pickerBusyRef = useRef(false);
+  const publishBusyRef = useRef(false);
 
   const [kind, setKind] = useState<MediaKind>("photo");
   const [scope, setScope] = useState<PublishScope>("public");
@@ -267,24 +272,32 @@ useEffect(() => {
 ]);
 
 const openPicker = async (target: MediaKind) => {
-  if (uploading) return;
+  if (uploading || pickerBusyRef.current || publishBusyRef.current) return;
 
-  const picked = await pickMedia(target);
-  if (!picked) return;
+  pickerBusyRef.current = true;
+  try {
+    const picked = await pickMedia(target);
+    if (!picked) return;
 
-  setPickedAsset(picked);
-
-  setKind(target);
-  setScope("public");
-  setIntent(target === "reel" ? "letsbuzz" : "discover");
-  setCaptionText("");
-  setPublishOpen(true);
+    remainingAssetsRef.current = picked.remaining;
+    setPickedAsset({ uri: picked.uri, isVideo: picked.isVideo });
+    setKind(target);
+    setScope("public");
+    setIntent(target === "reel" ? "letsbuzz" : "discover");
+    setCaptionText("");
+    setPublishOpen(true);
+  } catch (error: any) {
+    Alert.alert("Gallery", error?.message || "Could not open your gallery.");
+  } finally {
+    pickerBusyRef.current = false;
+  }
 };
 
 
    const savePicked = async () => {
-  if (!pickedAsset) return;
+  if (!pickedAsset || publishBusyRef.current) return;
 
+  publishBusyRef.current = true;
   try {
     setUploading(true);
 
@@ -346,15 +359,25 @@ const openPicker = async (target: MediaKind) => {
 
     console.log("UPLOAD RESPONSE:", JSON.stringify(saved, null, 2));
 
-    setPublishOpen(false);
-    setPickedAsset(null);
+    const nextAsset = remainingAssetsRef.current.shift() || null;
+    setPickedAsset(nextAsset);
+    setPublishOpen(!!nextAsset);
+    setCaptionText("");
 
-    await onRefresh();
+    // Keep the selected privacy for the next photo; caption starts fresh.
+    try {
+      await onRefresh();
+    } catch {
+      Alert.alert("Gallery", "Photo saved. Gallery refresh failed.");
+    }
 
-    Alert.alert("Gallery", "Uploaded!");
+    if (!nextAsset) {
+      Alert.alert("Gallery", "All selected photos uploaded!");
+    }
   } catch (e: any) {
     Alert.alert("Gallery", e?.message || "Upload failed");
   } finally {
+    publishBusyRef.current = false;
     setUploading(false);
   }
 };
@@ -373,8 +396,22 @@ const openPicker = async (target: MediaKind) => {
 };
 
 const closePublish = () => {
-  setPublishOpen(false);
-  setPickedAsset(null);
+  if (publishBusyRef.current) return;
+
+  const discard = () => {
+    remainingAssetsRef.current = [];
+    setPublishOpen(false);
+    setPickedAsset(null);
+  };
+
+  if (remainingAssetsRef.current.length) {
+    Alert.alert("Discard selected photos?", "Unshared photos will be discarded.", [
+      { text: "Keep editing", style: "cancel" },
+      { text: "Discard", style: "destructive", onPress: discard },
+    ]);
+  } else {
+    discard();
+  }
 };
 
  const togglePrivacyQuick = async () => {

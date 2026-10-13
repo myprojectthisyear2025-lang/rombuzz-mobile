@@ -1,13 +1,13 @@
-import { useMemo, useState } from "react";
-import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
-import { useChatThreadMessages } from "@/src/features/chat/thread/useChatThreadMessages";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { maybeDecode } from "@/src/features/chat/thread/chatPayload";
 import { getReplyPreviewText } from "@/src/features/chat/thread/chatReplyUtils";
 import { useChatMediaSender } from "@/src/features/chat/thread/useChatMediaSender";
 import { useChatThreadFastOpen } from "@/src/features/chat/thread/useChatThreadFastOpen";
+import { useChatThreadMessages } from "@/src/features/chat/thread/useChatThreadMessages";
 import { useChatThreadViewport } from "@/src/features/chat/thread/useChatThreadViewport";
+import { useScreenActivity } from "@/src/features/lifecycle/useScreenActivity";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useChatComposer } from "./hooks/useChatComposer";
 import { useChatEphemeralMedia } from "./hooks/useChatEphemeralMedia";
 import { useChatIdentity } from "./hooks/useChatIdentity";
@@ -136,6 +136,7 @@ export function useChatWindowController() {
     focusMsgId,
     messages,
     setMessages,
+    getCurrentMessages,
     loading,
     chatListMessages,
     mine,

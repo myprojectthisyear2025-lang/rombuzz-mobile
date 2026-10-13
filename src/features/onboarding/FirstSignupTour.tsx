@@ -1,26 +1,31 @@
 /**
- * Path: src/features/onboarding/FirstSignupTour.tsx
- * Purpose: Shared RomBuzz product Tour for genuine signup and Settings replay.
+ * 📁 File: src/features/onboarding/FirstSignupTour.tsx
+ * 🎯 Purpose: Present RomBuzz's eight-page feature tour.
+ * Used by: First-signup onboarding and Settings replay.
+ * Preserves: Account-scoped completion, skip, back, and replay behavior.
  */
 
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
-import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Animated,
-  Modal,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Animated, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { createFirstSignupTourStyles } from "./FirstSignupTour.styles";
 import FirstSignupTourPreview from "./FirstSignupTourPreview";
 import { FIRST_SIGNUP_TOUR_STEPS } from "./firstSignupTourSteps";
 import { useFirstSignupTour } from "./useFirstSignupTour";
+
+const HEADINGS = {
+  home: "Start with your vibe",
+  discover: "Meet your next connection",
+  microbuzz: "Connect in the moment",
+  letsbuzz: "See more of your matches",
+  chat: "Keep the conversation going",
+  social: "See who’s connecting",
+  notifications: "Stay in the loop",
+  profile: "Make it yours",
+};
 
 export default function FirstSignupTour() {
   const { colors, isDark } = useRomBuzzTheme();
@@ -29,10 +34,11 @@ export default function FirstSignupTour() {
   const { visible, entry, complete } = useFirstSignupTour();
   const [index, setIndex] = useState(0);
   const fade = useRef(new Animated.Value(1)).current;
-
+  const scrollRef = useRef<ScrollView>(null);
+  const total = FIRST_SIGNUP_TOUR_STEPS.length;
   const step = FIRST_SIGNUP_TOUR_STEPS[index];
   const isFirst = index === 0;
-  const isLast = index === FIRST_SIGNUP_TOUR_STEPS.length - 1;
+  const isLast = index === total - 1;
   const isReplay = entry === "settings";
 
   useEffect(() => {
@@ -40,12 +46,15 @@ export default function FirstSignupTour() {
   }, [visible]);
 
   useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
     fade.setValue(0);
-    Animated.timing(fade, {
+    const animation = Animated.timing(fade, {
       toValue: 1,
       duration: 180,
       useNativeDriver: true,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [fade, index]);
 
   const goBack = () => {
@@ -57,7 +66,7 @@ export default function FirstSignupTour() {
       await complete();
       return;
     }
-    setIndex((current) => current + 1);
+    setIndex((current) => Math.min(current + 1, total - 1));
   };
 
   const handleRequestClose = () => {
@@ -79,273 +88,88 @@ export default function FirstSignupTour() {
     >
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         <StatusBar style={isDark ? "light" : "dark"} />
-
         <View style={styles.screen}>
           <View style={styles.topBar}>
-            <View style={styles.brandWrap}>
-              <Text style={styles.brand}>Rom</Text>
-
-              <Text
-                style={[
-                  styles.brand,
-                  styles.brandAccent,
-                ]}
-              >
-                Buzz
-              </Text>
-            </View>
-
+            <Text style={styles.brand}>
+              Rom<Text style={styles.brandAccent}>Buzz</Text>
+            </Text>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={
-                isReplay
-                  ? "Close Tour"
-                  : "Skip Tour"
-              }
-              onPress={() =>
-                void complete()
-              }
-              style={({
-                pressed,
-              }) => [
-                styles.closeButton,
-                pressed &&
-                  styles.pressed,
+              accessibilityLabel={isReplay ? "Close Tour" : "Skip Tour"}
+              onPress={() => void complete()}
+              style={({ pressed }) => [
+                styles.closeButton, pressed && styles.pressed,
               ]}
             >
-              <Text
-                style={
-                  styles.closeText
-                }
-              >
-                {isReplay
-                  ? "Close"
-                  : "Skip"}
-              </Text>
+              <Text style={styles.closeText}>{isReplay ? "Close" : "Skip"}</Text>
             </Pressable>
           </View>
 
-          <View
-            style={
-              styles.progressWrap
-            }
-          >
-            <View
-              style={
-                styles.progressRow
-              }
-            >
-              {FIRST_SIGNUP_TOUR_STEPS.map(
-                (
-                  item,
-                  itemIndex
-                ) => (
-                  <View
-                    key={item.id}
-                    style={[
-                      styles.progressSegment,
-                      {
-                        backgroundColor:
-                          itemIndex <=
-                          index
-                            ? colors.brand
-                            : colors.borderStrong,
-                      },
-                    ]}
-                  />
-                )
-              )}
-            </View>
-          </View>
-
-          <Animated.View
-            style={{
-              flex: 1,
-              opacity: fade,
-            }}
-          >
+          <Animated.View style={[styles.body, { opacity: fade }]}>
             <ScrollView
-              style={
-                styles.bodyScroll
-              }
-              contentContainerStyle={
-                styles.bodyContent
-              }
-              showsVerticalScrollIndicator={
-                false
-              }
+              ref={scrollRef}
+              contentContainerStyle={styles.bodyContent}
+              showsVerticalScrollIndicator={false}
             >
-              <View
-                style={
-                  styles.stepMeta
-                }
-              >
-                <View
-                  style={
-                    styles.kickerWrap
-                  }
-                >
-                  <View
-                    style={
-                      styles.kickerIcon
-                    }
-                  >
-                    <Ionicons
-                      name={step.icon}
-                      size={15}
-                      color={
-                        colors.brand
-                      }
-                    />
-                  </View>
-
-                  <Text
-                    style={
-                      styles.kicker
-                    }
-                  >
-                    {step.kicker}
-                  </Text>
-                </View>
-
-                <Text
-                  style={
-                    styles.counter
-                  }
-                >
-                  {index + 1} /{" "}
-                  {
-                    FIRST_SIGNUP_TOUR_STEPS.length
-                  }
-                </Text>
-              </View>
-
-              <Text
-                style={
-                  styles.title
-                }
-              >
-                {step.title}
+              <Text style={styles.title} accessibilityRole="header">
+                {HEADINGS[step.preview]}
               </Text>
+              <Text style={styles.kicker}>{step.title.toUpperCase()}</Text>
 
-              <Text
-                style={
-                  styles.description
-                }
-              >
-                {step.description}
-              </Text>
-
-              <View
-                style={
-                  styles.previewWrap
-                }
-              >
-                <FirstSignupTourPreview
-                  preview={
-                    step.preview
-                  }
-                />
+              <View style={styles.previewWrap}>
+                <FirstSignupTourPreview preview={step.preview} />
               </View>
 
-              <View
-                style={
-                  styles.hint
-                }
-              >
-                <View
-                  style={
-                    styles.hintIcon
-                  }
-                >
-                  <Ionicons
-                    name="sparkles-outline"
-                    size={14}
-                    color={
-                      colors.brand
-                    }
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.hintText
-                  }
-                >
-                  {step.hint}
-                </Text>
-              </View>
+              <Text style={styles.description}>{step.description}</Text>
+              <Text style={styles.hintText}>{step.hint}</Text>
             </ScrollView>
           </Animated.View>
 
-          <View
-            style={
-              styles.bottomBar
-            }
-          >
-            <Pressable
-              accessibilityRole="button"
-              disabled={isFirst}
-              onPress={goBack}
-              style={({
-                pressed,
-              }) => [
-                styles.backButton,
-                isFirst &&
-                  styles.backDisabled,
-                pressed &&
-                  !isFirst &&
-                  styles.pressed,
-              ]}
+          <View style={styles.footer}>
+            <View
+              style={styles.progressRow}
+              accessible
+              accessibilityLabel={`Tour page ${index + 1} of ${total}`}
             >
-              <Ionicons
-                name="chevron-back"
-                size={18}
-                color={
-                  colors.icon
-                }
-              />
+              <Text style={styles.counter}>{index + 1} / {total}</Text>
+              <View style={styles.dots}>
+                {FIRST_SIGNUP_TOUR_STEPS.map((item, position) => (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.dot,
+                      position === index && styles.activeDot,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
 
-              <Text
-                style={
-                  styles.backText
-                }
+            <View style={styles.bottomBar}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Previous tour page"
+                disabled={isFirst}
+                onPress={goBack}
+                style={({ pressed }) => [
+                  styles.backButton,
+                  isFirst && styles.backDisabled,
+                  pressed && !isFirst && styles.pressed,
+                ]}
               >
-                Back
-              </Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                void goNext()
-              }
-              style={({
-                pressed,
-              }) => [
-                styles.nextButton,
-                pressed &&
-                  styles.pressed,
-              ]}
-            >
-              <Text
-                style={
-                  styles.nextText
-                }
+                <Text style={styles.backText}>Back</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={isLast ? "Finish tour" : "Next tour page"}
+                onPress={() => void goNext()}
+                style={({ pressed }) => [
+                  styles.nextButton, pressed && styles.pressed,
+                ]}
               >
-                {isLast
-                  ? "Start exploring"
-                  : "Next"}
-              </Text>
-
-              <Ionicons
-                name="arrow-forward"
-                size={17}
-                color={
-                  colors.white
-                }
-              />
-            </Pressable>
+                <Text style={styles.nextText}>{isLast ? "Let’s go" : "Next"}</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </SafeAreaView>

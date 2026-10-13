@@ -1,8 +1,12 @@
+import { formatExactMessageTime } from "@/src/features/chat/thread/chatTimeUtils";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { formatExactMessageTime } from "@/src/features/chat/thread/chatTimeUtils";
 import { useChatWindow } from "../ChatWindowContext";
+import {
+  copyMessageText,
+  getCopyableMessageText,
+} from "../hooks/chatMessageClipboard";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
 import ChatReactionPicker from "./ChatReactionPicker";
 
@@ -46,8 +50,18 @@ export default function ChatMessageActionsSheet() {
     unsendForAll,
     unsendForMe,
     openMessageReport,
+    getCurrentMessages,
+    myId,
+    peerId,
+    roomId,
   } = useChatWindow();
   const { styles, colors } = useChatWindowStyles();
+  const currentMessage = getCurrentMessages().find(
+    (message) => message.id === sheetMsg?.id,
+  );
+  const copyableText = getCopyableMessageText(
+    currentMessage, myId, peerId, roomId,
+  );
   const dismiss = () =>
     emojiPickerOpen ? setEmojiPickerOpen(false) : closeSheet();
   return (
@@ -104,6 +118,23 @@ export default function ChatMessageActionsSheet() {
                 <View style={styles.sheetDivider} />
                 {sheetMsg ? (
                   <>
+                    {copyableText !== null ? (
+                      <Action
+                        icon="copy-outline"
+                        label="Copy"
+                        onPress={async () => {
+                          const latest = getCurrentMessages().find(
+                            (message) => message.id === sheetMsg.id,
+                          );
+                          const value = getCopyableMessageText(
+                            latest, myId, peerId, roomId,
+                          );
+                          if (value === null) return;
+                          closeSheet();
+                          await copyMessageText(value);
+                        }}
+                      />
+                    ) : null}
                     {mine(sheetMsg) ? (
                       <Action
                         icon="pencil-outline"
