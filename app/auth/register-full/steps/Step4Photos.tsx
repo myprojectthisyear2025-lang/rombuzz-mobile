@@ -1,41 +1,19 @@
 /**
- * ============================================================================
- * 📁 File: app/auth/register-full/steps/Step4Photos.tsx
- * 🎯 Step 4 — Photos (min 2)
- *
- * PURPOSE:
- *   - User picks photos from gallery (no manual URL typing).
- *   - Each chosen image is uploaded to Cloudinary.
- *   - We store the secure URLs in form.photos.
- *   - First photo becomes avatar (unless user sets another).
- *   - Allows removing a photo + setting avatar.
- *
- * PROPS:
- *   - form
- *   - setField
- *   - canNext
- *   - onNext
- *   - onBack
- * ============================================================================
+ * File: app/auth/register-full/steps/Step4Photos.tsx
+ * Purpose: Displays the signup photo-upload screen.
+ * Supports selecting multiple photos, replacing and removing photos,
+ * and continuing signup after at least two photos are selected.
+ * Keeps the first photo in the ordered list as the profile avatar.
+ * Uses SignupPhotoGrid for photo display and drag-to-reorder.
  */
-
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import SignupPhotoGrid from "@/src/features/auth/onboarding/photos/SignupPhotoGrid";
 import { pickSignupPhotos } from "@/src/features/auth/onboarding/pickSignupPhotos";
+import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import {
-  Alert,
-  Image,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
-} from "react-native";
-
-import { RegisterForm } from "../index";
+import { Alert, Pressable, Text, View } from "react-native";
+import type { RegisterForm } from "../index";
 import { useStep4PhotosStyles } from "../styles/useStep4PhotosStyles";
-
-const MIN_PHOTOS = 2;
-const MAX_PHOTOS = 6;
 
 export type Step4Props = {
   form: RegisterForm;
@@ -48,213 +26,125 @@ export type Step4Props = {
   onBack: () => void;
 };
 
-function Step4Photos({ form, setField, canNext, onNext, onBack }: Step4Props) {
-  const styles = useStep4PhotosStyles();
+export default function Step4Photos({
+  form, setField, onNext, onBack,
+}: Step4Props) {
+  const s = useStep4PhotosStyles();
+  const { colors } = useRomBuzzTheme();
+  const photos = form.photos.filter(Boolean).slice(0, 6);
+  const [picking, setPicking] = useState(false);
 
-  const { width } = useWindowDimensions();
-  const isSmallScreen = width < 360;
-
-  // Local editable copy of photos
-  const [photos, setPhotos] = useState<string[]>(
-    form.photos && form.photos.length > 0 ? form.photos : ["", ""]
-  );
-
-  const sanitizePhotoUrls = (items: string[]) =>
-    items
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .slice(0, MAX_PHOTOS);
-
-  const syncPhotos = (next: string[]) => {
-    // Ensure we don't exceed MAX_PHOTOS
-    const trimmed = next.slice(0, MAX_PHOTOS);
-    setPhotos(trimmed);
-    setField("photos", sanitizePhotoUrls(trimmed));
-
-    // If no avatar yet but we have a non-empty first photo, make it avatar
-    if (!form.avatar && trimmed[0] && trimmed[0].trim()) {
-      setField("avatar", trimmed[0].trim());
-    }
+  const commit = (next: string[]) => {
+    const clean = Array.from(new Set(next.filter(Boolean))).slice(0, 6);
+    setField("photos", clean);
+    setField("avatar", clean[0] || "");
   };
 
-  const applyPickedPhotos = (
-    result: { photos: string[]; avatar: string }
-  ) => {
-    syncPhotos(result.photos);
-    setField("avatar", result.avatar);
-  };
-
-  const addSlot = () => {
-    if (photos.length >= MAX_PHOTOS) {
-      Alert.alert(
-        "Max photos reached",
-        `You can add up to ${MAX_PHOTOS} photos.`
-      );
-      return;
-    }
-    syncPhotos([...photos, ""]);
-  };
-
-  const removeSlot = (index: number) => {
-    const next = photos.filter((_, i) => i !== index);
-
-    if (next.length < MIN_PHOTOS) {
-      Alert.alert(
-        "Need more photos",
-        `Please keep at least ${MIN_PHOTOS} photo${MIN_PHOTOS > 1 ? "s" : ""}.`
-      );
-      return;
-    }
-
-    syncPhotos(next);
-  };
-
-  const setAvatarFrom = (url: string) => {
-    if (!url.trim()) return;
-    setField("avatar", url.trim());
-    Alert.alert(
-      "Avatar updated",
-      "This photo is now your main profile picture."
-    );
-  };
-
-  const choosePhotoForIndex = async (index: number) => {
+  const pick = async (index: number) => {
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await pickSignupPhotos(
-        photos,
-        index,
-        form.avatar,
-        MAX_PHOTOS,
+        photos, index, photos[0] || "", 6,
       );
-
-      if (result) applyPickedPhotos(result);
-    } catch (err: any) {
+      if (result) commit(result.photos);
+    } catch (error: unknown) {
       Alert.alert(
         "Photos",
-        err?.message || "Could not open your photo gallery."
+        error instanceof Error
+          ? error.message
+          : "Could not open your gallery.",
       );
+    } finally {
+      setPicking(false);
     }
   };
 
-  const handleNext = () => {
-    const filledCount = photos.filter((p) => p.trim()).length;
-
-    if (filledCount < MIN_PHOTOS) {
-      Alert.alert(
-        "Add more photos",
-        `Please add at least ${MIN_PHOTOS} good photos so others can see you.`
-      );
-      return;
-    }
-
-    if (!form.avatar && photos[0] && photos[0].trim()) {
-      setField("avatar", photos[0].trim());
-    }
-
-    onNext();
+  const move = (from: number, to: number) => {
+    const next = [...photos];
+    const [photo] = next.splice(from, 1);
+    next.splice(to, 0, photo);
+    commit(next);
   };
+
+  const ready = photos.length >= 2 && !picking;
 
   return (
-    <>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          isSmallScreen && styles.contentSmall,
+    <View style={s.content}>
+      <Text style={s.title}>Show your best side</Text>
+      <Text style={s.subtitle}>
+        Add 2–6 photos. Your first photo is your avatar.
+      </Text>
+
+      <View style={s.section}>
+        <Text style={s.label}>Your photos</Text>
+        <Text style={s.muted}>{photos.length} / 6</Text>
+      </View>
+
+      <SignupPhotoGrid
+        photos={photos}
+        disabled={picking}
+        onPick={pick}
+        onMove={move}
+        onRemove={(index) =>
+          commit(photos.filter((_, i) => i !== index))
+        }
+      />
+
+      <Text style={s.hint}>
+        Hold the ⋮⋮ handle and drag to reorder
+      </Text>
+      <Text style={s.muted}>
+        Move any photo to #1 to make it your avatar.
+      </Text>
+
+      <Pressable
+        style={[
+          s.select,
+          (picking || photos.length === 6) && s.disabled,
         ]}
+        disabled={picking || photos.length === 6}
+        onPress={() => pick(photos.length)}
+        accessibilityRole="button"
       >
-        <Text style={styles.title}>Add your photos</Text>
-        <Text style={styles.subtitle}>
-          Choose {MIN_PHOTOS}–{MAX_PHOTOS} clear photos. Tap an empty slot to
-          select several at once, or tap a photo to replace it. You can choose
-          which photo becomes your profile picture.
+        <Ionicons
+          name="images-outline"
+          size={20}
+          color={colors.text}
+        />
+        <Text style={s.selectText}>
+          {picking ? "Opening gallery…" : "Select multiple photos"}
         </Text>
+      </Pressable>
 
-              {photos.map((url, index) => {
-          const isAvatar = !!url.trim() && form.avatar === url;
-          const canRemoveThis = photos.length > MIN_PHOTOS && index >= MIN_PHOTOS;
+      <View style={s.footer}>
+        <Pressable
+          style={s.back}
+          disabled={picking}
+          onPress={onBack}
+          accessibilityRole="button"
+        >
+          <Text style={s.backText}>Back</Text>
+        </Pressable>
 
-          return (
-            <View key={index} style={styles.photoCard}>
-              <View style={styles.photoHeader}>
-                <View style={styles.photoIndex}>
-                  <Text style={styles.photoIndexText}>{index + 1}</Text>
-                </View>
-                {isAvatar && <Text style={styles.avatarTag}>Profile photo</Text>}
-              </View>
+        <Pressable
+          style={[s.next, !ready && s.disabled]}
+          disabled={!ready}
+          accessibilityRole="button"
+          onPress={() => {
+            commit(photos);
+            onNext();
+          }}
+        >
+          <Text style={s.nextText}>Continue →</Text>
+        </Pressable>
+      </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.imageBox,
-                  isAvatar && styles.imageBoxAvatar,
-                ]}
-                onPress={() => choosePhotoForIndex(index)}
-              >
-                {url ? (
-                  <Image source={{ uri: url }} style={styles.imagePreview} />
-                ) : (
-                  <Text style={styles.imagePlaceholder}>
-                    Tap to choose from gallery
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              <View style={styles.photoActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.avatarButton,
-                    isAvatar && styles.avatarButtonActive,
-                  ]}
-                  onPress={() => setAvatarFrom(url)}
-                >
-                  <Text
-                    style={[
-                      styles.avatarButtonText,
-                      isAvatar && styles.avatarButtonTextActive,
-                    ]}
-                  >
-                    {isAvatar ? "Avatar ✓" : "Make avatar"}
-                  </Text>
-                </TouchableOpacity>
-
-                {canRemoveThis && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => removeSlot(index)}
-                  >
-                    <Text style={styles.removeButtonText}>Remove</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          );
-        })}
-
-
-        {photos.length < MAX_PHOTOS && (
-          <TouchableOpacity style={styles.addSlotButton} onPress={addSlot}>
-            <Text style={styles.addSlotText}>+ Add another photo</Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.backButton} onPress={onBack}>
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.nextButton, !canNext && styles.nextButtonDisabled]}
-            onPress={handleNext}
-            disabled={!canNext}
-          >
-            <Text style={styles.nextText}>Next</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      
-    </>
+      {photos.length < 2 && (
+        <Text style={[s.muted, { marginTop: 8 }]}>
+          At least 2 photos to continue
+        </Text>
+      )}
+    </View>
   );
 }
-
-export default Step4Photos;

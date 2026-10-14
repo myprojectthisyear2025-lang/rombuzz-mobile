@@ -36,9 +36,9 @@
  * ============================================================================
  */
 
+import { persistCurrentUser, setSession } from "@/src/features/auth/rbzSession";
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { persistCurrentUser, setSession } from "@/src/features/auth/rbzSession";
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -687,7 +687,7 @@ export default function RegisterFullScreen() {
             email={email}
             form={form}
             error={error}
-            onBack={() => goToStep(4)}
+            onBack={() => goToStep(3)}
             onFinish={finish}
             busy={busy}
           />
