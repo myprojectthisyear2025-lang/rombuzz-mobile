@@ -40,7 +40,7 @@ import { persistCurrentUser, setSession } from "@/src/features/auth/rbzSession";
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image, // ADD THIS
@@ -73,6 +73,7 @@ import {
 } from "../../../src/features/onboarding/firstSignupTourStorage";
 
 // Step components
+import SignupLoginLink from "@/src/features/auth/onboarding/SignupLoginLink";
 import Step1Basic from "./steps/Step1Basic";
 import Step2Prefs from "./steps/Step2Prefs";
 import Step4Photos from "./steps/Step4Photos";
@@ -173,6 +174,7 @@ export type RegisterForm = {
 
 export default function RegisterFullScreen() {
   const router = useRouter();
+  const leavingSignup = useRef(false);
   const params = useLocalSearchParams<{
     verifiedEmail?: string;
     googleFirstName?: string;
@@ -380,9 +382,10 @@ export default function RegisterFullScreen() {
 
   // Save field changes shortly after they happen.
   useEffect(() => {
-    if (!draftReady || !email.trim()) return;
+    if (leavingSignup.current || !draftReady || !email.trim()) return;
 
     const timer = setTimeout(() => {
+      if (leavingSignup.current) return;
       saveOnboardingDraft({
         step,
         form,
@@ -407,6 +410,7 @@ export default function RegisterFullScreen() {
   ]);
 
   const goToStep = (nextStep: number) => {
+    if (leavingSignup.current) return;
     setStep(nextStep);
 
     if (!draftReady || !email.trim()) return;
@@ -650,13 +654,26 @@ export default function RegisterFullScreen() {
     switch (step) {
       case 1:
         return (
-          <Step1Basic
-            form={form}
-            setField={setField}
-            dobInvalid={dobInvalid}
-            canNext={!!canNext1}
-            onNext={() => goToStep(2)}
-          />
+          <>
+            <Step1Basic
+              form={form}
+              setField={setField}
+              dobInvalid={dobInvalid}
+              canNext={!!canNext1}
+              onNext={() => goToStep(2)}
+            />
+            <SignupLoginLink
+              email={email}
+              onLeaving={() => {
+                leavingSignup.current = true;
+                setField("password", "");
+                setField("confirm", "");
+              }}
+              onFailure={() => {
+                leavingSignup.current = false;
+              }}
+            />
+          </>
         );
             case 2:
         return (

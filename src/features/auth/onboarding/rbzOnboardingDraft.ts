@@ -1,19 +1,11 @@
 /**
- * ============================================================================
- * 📁 File: src/features/auth/onboarding/rbzOnboardingDraft.ts
- * 🎯 Purpose: Persist and restore incomplete RomBuzz signup onboarding.
- *
- * USED BY:
- *   - app/auth/register-full/index.tsx
- *   - app/_layout.tsx
- *
- * SECURITY:
- *   - Normal onboarding fields are stored in AsyncStorage.
- *   - Passwords and signup verification tickets are stored in SecureStore.
- *   - Draft is deleted only after successful account creation.
- * ============================================================================
+ * File: src/features/auth/onboarding/rbzOnboardingDraft.ts
+ * Purpose: Persists and restores unfinished signup onboarding.
+ * Stores ordinary fields in AsyncStorage and secrets in SecureStore.
+ * Serializes saves and clears so an older autosave cannot restore a deleted draft.
+ * Clears drafts after completed signup or an explicit switch to login.
+ * Preserves existing storage keys, draft format, and subscription behavior.
  */
-
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
@@ -22,9 +14,18 @@ const SECRET_KEY = "RBZ_ONBOARDING_SECRET_V1";
 
 let pendingDraft: boolean | undefined;
 let draftRevision = 0;
+let draftWrites: Promise<unknown> = Promise.resolve();
 const draftListeners = new Set<(pending: boolean) => void>();
 
-export function subscribeOnboardingDraft(listener: (pending: boolean) => void) {
+function queueDraftWrite<T>(work: () => Promise<T>): Promise<T> {
+  const result = draftWrites.then(work);
+  draftWrites = result.catch(() => {});
+  return result;
+}
+
+export function subscribeOnboardingDraft(
+  listener: (pending: boolean) => void,
+) {
   draftListeners.add(listener);
   return () => { draftListeners.delete(listener); };
 }
@@ -32,7 +33,7 @@ export function subscribeOnboardingDraft(listener: (pending: boolean) => void) {
 function publishDraft(pending: boolean) {
   draftRevision++;
   pendingDraft = pending;
-  draftListeners.forEach(listener => listener(pending));
+  draftListeners.forEach((listener) => listener(pending));
 }
 
 type DraftForm = Record<string, any>;
@@ -58,53 +59,40 @@ export type OnboardingDraft<TForm = DraftForm> = {
 
 function normalizeStep(value: unknown) {
   const step = Number(value);
-
   if (!Number.isFinite(step)) return 1;
-
   return Math.min(4, Math.max(1, Math.round(step)));
 }
 
-export async function saveOnboardingDraft({
-  step,
-  form,
-  email,
-  authProvider = "",
-  signupVerificationTicket = "",
-  appleSignupTicket = "",
-}: SaveDraftInput) {
-  const {
-    password = "",
-    confirm = "",
-    ...safeForm
-  } = form || {};
+export function saveOnboardingDraft(input: SaveDraftInput) {
+  return queueDraftWrite(() => writeOnboardingDraft(input));
+}
 
+async function writeOnboardingDraft({
+  step, form, email, authProvider = "",
+  signupVerificationTicket = "", appleSignupTicket = "",
+}: SaveDraftInput) {
+  const { password = "", confirm = "", ...safeForm } = form || {};
   const savedAt = Date.now();
 
-  await Promise.all([
-    AsyncStorage.setItem(
-      DRAFT_KEY,
-      JSON.stringify({
-        version: 1,
-        step: normalizeStep(step),
-        form: safeForm,
-        savedAt,
-      })
-    ),
-
-    SecureStore.setItemAsync(
-      SECRET_KEY,
-      JSON.stringify({
-        email: String(email || "").trim().toLowerCase(),
-        authProvider: String(authProvider || "").trim().toLowerCase(),
-        signupVerificationTicket: String(
-          signupVerificationTicket || ""
-        ).trim(),
-        appleSignupTicket: String(appleSignupTicket || "").trim(),
-        password: String(password || ""),
-        confirm: String(confirm || ""),
-      })
-    ),
+  const writes = await Promise.allSettled([
+    AsyncStorage.setItem(DRAFT_KEY, JSON.stringify({
+      version: 1,
+      step: normalizeStep(step),
+      form: safeForm,
+      savedAt,
+    })),
+    SecureStore.setItemAsync(SECRET_KEY, JSON.stringify({
+      email: String(email || "").trim().toLowerCase(),
+      authProvider: String(authProvider || "").trim().toLowerCase(),
+      signupVerificationTicket: String(signupVerificationTicket || "").trim(),
+      appleSignupTicket: String(appleSignupTicket || "").trim(),
+      password: String(password || ""),
+      confirm: String(confirm || ""),
+    })),
   ]);
+
+  const failed = writes.find((write) => write.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
   publishDraft(true);
 }
 
@@ -116,23 +104,14 @@ export async function loadOnboardingDraft<
       AsyncStorage.getItem(DRAFT_KEY),
       SecureStore.getItemAsync(SECRET_KEY),
     ]);
-
-    if (!rawDraft || !rawSecret) {
-      return null;
-    }
+    if (!rawDraft || !rawSecret) return null;
 
     const draft = JSON.parse(rawDraft);
     const secret = JSON.parse(rawSecret);
-
-    if (!draft?.form || typeof draft.form !== "object") {
-      return null;
-    }
+    if (!draft?.form || typeof draft.form !== "object") return null;
 
     const email = String(secret?.email || "").trim().toLowerCase();
-
-    if (!email) {
-      return null;
-    }
+    if (!email) return null;
 
     return {
       step: normalizeStep(draft?.step),
@@ -143,9 +122,7 @@ export async function loadOnboardingDraft<
       } as TForm,
       email,
       authProvider: String(secret?.authProvider || ""),
-      signupVerificationTicket: String(
-        secret?.signupVerificationTicket || ""
-      ),
+      signupVerificationTicket: String(secret?.signupVerificationTicket || ""),
       appleSignupTicket: String(secret?.appleSignupTicket || ""),
       savedAt: Number(draft?.savedAt || 0),
     };
@@ -163,18 +140,25 @@ export async function hasOnboardingDraft(force = false) {
       AsyncStorage.getItem(DRAFT_KEY),
       SecureStore.getItemAsync(SECRET_KEY),
     ]);
-
-    if (revision === draftRevision) pendingDraft = Boolean(rawDraft && rawSecret);
+    if (revision === draftRevision) {
+      pendingDraft = Boolean(rawDraft && rawSecret);
+    }
     return pendingDraft ?? false;
   } catch {
     return pendingDraft ?? false;
   }
 }
 
-export async function clearOnboardingDraft() {
-  await Promise.all([
-    AsyncStorage.removeItem(DRAFT_KEY),
-    SecureStore.deleteItemAsync(SECRET_KEY),
-  ]);
-  publishDraft(false);
+export function clearOnboardingDraft() {
+  return queueDraftWrite(async () => {
+    const removals = await Promise.allSettled([
+      AsyncStorage.removeItem(DRAFT_KEY),
+      SecureStore.deleteItemAsync(SECRET_KEY),
+    ]);
+    const failed = removals.find(
+      (removal) => removal.status === "rejected",
+    );
+    if (failed?.status === "rejected") throw failed.reason;
+    publishDraft(false);
+  });
 }

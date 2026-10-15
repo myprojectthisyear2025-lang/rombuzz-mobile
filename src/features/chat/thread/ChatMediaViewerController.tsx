@@ -40,13 +40,18 @@ type ViewerItem = {
 };
 
 function getChatImageUri(message: any) {
-  return String(
-    message?.previewUrl ||
-      message?.signedUrl ||
-      message?.url ||
-      message?.mediaUrl ||
-      ""
-  ).trim();
+  const candidates = [
+    message?.signedUrl,
+    message?.url,
+    message?.mediaUrl,
+    message?.previewUrl,
+  ].map((value) => String(value || "").trim());
+
+  return (
+    candidates.find((value) => /^https?:\/\//i.test(value)) ||
+    candidates.find((value) => /^(file|content|blob|data):/i.test(value)) ||
+    ""
+  );
 }
 
 function getChatVideoUri(message: any) {
