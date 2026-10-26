@@ -1,51 +1,33 @@
 /**
- * ============================================================
  * 📁 File: src/components/chat/MediaViewer.tsx
- * 🎯 Purpose: Fullscreen media viewer for chat (image/video)
- *
- * Used by:
- *  - app/chat/[peerId].tsx
- *
- * Features:
- *  - Tap close button
- *  - Shows View-once / View-twice badge
- *  - Download enabled ONLY for keep-mode
- *    (uses share sheet so it works in Expo Go)
- * ============================================================
+ * 🎯 Purpose: Safe-area-aware fullscreen photo and video viewer for chat.
+ * Used by: ChatMediaViewerController.tsx for ephemeral photos and chat videos.
+ * Controls: Custom play, seek, mute, close, and view-limit badge; no downloads.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
-import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
-import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, Text, View } from "react-native";
-
-const RBZ = {
-  c1: "#b1123c",
-  c2: "#d8345f",
-  c3: "#e9486a",
-  c4: "#b5179e",
-  white: "#ffffff",
-};
+import { AVPlaybackStatus, ResizeMode, Video } from "expo-av";
+import React, { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Image, Modal, Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { chatMediaViewerStyles as styles } from "./chatMediaViewerStyles";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-
   uri: string;
   mediaType: "image" | "video";
   muted?: boolean;
-
-  // undefined => keep mode
   maxViews?: 1 | 2;
-
-  // hide/disable download when maxViews exists
-  allowDownload: boolean;
-
-  // called once when viewer opens (used to increment view count)
+  /** Retained for older call sites. Chat media downloads are removed. */
+  allowDownload?: boolean;
   onViewed?: () => void;
 };
+
+function formatTime(milliseconds: number) {
+  const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 export default function MediaViewer({
   visible,
@@ -54,147 +36,234 @@ export default function MediaViewer({
   mediaType,
   muted = false,
   maxViews,
-  allowDownload,
   onViewed,
 }: Props) {
-  const [busy, setBusy] = useState(false);
-
-  const badgeText = useMemo(() => {
-    if (!maxViews) return null;
-    return maxViews === 1 ? "View once" : "View twice";
-  }, [maxViews]);
-
-  // fire onViewed once per open
+  const insets = useSafeAreaInsets();
+  const videoRef = useRef<Video | null>(null);
+  const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(muted);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [progressWidth, setProgressWidth] = useState(1);
   const [didView, setDidView] = useState(false);
-  React.useEffect(() => {
+  const loaded = status?.isLoaded ? status : null;
+  const duration = loaded?.durationMillis || 0;
+  const position = loaded?.positionMillis || 0;
+
+  useEffect(() => {
     if (!visible) {
       setDidView(false);
+      setStatus(null);
+      setIsPlaying(true);
+      setControlsVisible(true);
       return;
     }
+    setIsMuted(muted);
     if (!didView) {
       setDidView(true);
       onViewed?.();
     }
-  }, [visible, didView, onViewed]);
+  }, [visible, uri, muted, didView, onViewed]);
 
-  const download = async () => {
+  const togglePlayback = async () => {
+    if (!loaded) return;
     try {
-      setBusy(true);
-
-      const canShare = await Sharing.isAvailableAsync();
-      if (!canShare) {
-        Alert.alert("Download", "Sharing is not available on this device.");
-        return;
-      }
-
-      const ext = mediaType === "video" ? "mp4" : "jpg";
-const baseDir =
-  (FileSystem as any).documentDirectory ||
-  (FileSystem as any).cacheDirectory ||
-  "";
-
-const localPath = `${baseDir}rbz_${Date.now()}.${ext}`;
-
-      const res = await FileSystem.downloadAsync(uri, localPath);
-      await Sharing.shareAsync(res.uri);
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message || "Try again");
-    } finally {
-      setBusy(false);
+      if (loaded.didJustFinish) await videoRef.current?.replayAsync();
+      else if (isPlaying) await videoRef.current?.pauseAsync();
+      else await videoRef.current?.playAsync();
+      setIsPlaying(!isPlaying || !!loaded.didJustFinish);
+    } catch {
+      setIsPlaying((playing) => !playing);
     }
   };
 
+  const seekBy = async (offset: number) => {
+    if (!loaded) return;
+    const nextPosition = Math.max(0, Math.min(duration, position + offset));
+    await videoRef.current?.setPositionAsync(nextPosition).catch(() => {});
+  };
+
+  const seekTo = async (locationX: number) => {
+    if (!duration) return;
+    const nextPosition =
+      Math.max(0, Math.min(1, locationX / progressWidth)) * duration;
+    await videoRef.current?.setPositionAsync(nextPosition).catch(() => {});
+  };
+
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "#000" }}>
-        {/* top bar */}
-        <View
-          style={{
-            position: "absolute",
-            top: Platform.OS === "ios" ? 54 : 24,
-            left: 14,
-            right: 14,
-            zIndex: 20,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <Pressable
-            onPress={onClose}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 16,
-              backgroundColor: "rgba(0,0,0,0.45)",
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.16)",
-            }}
-          >
-            <Ionicons name="close" size={20} color="#fff" />
-          </Pressable>
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            {badgeText ? (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  paddingHorizontal: 10,
-                  height: 34,
-                  borderRadius: 16,
-                  backgroundColor: "rgba(0,0,0,0.45)",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.16)",
-                }}
-              >
-                <Ionicons name="eye" size={16} color="#fff" />
-                <Text style={{ color: "#fff", fontWeight: "900", fontSize: 12 }}>{badgeText}</Text>
-              </View>
-            ) : null}
-
-            <Pressable
-              onPress={() => {
-                if (!allowDownload) return;
-                download();
-              }}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 16,
-                backgroundColor: allowDownload ? RBZ.c4 : "rgba(255,255,255,0.10)",
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.16)",
-                opacity: allowDownload ? 1 : 0.55,
-              }}
-            >
-              {busy ? (
-                <ActivityIndicator />
-              ) : (
-                <Ionicons name={allowDownload ? "download" : "lock-closed"} size={18} color="#fff" />
-              )}
-            </Pressable>
-          </View>
-        </View>
-
-        {/* media */}
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={false}
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.screen}>
         {mediaType === "video" ? (
           <Video
+            ref={videoRef}
             source={{ uri }}
-            style={{ flex: 1 }}
+            style={styles.media}
             resizeMode={ResizeMode.CONTAIN}
-            shouldPlay
-            isMuted={muted}
-            useNativeControls
+            shouldPlay={visible && isPlaying}
+            isMuted={isMuted}
+            useNativeControls={false}
+            onPlaybackStatusUpdate={setStatus}
           />
         ) : (
-          <Image source={{ uri }} style={{ flex: 1 }} resizeMode="contain" />
+          <Image source={{ uri }} style={styles.media} resizeMode="contain" />
         )}
+
+        {mediaType === "video" ? (
+          <Pressable
+            accessibilityLabel="Show video controls"
+            style={styles.tapSurface}
+            onPress={() => setControlsVisible((shown) => !shown)}
+          />
+        ) : null}
+
+        {controlsVisible ? (
+          <>
+            <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close media viewer"
+                onPress={onClose}
+                style={styles.iconButton}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={23} color="#fff" />
+              </Pressable>
+              {maxViews ? (
+                <View style={styles.viewBadge}>
+                  <Ionicons name="eye-outline" size={15} color="#fff" />
+                  <Text style={styles.viewBadgeText}>
+                    {maxViews === 1 ? "View once" : "View twice"}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.headerSpacer} />
+              )}
+            </View>
+
+            {mediaType === "video" ? (
+              <View style={styles.videoControls} pointerEvents="box-none">
+                <View style={styles.centerControls} pointerEvents="box-none">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={isPlaying ? "Pause video" : "Play video"}
+                    onPress={togglePlayback}
+                    style={styles.playButton}
+                  >
+                    {loaded ? (
+                      <Ionicons
+                        name={
+                          loaded.didJustFinish
+                            ? "refresh"
+                            : isPlaying
+                              ? "pause"
+                              : "play"
+                        }
+                        size={31}
+                        color="#fff"
+                      />
+                    ) : (
+                      <ActivityIndicator color="#fff" size="small" />
+                    )}
+                  </Pressable>
+                </View>
+
+                <View
+                  style={[
+                    styles.bottomPanel,
+                    { paddingBottom: Math.max(insets.bottom, 12) + 10 },
+                  ]}
+                >
+                  <View style={styles.timeRow}>
+                    <Text style={styles.timeText}>{formatTime(position)}</Text>
+                    <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                  </View>
+                  <View
+                    style={styles.progressHitArea}
+                    onLayout={(event) =>
+                      setProgressWidth(
+                        Math.max(1, event.nativeEvent.layout.width),
+                      )
+                    }
+                  >
+                    <Pressable
+                      accessibilityRole="adjustable"
+                      accessibilityLabel="Video progress"
+                      style={styles.progressTrack}
+                      onPress={(event) =>
+                        seekTo(event.nativeEvent.locationX)
+                      }
+                    >
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${
+                              duration ? (position / duration) * 100 : 0
+                            }%`,
+                          },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.progressThumb,
+                          {
+                            left: `${
+                              duration ? (position / duration) * 100 : 0
+                            }%`,
+                          },
+                        ]}
+                      />
+                    </Pressable>
+                  </View>
+                  <View style={styles.actionsRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Back ten seconds"
+                      onPress={() => seekBy(-10000)}
+                      style={styles.actionButton}
+                    >
+                      <Ionicons name="play-back" size={19} color="#fff" />
+                      <Text style={styles.actionText}>10</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        isMuted ? "Unmute video" : "Mute video"
+                      }
+                      onPress={() => setIsMuted((value) => !value)}
+                      style={styles.actionButton}
+                    >
+                      <Ionicons
+                        name={isMuted ? "volume-mute" : "volume-high"}
+                        size={20}
+                        color="#fff"
+                      />
+                      <Text style={styles.actionText}>
+                        {isMuted ? "Muted" : "Sound on"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Forward ten seconds"
+                      onPress={() => seekBy(10000)}
+                      style={styles.actionButton}
+                    >
+                      <Ionicons name="play-forward" size={19} color="#fff" />
+                      <Text style={styles.actionText}>10</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+          </>
+        ) : null}
       </View>
     </Modal>
   );

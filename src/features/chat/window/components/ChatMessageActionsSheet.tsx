@@ -1,11 +1,17 @@
+/**
+ * File: src/features/chat/window/components/ChatMessageActionsSheet.tsx
+ * Purpose: Show message actions, including safe text copy and clipboard paste.
+ */
+
 import { formatExactMessageTime } from "@/src/features/chat/thread/chatTimeUtils";
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useChatWindow } from "../ChatWindowContext";
 import {
   copyMessageText,
   getCopyableMessageText,
+  readClipboardText,
 } from "../hooks/chatMessageClipboard";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
 import ChatReactionPicker from "./ChatReactionPicker";
@@ -54,13 +60,26 @@ export default function ChatMessageActionsSheet() {
     myId,
     peerId,
     roomId,
+    setText,
+    setComposerExpanded,
   } = useChatWindow();
   const { styles, colors } = useChatWindowStyles();
-  const currentMessage = getCurrentMessages().find(
-    (message) => message.id === sheetMsg?.id,
-  );
+  const [canPaste, setCanPaste] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setCanPaste(false);
+    if (!sheetOpen) return () => { alive = false; };
+
+    readClipboardText().then((value) => {
+      if (alive) setCanPaste(value !== null);
+    });
+
+    return () => { alive = false; };
+  }, [sheetOpen]);
+
   const copyableText = getCopyableMessageText(
-    currentMessage, myId, peerId, roomId,
+    sheetMsg, myId, peerId, roomId,
   );
   const dismiss = () =>
     emojiPickerOpen ? setEmojiPickerOpen(false) : closeSheet();
@@ -125,13 +144,26 @@ export default function ChatMessageActionsSheet() {
                         onPress={async () => {
                           const latest = getCurrentMessages().find(
                             (message) => message.id === sheetMsg.id,
-                          );
+                          ) ?? sheetMsg;
                           const value = getCopyableMessageText(
                             latest, myId, peerId, roomId,
                           );
                           if (value === null) return;
                           closeSheet();
                           await copyMessageText(value);
+                        }}
+                      />
+                    ) : null}
+                    {canPaste ? (
+                      <Action
+                        icon="clipboard-outline"
+                        label="Paste"
+                        onPress={async () => {
+                          const value = await readClipboardText();
+                          if (value === null) return;
+                          setText((current) => `${current}${value}`);
+                          setComposerExpanded(true);
+                          closeSheet();
                         }}
                       />
                     ) : null}

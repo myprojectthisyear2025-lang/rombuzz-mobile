@@ -6,13 +6,14 @@
 
 import { API_BASE } from "@/src/config/api";
 import * as Location from "expo-location";
+import { DeviceEventEmitter } from "react-native";
 
 import {
-    dedupeDiscoverMedia,
+  dedupeDiscoverMedia,
 } from "./discoverProfileMedia";
 
 import {
-    pickPublicFields,
+  pickPublicFields,
 } from "./discoverProfilePrivacy";
 
 export type DiscoverProfileUser =
@@ -354,6 +355,10 @@ export async function sendDiscoverMatchRequest(
         () => null
       );
 
+  if (res.ok && data?.matched) {
+    DeviceEventEmitter.emit("rbz:match-request:handled");
+  }
+
   return {
     ok: res.ok,
     data,
@@ -395,6 +400,10 @@ export async function respondDiscoverMatchRequest(
       .catch(
         () => null
       );
+
+  if (res.ok && data?.success) {
+    DeviceEventEmitter.emit("rbz:match-request:handled");
+  }
 
   return {
     ok: res.ok,

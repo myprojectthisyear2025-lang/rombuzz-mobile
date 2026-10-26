@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useChatComposer } from "./hooks/useChatComposer";
 import { useChatEphemeralMedia } from "./hooks/useChatEphemeralMedia";
+import { useChatGiftMessage } from "./hooks/useChatGiftMessage";
 import { useChatIdentity } from "./hooks/useChatIdentity";
 import { useChatKeyboard } from "./hooks/useChatKeyboard";
 import { useChatMessageActions } from "./hooks/useChatMessageActions";
@@ -66,6 +67,7 @@ export function useChatWindowController() {
   });
   const sheets = useChatMessageSheets(peerId);
   const composer = useChatComposer(sheets.closeSheet);
+  const chatGift = useChatGiftMessage({ myId, peerId, roomId });
   const realtime = useChatRealtime({
     ...participants,
     messages,
@@ -154,6 +156,7 @@ export function useChatWindowController() {
     ...actions,
     ...gestures,
     ...suggestions,
+    ...chatGift,
     ...textSender,
     ...mediaSender,
     ...navigation,

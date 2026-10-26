@@ -8,6 +8,7 @@
 
 
 import type { Msg } from "@/src/features/chat/thread/chatTypes";
+import * as Clipboard from "expo-clipboard";
 import { Alert } from "react-native";
 
 // Load clipboard only when the user taps Copy.
@@ -28,11 +29,14 @@ export function getCopyableMessageText(
   if (!belongsToThread) return null;
   if (message.roomId && message.roomId !== roomId) return null;
 
+  const ephemeralMode = String(message.ephemeral?.mode || "").toLowerCase();
+  const isEphemeral = ephemeralMode === "once" || ephemeralMode === "twice";
+
   if (
     message.deleted ||
     message.system ||
     message.action ||
-    message.ephemeral ||
+    isEphemeral ||
     message.url ||
     message.mediaUrl ||
     message.mediaType ||
@@ -53,7 +57,6 @@ export function getCopyableMessageText(
 
 export async function copyMessageText(text: string) {
   try {
-    const Clipboard = await import("expo-clipboard");
     await Clipboard.setStringAsync(text);
     return true;
   } catch {
@@ -62,5 +65,15 @@ export async function copyMessageText(text: string) {
       "Copy requires the updated app build. You can continue chatting.",
     );
     return false;
+  }
+}
+
+// Read only after the user opens the message menu or taps Paste.
+export async function readClipboardText(): Promise<string | null> {
+  try {
+    const value = await Clipboard.getStringAsync();
+    return value.length ? value : null;
+  } catch {
+    return null;
   }
 }

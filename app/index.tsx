@@ -12,9 +12,9 @@
  * ============================================================
  */
 
+import { hideStartupSplash } from "@/src/features/auth/useStartupPresentation";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import {
   Animated,
@@ -26,8 +26,23 @@ import {
 } from "react-native";
 
 export default function SplashScreen() {
-  const router = useRouter();
+  const [showAnimation, setShowAnimation] = useState(false);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setShowAnimation(true), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!showAnimation) return null;
+
+  return (
+    <View style={{ flex: 1 }} onLayout={hideStartupSplash}>
+      <OriginalSplashAnimation />
+    </View>
+  );
+}
+
+function OriginalSplashAnimation() {
   // Overall fade
   const mainOpacity = useRef(new Animated.Value(0)).current;
 
@@ -122,9 +137,9 @@ export default function SplashScreen() {
       ]),
       // Hold a bit
       Animated.delay(600),
-      // Fade out
+      // Keep branding visible until startup navigation is ready.
       Animated.timing(mainOpacity, {
-        toValue: 0,
+        toValue: 1,
         duration: 350,
         easing: Easing.in(Easing.ease),
         useNativeDriver: true,

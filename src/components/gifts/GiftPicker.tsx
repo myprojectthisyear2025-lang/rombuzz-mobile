@@ -23,7 +23,7 @@ import { usePerfContent } from "@/src/performance/diagnostics/screens";
  * ============================================================
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,

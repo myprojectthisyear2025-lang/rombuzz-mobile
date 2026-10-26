@@ -10,13 +10,13 @@
  * ============================================================================
  */
 
-import { useRouter } from "expo-router";
 import { clearSession } from "@/src/features/auth/rbzSession";
+import { useRouter } from "expo-router";
 import React from "react";
 import { Linking } from "react-native";
 
-import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 import { useSettingsAlert } from "@/src/components/settings/SettingsDialog";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
 
 import { Card, NavRow, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
 import { requestFirstSignupTourReplay } from "../../../src/features/onboarding/firstSignupTourReplay";
@@ -105,6 +105,12 @@ export default function SettingsHome() {
 
       <SectionTitle>Support</SectionTitle>
       <Card>
+        <NavRow
+          icon="star-outline"
+          label="Report an issue"
+          description="Privately report any in-app issues"
+          onPress={() => router.push("/(tabs)/settings/review")}
+        />
         <NavRow
           icon="help-circle-outline"
           label="Help & Support"

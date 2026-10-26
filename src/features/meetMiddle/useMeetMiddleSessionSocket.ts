@@ -7,7 +7,9 @@
 // - Keeps socket logic out of app/meet-middle/[peerId].tsx.
 // - Does NOT use old meet:* legacy events.
 // - Does NOT render UI.
+// - Listen for Meet session events and pass them to the screen coordinator.
 // - Used by the Meet screen coordinator to move between stages.
+
 
 import { useEffect } from "react";
 
@@ -16,6 +18,7 @@ import type { MeetMiddleSession } from "./meetMiddleTypes";
 
 type MeetMiddleSessionSocketHandlers = {
   onAccepted?: (payload: any) => void;
+  onDeclined?: (payload: any) => void;
   onLocationWaiting?: (payload: any) => void;
   onLocationPeerShared?: (payload: any) => void;
   onSuggestionsReady?: (payload: any) => void;
@@ -70,10 +73,13 @@ export function useMeetMiddleSessionSocket(
       } catch {}
     };
 
-    const onAccepted = (payload: any) => safelyRun(payload, handlers.onAccepted);
+    const onAccepted = (payload: any) =>
+      safelyRun(payload, handlers.onAccepted);
+    const onDeclined = (payload: any) =>
+      safelyRun(payload, handlers.onDeclined);
     const onLocationWaiting = (payload: any) =>
       safelyRun(payload, handlers.onLocationWaiting);
-     const onLocationPeerShared = (payload: any) =>
+    const onLocationPeerShared = (payload: any) =>
       safelyRun(payload, handlers.onLocationPeerShared);
     const onSuggestionsReady = (payload: any) =>
       safelyRun(payload, handlers.onSuggestionsReady);
@@ -85,7 +91,8 @@ export function useMeetMiddleSessionSocket(
       safelyRun(payload, handlers.onFinalConfirmed);
     const onPlaceRejected = (payload: any) =>
       safelyRun(payload, handlers.onPlaceRejected);
-    const onError = (payload: any) => safelyRun(payload, handlers.onError);
+    const onError = (payload: any) =>
+      safelyRun(payload, handlers.onError);
 
     (async () => {
       try {
@@ -93,11 +100,15 @@ export function useMeetMiddleSessionSocket(
         if (!alive || !socket) return;
 
         socket.on("meetMiddle:accepted", onAccepted);
+        socket.on("meetMiddle:declined", onDeclined);
         socket.on("meetMiddle:location:waiting", onLocationWaiting);
         socket.on("meetMiddle:location:peer-shared", onLocationPeerShared);
         socket.on("meetMiddle:suggestions:ready", onSuggestionsReady);
         socket.on("meetMiddle:place:selected", onPlaceSelected);
-        socket.on("meetMiddle:place:confirmation-needed", onPlaceConfirmationNeeded);
+        socket.on(
+          "meetMiddle:place:confirmation-needed",
+          onPlaceConfirmationNeeded
+        );
         socket.on("meetMiddle:final-confirmed", onFinalConfirmed);
         socket.on("meetMiddle:place:rejected", onPlaceRejected);
         socket.on("meetMiddle:error", onError);
@@ -109,12 +120,16 @@ export function useMeetMiddleSessionSocket(
 
       if (!socket) return;
 
-          socket.off("meetMiddle:accepted", onAccepted);
+      socket.off("meetMiddle:accepted", onAccepted);
+      socket.off("meetMiddle:declined", onDeclined);
       socket.off("meetMiddle:location:waiting", onLocationWaiting);
       socket.off("meetMiddle:location:peer-shared", onLocationPeerShared);
       socket.off("meetMiddle:suggestions:ready", onSuggestionsReady);
       socket.off("meetMiddle:place:selected", onPlaceSelected);
-      socket.off("meetMiddle:place:confirmation-needed", onPlaceConfirmationNeeded);
+      socket.off(
+        "meetMiddle:place:confirmation-needed",
+        onPlaceConfirmationNeeded
+      );
       socket.off("meetMiddle:final-confirmed", onFinalConfirmed);
       socket.off("meetMiddle:place:rejected", onPlaceRejected);
       socket.off("meetMiddle:error", onError);
@@ -122,6 +137,7 @@ export function useMeetMiddleSessionSocket(
   }, [
     sessionId,
     handlers.onAccepted,
+    handlers.onDeclined,
     handlers.onLocationWaiting,
     handlers.onLocationPeerShared,
     handlers.onSuggestionsReady,
@@ -133,6 +149,8 @@ export function useMeetMiddleSessionSocket(
   ]);
 }
 
-export function extractMeetMiddleSocketSession(payload: any): MeetMiddleSession | null {
+export function extractMeetMiddleSocketSession(
+  payload: any
+): MeetMiddleSession | null {
   return getSessionFromPayload(payload);
 }

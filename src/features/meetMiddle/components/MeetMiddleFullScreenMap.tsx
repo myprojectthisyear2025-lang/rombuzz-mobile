@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MeetMiddleMiniLogo from "@/src/components/meetMiddle/MeetMiddleMiniLogo";
 import MeetMiddleNativeMap from "@/src/features/meetMiddle/components/MeetMiddleNativeMap";
+import MeetMiddlePlaceCarousel from "@/src/features/meetMiddle/components/MeetMiddlePlaceCarousel";
 import type {
   MeetMiddlePlace,
   MeetMiddleSession,
@@ -131,41 +132,11 @@ export default function MeetMiddleFullScreenMap({
             </Text>
           </View>
 
-          {selectedPlace ? (
-            <View style={styles.selectedCard}>
-              <View style={styles.selectedIcon}>
-                <Ionicons
-                  name={selectedPlace.isMidpoint ? "navigate-circle" : "location"}
-                  size={21}
-                  color={RBZ.white}
-                />
-              </View>
-
-              <View style={styles.selectedBody}>
-                <Text numberOfLines={1} style={styles.selectedTitle}>
-                  {selectedPlace.isMidpoint ? "Midpoint" : selectedPlace.name}
-                </Text>
-
-                <Text numberOfLines={2} style={styles.selectedAddress}>
-                  {String(
-                    selectedPlace.address ||
-                      selectedPlace.category ||
-                      "Selected meetup spot"
-                  ).trim()}
-                </Text>
-              </View>
-
-              <Pressable
-                onPress={() => onSelectPlace?.(selectedPlace)}
-                style={({ pressed }) => [
-                  styles.chooseButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.chooseButtonText}>Choose</Text>
-              </Pressable>
-            </View>
-          ) : null}
+          <MeetMiddlePlaceCarousel
+            places={places}
+            selectedPlace={selectedPlace}
+            onSelectPlace={(place) => onSelectPlace?.(place)}
+          />
         </View>
       </View>
     </Modal>
@@ -270,54 +241,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: "center",
   },
-  selectedCard: {
-    minHeight: 72,
-    borderRadius: 22,
-    backgroundColor: "#FFF7FA",
-    borderWidth: 1,
-    borderColor: RBZ.line,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  selectedIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: RBZ.c2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  selectedBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  selectedTitle: {
-    color: RBZ.ink,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  selectedAddress: {
-    color: RBZ.gray,
-    fontSize: 11.5,
-    lineHeight: 15,
-    fontWeight: "700",
-    marginTop: 3,
-  },
-  chooseButton: {
-    minHeight: 40,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    backgroundColor: RBZ.c2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  chooseButtonText: {
-    color: RBZ.white,
-    fontSize: 12,
-    fontWeight: "900",
-  },
+
   pressed: {
     opacity: 0.82,
     transform: [{ scale: 0.98 }],

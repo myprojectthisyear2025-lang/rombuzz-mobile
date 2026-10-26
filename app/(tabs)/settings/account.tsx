@@ -4,13 +4,13 @@
  * 🎯 Purpose: Account settings (name + email update, like web)
  * ============================================================================
  */
+import { SettingsButton, SettingsField, SettingsNotice } from "@/src/components/settings/SettingsControls";
+import { useSettingsAlert } from "@/src/components/settings/SettingsDialog";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { RBZFont } from "@/src/design/rombuzzTypography";
 import { persistCurrentUser } from "@/src/features/auth/rbzSession";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
-import { RBZFont } from "@/src/design/rombuzzTypography";
-import { SettingsButton, SettingsField, SettingsNotice } from "@/src/components/settings/SettingsControls";
-import { useSettingsAlert } from "@/src/components/settings/SettingsDialog";
 import { Card, ScreenShell, SectionTitle, SmallText } from "../../../src/components/settings/_ui";
 import { rbzFetch } from "../../../src/lib/_rbzApi";
 
@@ -31,9 +31,10 @@ export default function AccountSettings() {
   const nameCooldownText = useMemo(() => {
     const last = me?.nameChangedAt ? new Date(me.nameChangedAt).getTime() : 0;
     if (!last) return "";
-    const days = Math.floor((Date.now() - last) / (1000 * 60 * 60 * 24));
-    if (days >= 30) return "";
-    return `You can change your name again in ${30 - days} day(s).`;
+    const remainingMs = 60 * 1000 - (Date.now() - last);
+    if (remainingMs <= 0) return "";
+    const hours = Math.ceil(remainingMs / (60 * 1000));
+    return `You can change your name again in ${hours} minute(s).`;
   }, [me]);
 
   const load = useCallback(async () => {

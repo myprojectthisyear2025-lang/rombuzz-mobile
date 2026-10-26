@@ -1,10 +1,12 @@
-import React from "react";
+/** Renders chat media, gift, and message action overlays. */
 import ChatCameraModal from "@/src/components/chat/ChatCameraModal";
 import ChatPlusModal from "@/src/components/chat/ChatPlusModal";
+import GiftPicker from "@/src/components/gifts/GiftPicker";
+import React from "react";
 import { useChatWindow } from "../ChatWindowContext";
 import ChatMessageActionsSheet from "./ChatMessageActionsSheet";
-import ChatReplyIdeasSheet from "./ChatReplyIdeasSheet";
 import ChatMessageReport from "./ChatMessageReport";
+import ChatReplyIdeasSheet from "./ChatReplyIdeasSheet";
 
 export default function ChatThreadOverlays() {
   const {
@@ -12,6 +14,12 @@ export default function ChatThreadOverlays() {
     setPlusOpen,
     cameraOpen,
     setCameraOpen,
+    giftPickerOpen,
+    setGiftPickerOpen,
+    peerId,
+    roomId,
+    peerName,
+    sendChatGiftMessage,
     sendGalleryMedia,
     sendCameraMedia,
     mediaViewerNode,
@@ -51,6 +59,19 @@ export default function ChatThreadOverlays() {
               duration: item.duration,
             });
           }}
+        />
+      ) : null}
+      {giftPickerOpen ? (
+        <GiftPicker
+          visible={giftPickerOpen}
+          onClose={() => setGiftPickerOpen(false)}
+          receiverId={peerId}
+          placement="chat"
+          targetType="chat"
+          targetId={roomId}
+          title="Send a Gift"
+          subtitle={`Send a gift to ${peerName}.`}
+          onSent={sendChatGiftMessage}
         />
       ) : null}
       {mediaViewerNode}

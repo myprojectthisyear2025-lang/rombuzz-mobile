@@ -28,9 +28,9 @@ import {
 } from "react-native";
 
 import { API_BASE } from "@/src/config/api";
-import { getSocket } from "@/src/lib/socket";
 import { maybeDecode } from "@/src/features/chat/thread/chatPayload";
 import MeetMiddleFinalChatBubble from "@/src/features/chat/thread/MeetMiddleFinalChatBubble";
+import { getSocket } from "@/src/lib/socket";
 
 // ============================================================================
 // Types
@@ -367,7 +367,7 @@ function getRequestStatusCopy(
 
   return isMine
     ? `Waiting for ${peerName} to accept.`
-    : `${peerName} wants to find a halfway spot with you.`;
+    : `${peerName} wants to meet you halfway.`;
 }
 
 function requestStatusIcon(status: MeetMiddleBubbleStatus): string {

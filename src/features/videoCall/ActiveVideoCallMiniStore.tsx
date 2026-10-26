@@ -20,7 +20,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   DeviceEventEmitter,
@@ -33,6 +33,8 @@ import {
 } from "react-native";
 import { RtcTextureView } from "react-native-agora";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useVideoCall } from "./VideoCallProvider";
+import { useVideoCallSocket } from "./useVideoCallSocket";
 
 const MINI_WIDTH = 116;
 const MINI_HEIGHT = 168;
@@ -142,6 +144,7 @@ function formatMiniDuration(totalSeconds: number) {
 
 export default function ActiveVideoCallMiniBubble() {
   const router = useRouter();
+  const { activeCallId, clearActiveCall } = useVideoCall();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -149,6 +152,38 @@ export default function ActiveVideoCallMiniBubble() {
     getActiveVideoCallMiniSnapshot()
   );
   const [clockTick, setClockTick] = useState(0);
+
+  const clearMiniCallIfEnded = useCallback(
+    (payload: any) => {
+      const eventCallId = clean(payload?.call?.id);
+      const miniCallId = clean(activeMiniCallSnapshot?.callId);
+      if (!eventCallId || eventCallId !== miniCallId) return;
+
+      hideActiveVideoCallMini();
+      clearActiveCall();
+      void runActiveVideoCallDetachedCleanup();
+    },
+    [clearActiveCall],
+  );
+
+  const miniCallSocketHandlers = useMemo(
+    () => ({
+      onEnded: clearMiniCallIfEnded,
+      onDeclined: clearMiniCallIfEnded,
+      onCanceled: clearMiniCallIfEnded,
+      onMissed: clearMiniCallIfEnded,
+    }),
+    [clearMiniCallIfEnded],
+  );
+
+  useVideoCallSocket(miniCallSocketHandlers);
+
+  useEffect(() => {
+    if (!miniCall?.callId) return;
+    if (String(miniCall.callId) === String(activeCallId || "")) return;
+
+    hideActiveVideoCallMini();
+  }, [miniCall?.callId, activeCallId]);
 
   const positionRef = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const positionValueRef = useRef({ x: 0, y: 0 });
@@ -176,32 +211,13 @@ export default function ActiveVideoCallMiniBubble() {
     };
   };
 
-   const restoreCall = async () => {
+   const restoreCall = () => {
     if (!miniCall?.callId) return;
 
-    const target = {
-      callId: miniCall.callId,
-      channelName: clean(miniCall.channelName),
-      appId: clean(miniCall.appId),
-      token: clean(miniCall.token),
-      uid: clean(miniCall.uid),
-      role: clean(miniCall.role),
-      restore: "1",
-      startedAtMs: miniCall.startedAtMs
-        ? String(miniCall.startedAtMs)
-        : "",
-    };
-
-    setMiniCall(null);
-
-    // The minimized call kept the old Agora engine alive while user used the app.
-    // Before reopening full call UI, release that detached engine so [callId].tsx
-    // can safely create/rejoin a fresh full-screen engine.
-    await runActiveVideoCallDetachedCleanup();
-
-    router.push({
+    hideActiveVideoCallMini();
+    router.dismissTo({
       pathname: "/video-call/[callId]",
-      params: target,
+      params: { callId: miniCall.callId },
     });
   };
 

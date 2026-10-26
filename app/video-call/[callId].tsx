@@ -23,6 +23,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -31,6 +32,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   BackHandler,
   PanResponder,
   PermissionsAndroid,
@@ -144,6 +146,7 @@ function wait(ms: number) {
 
 export default function RomBuzzVideoCallScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { colors } = useRomBuzzTheme();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -195,6 +198,7 @@ export default function RomBuzzVideoCallScreen() {
     resolvedCallId || (pendingCallerLaunch ? "" : routeCallId);
 
     const engineRef = useRef<IRtcEngine | null>(null);
+  const pipRef = useRef<ReturnType<IRtcEngine["getAgoraPip"]> | null>(null);
   const mountedRef = useRef(true);
   const leavingRef = useRef(false);
 
@@ -387,11 +391,7 @@ export default function RomBuzzVideoCallScreen() {
       localPreviewKey,
     });
 
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/(tabs)/(root)/chat");
-    }
+    router.push("/(tabs)/(root)/chat");
   };
 
   const restoreCall = () => {
@@ -557,6 +557,18 @@ export default function RomBuzzVideoCallScreen() {
     const engine = engineRef.current;
     engineRef.current = null;
 
+    const pip = pipRef.current;
+    pipRef.current = null;
+
+    if (pip) {
+      try {
+        pip.pipDispose();
+      } catch {}
+      try {
+        pip.release();
+      } catch {}
+    }
+
     if (!engine) return;
 
     try {
@@ -658,21 +670,47 @@ export default function RomBuzzVideoCallScreen() {
     },
   });
 
-  useEffect(() => {
+   useEffect(() => {
     mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
-
-      // If X minimized the call, do NOT release Agora here.
-      // The detached cleanup is stored globally and runs when the user restores
-      // the full call screen or when the real hang-up path happens.
       if (minimizedToGlobalRef.current) return;
-
       cleanupAgora();
     };
   }, []);
-    useEffect(() => {
+
+  useEffect(() => {
+    if (isFocused) {
+      minimizedToGlobalRef.current = false;
+      hideActiveVideoCallMini();
+    }
+  }, [isFocused]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (Platform.OS !== "android" || state !== "background") return;
+
+      const pip = pipRef.current;
+      if (
+        !pip ||
+        !pip.pipIsSupported() ||
+        pip.pipIsAutoEnterSupported()
+      ) {
+        return;
+      }
+
+      if (!pip.pipStart()) {
+        console.warn("Agora PiP could not start as the app entered background.");
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       minimizeCall();
       return true;
@@ -680,6 +718,7 @@ export default function RomBuzzVideoCallScreen() {
 
     return () => sub.remove();
   }, [
+    isFocused,
     callId,
     joinToken?.channelName,
     joinToken?.appId,
@@ -834,6 +873,26 @@ export default function RomBuzzVideoCallScreen() {
           appId: joinToken.appId,
           channelProfile: ChannelProfileType.ChannelProfileCommunication,
         });
+
+        if (Platform.OS === "android") {
+          const pip = engine.getAgoraPip();
+          pipRef.current = pip;
+
+          if (pip.pipIsSupported()) {
+            const pipReady = pip.pipSetup({
+              autoEnterEnabled: pip.pipIsAutoEnterSupported(),
+              aspectRatioX: 9,
+              aspectRatioY: 16,
+              seamlessResizeEnabled: true,
+              useExternalStateMonitor: true,
+              externalStateMonitorInterval: 100,
+            });
+
+            if (!pipReady) {
+              console.warn("Agora PiP setup did not complete.");
+            }
+          }
+        }
 
              engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
         engine.enableVideo();

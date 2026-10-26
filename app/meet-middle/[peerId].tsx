@@ -265,6 +265,7 @@ export default function MeetMiddleScreen() {
 
   const localPlaceRejectSessionRef = useRef("");
   const localPlaceRejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const declinedNavigatedSessionRef = useRef("");
 
   const {
     loading: meetRequestLoading,
@@ -447,6 +448,38 @@ export default function MeetMiddleScreen() {
 
       setScreenStage("location-consent");
     },
+        onDeclined: (payload) => {
+      const session = extractMeetMiddleSocketSession(payload);
+      const declinedById = getEntityId(
+        payload?.declinedBy || payload?.data?.declinedBy || ""
+      );
+      const viewerId = String(resumeSession.viewerId || "").trim();
+      const requestedById = String(
+        session?.requestedBy || meetRequestSession?.requestedBy || ""
+      ).trim();
+      const declinedSessionId = getSessionId(session) || activeSessionId;
+
+      if (declinedById && declinedById !== peerId) return;
+      if (requestedById && viewerId && requestedById !== viewerId) return;
+      if (
+        !declinedSessionId ||
+        declinedNavigatedSessionRef.current === declinedSessionId
+      ) {
+        return;
+      }
+
+      declinedNavigatedSessionRef.current = declinedSessionId;
+
+      router.replace({
+        pathname: "/chat/[peerId]",
+        params: {
+          peerId,
+          name: displayName,
+          avatar,
+        },
+      });
+    },
+    
       onLocationWaiting: (payload) => {
       const session = extractMeetMiddleSocketSession(payload);
       const sharedById = getSharedById(payload);

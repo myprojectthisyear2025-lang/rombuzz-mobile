@@ -1,8 +1,10 @@
+import type { Msg } from "@/src/features/chat/thread/chatTypes";
+import MeetMiddleChatBubble, {
+  getMeetMiddleBubblePayload,
+} from "@/src/features/chat/thread/MeetMiddleChatBubble";
+import VideoCallHistoryBubble from "@/src/features/videoCall/VideoCallHistoryBubble";
 import React from "react";
 import { Alert, Pressable, Text, View } from "react-native";
-import type { Msg } from "@/src/features/chat/thread/chatTypes";
-import MeetMiddleChatBubble from "@/src/features/chat/thread/MeetMiddleChatBubble";
-import VideoCallHistoryBubble from "@/src/features/videoCall/VideoCallHistoryBubble";
 import { useChatWindow } from "../ChatWindowContext";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
 import type { ChatMessagePresentation } from "./chatMessagePresentation";
@@ -66,8 +68,11 @@ export default function ChatSpecialMessage({
         }
       />
     );
+  const meetPayload = getMeetMiddleBubblePayload(m);
+  const isMeetRequest = meetPayload?.kind === "request";
+
   if (shouldHideMeetMiddleMilestone) return null;
-  if (isMeetMiddleConfirmed)
+  if (isMeetRequest || isMeetMiddleConfirmed)
     return (
       <MeetMiddleChatBubble
         message={m}

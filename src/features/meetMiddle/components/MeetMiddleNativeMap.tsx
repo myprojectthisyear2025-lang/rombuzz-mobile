@@ -15,7 +15,7 @@ import {
   Map,
   ViewAnnotation,
 } from "@maplibre/maplibre-react-native";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -30,10 +30,9 @@ import type {
   MeetMiddleSession,
 } from "@/src/features/meetMiddle/meetMiddleTypes";
 
-// OpenFreeMap Positron is a real street-map style for MapLibre.
-// It looks much cleaner than MapLibre's green demo style and does not require
-// exposing any Geoapify key in the mobile app.
-const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+// OpenFreeMap Liberty is a detailed street-map style for MapLibre.
+// It does not require exposing any Geoapify key in the mobile app.
+const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
 const RBZ = {
   c1: "#b1123c",
@@ -97,6 +96,7 @@ function getPlaceCoord(place?: MeetMiddlePlace | null): [number, number] | null 
 
   const lat = readNumber(
     place?.lat,
+    place?.coords?.lat,
     raw?.lat,
     raw?.latitude,
     rawProps?.lat,
@@ -105,6 +105,7 @@ function getPlaceCoord(place?: MeetMiddlePlace | null): [number, number] | null 
 
   const lng = readNumber(
     place?.lng,
+    place?.coords?.lng,
     (place as any)?.lon,
     (place as any)?.longitude,
     raw?.lng,
@@ -352,6 +353,30 @@ export default function MeetMiddleNativeMap({
   }, [mapPoints, selectableMapPoints]);
 
   const selectedKey = getSelectedPlaceKey(selectedPlace);
+  const cameraRef = useRef<any>(null);
+  const lastFocusedPlaceKey = useRef("");
+
+  useEffect(() => {
+    if (!selectedKey) return;
+
+    // Keep the first view framed around the midpoint and all place markers.
+    if (!lastFocusedPlaceKey.current) {
+      lastFocusedPlaceKey.current = selectedKey;
+      if (!fullScreen || selectedPlace?.isMidpoint) return;
+    } else {
+      if (lastFocusedPlaceKey.current === selectedKey) return;
+      lastFocusedPlaceKey.current = selectedKey;
+    }
+
+    const coordinate = selectedPlace ? getPlaceCoord(selectedPlace) : null;
+    if (!coordinate) return;
+
+    cameraRef.current?.flyTo({
+      center: coordinate,
+      zoom: fullScreen ? 14.5 : 14,
+      duration: 850,
+    });
+  }, [fullScreen, selectedKey, selectedPlace]);
 
   if (!mapPoints.length) {
     return (
@@ -376,6 +401,7 @@ export default function MeetMiddleNativeMap({
         androidView="texture"
       >
         <Camera
+          ref={cameraRef}
           center={center}
           zoom={fullScreen ? Math.max(zoom - 0.4, 7.5) : zoom}
           easing="fly"

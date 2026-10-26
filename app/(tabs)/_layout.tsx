@@ -18,16 +18,17 @@
 import PremiumBuzzReceiverOverlay, {
   type PremiumBuzzOverlayPayload,
 } from "@/src/components/buzz/PremiumBuzzReceiverOverlay";
-import { useNotificationUnread } from "@/src/features/notifications/notificationState";
 import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import { getSessionSnapshot, subscribeSession } from "@/src/features/auth/rbzSession";
+import { useUnreadSummary } from "@/src/features/chat/unread/useUnreadSummary";
+import { useNotificationUnread } from "@/src/features/notifications/notificationState";
 import FirstSignupTour from "@/src/features/onboarding/FirstSignupTour";
+import { usePendingMatchRequestCount } from "@/src/features/socialStats/PendingMatchRequestBadge";
 import IncomingCallOverlay from "@/src/features/videoCall/IncomingCallOverlay";
 import { getSocket } from "@/src/lib/socket";
 import RootBottomBar, {
   type RootTabName,
 } from "@/src/navigation/RootBottomBar";
-import { getSessionSnapshot, subscribeSession } from "@/src/features/auth/rbzSession";
-import { useUnreadSummary } from "@/src/features/chat/unread/useUnreadSummary";
 import { rbzStartupWarmup } from "@/src/performance/startup/rbzStartupWarmup";
 import * as Haptics from "expo-haptics";
 import { Tabs, useRouter, useSegments } from "expo-router";
@@ -188,6 +189,7 @@ function AuthenticatedTabLayout() {
 
   // The app-level unread owner survives tab/thread navigation.
   const { total: chatUnreadTotal } = useUnreadSummary();
+  const pendingMatchRequestCount = usePendingMatchRequestCount();
   const chatPulse = useRef(new Animated.Value(0)).current;
   const pulseTimerRef = useRef<any>(null);
 
@@ -382,9 +384,10 @@ function AuthenticatedTabLayout() {
                 ? tabName
                 : null
             }
-            chatUnreadTotal={
+              chatUnreadTotal={
               chatUnreadTotal
             }
+            pendingMatchRequestCount={pendingMatchRequestCount}
             chatPulse={
               chatPulse
             }

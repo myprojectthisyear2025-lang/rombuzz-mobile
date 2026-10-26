@@ -383,6 +383,8 @@ export default function PrivateCommentsSheet({
   const [selectedPhotoUri, setSelectedPhotoUri] = useState("");
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const pendingCommentsRef = useRef(new Map<string, PrivateComment>());
+  const inFlightCommentKeysRef = useRef(new Set<string>());
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
@@ -652,6 +654,42 @@ export default function PrivateCommentsSheet({
     return output;
   }, []);
 
+    const addOptimisticComment = useCallback(
+    (text: string, imageUrl: string, parentId: string | null) => {
+      const id = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const myPreviousComment = comments.find(
+        (comment) => String(comment.userId) === safeMeId
+      );
+
+      const optimisticComment: PrivateComment = {
+        id,
+        userId: safeMeId,
+        text,
+        imageUrl: imageUrl || undefined,
+        photoUrl: imageUrl || undefined,
+        parentId,
+        createdAt: Date.now(),
+        author:
+          myPreviousComment?.author ||
+          normalizeUser({ id: safeMeId, firstName: "You" }, safeMeId),
+        canEdit: true,
+        canDelete: true,
+        canReply: true,
+        reactions: {},
+        reactionCounts: {},
+        totalReactions: 0,
+      };
+
+      pendingCommentsRef.current.set(id, optimisticComment);
+      setComments((current) =>
+        orderThreadedComments([...current, optimisticComment])
+      );
+
+      return id;
+    },
+    [comments, orderThreadedComments, safeMeId]
+  );
+
   const loadComments = useCallback(async () => {
     if (!visible || !safeTargetId || !safeOwnerId) return;
 
@@ -674,9 +712,16 @@ export default function PrivateCommentsSheet({
         const rawComments = Array.isArray(json?.comments) ? json.comments : [];
         const enriched = await enrichComments(rawComments, ownerUser, headers);
         const ordered = orderThreadedComments(enriched);
+        const pendingComments = Array.from(pendingCommentsRef.current.values());
+        const visibleComments = orderThreadedComments([
+          ...ordered,
+          ...pendingComments.filter(
+            (pending) => !ordered.some((saved) => saved.id === pending.id)
+          ),
+        ]);
 
-        setComments(ordered);
-        await onChanged?.(ordered);
+        setComments(visibleComments);
+        await onChanged?.(visibleComments);
         return;
       }
 
@@ -690,9 +735,16 @@ export default function PrivateCommentsSheet({
       const rawComments = Array.isArray(json?.comments) ? json.comments : [];
       const enriched = await enrichComments(rawComments, ownerUser, headers);
       const ordered = orderThreadedComments(enriched);
+      const pendingComments = Array.from(pendingCommentsRef.current.values());
+      const visibleComments = orderThreadedComments([
+        ...ordered,
+        ...pendingComments.filter(
+          (pending) => !ordered.some((saved) => saved.id === pending.id)
+        ),
+      ]);
 
-      setComments(ordered);
-      await onChanged?.(ordered);
+      setComments(visibleComments);
+      await onChanged?.(visibleComments);
     } catch (error: any) {
       Alert.alert(
         "Comments",
@@ -818,6 +870,30 @@ export default function PrivateCommentsSheet({
 
     if ((!text && !imageUrl) || !safeTargetId || !safeOwnerId || uploadingPhoto) return;
 
+    const textToSend =
+      replyingTo && !text.startsWith("@")
+        ? `${replySeedFor(replyingTo.name)}${text}`
+        : text;
+    const parentId = replyingTo ? String(replyingTo.id) : null;
+    const isNewComment = !editingCommentId;
+    const submissionKey = JSON.stringify([
+      targetType,
+      safeTargetId,
+      textToSend,
+      imageUrl,
+      parentId,
+    ]);
+
+    if (isNewComment && inFlightCommentKeysRef.current.has(submissionKey)) return;
+
+    let optimisticCommentId: string | null = null;
+
+    if (isNewComment) {
+      inFlightCommentKeysRef.current.add(submissionKey);
+      optimisticCommentId = addOptimisticComment(textToSend, imageUrl, parentId);
+      resetComposer();
+    }
+
     try {
       const headers = await authHeaders();
 
@@ -842,12 +918,7 @@ export default function PrivateCommentsSheet({
           return;
         }
 
-        const textToSend =
-          replyingTo && !text.startsWith("@")
-            ? `${replySeedFor(replyingTo.name)}${text}`
-            : text;
-
-             const res = await fetch(`${API_BASE}/media/${safeOwnerId}/comment`, {
+        const res = await fetch(`${API_BASE}/media/${safeOwnerId}/comment`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -855,12 +926,14 @@ export default function PrivateCommentsSheet({
             text: textToSend,
             imageUrl: imageUrl || null,
             photoUrl: imageUrl || null,
-            parentId: replyingTo ? String(replyingTo.id) : null,
+            parentId,
           }),
         });
         if (!res.ok) throw new Error(await parseError(res));
 
-        resetComposer();
+        if (optimisticCommentId) {
+          pendingCommentsRef.current.delete(optimisticCommentId);
+        }
         await loadComments();
         return;
       }
@@ -882,29 +955,38 @@ export default function PrivateCommentsSheet({
         return;
       }
 
-      const textToSend =
-        replyingTo && !text.startsWith("@") ? `${replySeedFor(replyingTo.name)}${text}` : text;
-
-         const res = await fetch(`${API_BASE}/buzz/posts/${safeTargetId}/comments`, {
+      const res = await fetch(`${API_BASE}/buzz/posts/${safeTargetId}/comments`, {
         method: "POST",
         headers,
         body: JSON.stringify({
           text: textToSend,
           imageUrl: imageUrl || null,
           photoUrl: imageUrl || null,
-          parentId: replyingTo ? String(replyingTo.id) : null,
+          parentId,
         }),
       });
 
       if (!res.ok) throw new Error(await parseError(res));
 
-      resetComposer();
+      if (optimisticCommentId) {
+        pendingCommentsRef.current.delete(optimisticCommentId);
+      }
       await loadComments();
     } catch (error: any) {
+      if (optimisticCommentId) {
+        pendingCommentsRef.current.delete(optimisticCommentId);
+        setComments((current) =>
+          current.filter((comment) => comment.id !== optimisticCommentId)
+        );
+        setDraft((current) => current || text);
+      }
+
       Alert.alert(
         "Comments",
         error?.message ? String(error.message) : "Failed to send comment."
       );
+    } finally {
+      inFlightCommentKeysRef.current.delete(submissionKey);
     }
     }, [
     draft,
@@ -1027,6 +1109,11 @@ export default function PrivateCommentsSheet({
     setSelectedComment(comment);
     setActionMenuVisible(true);
   }, []);
+    const startReply = useCallback((comment: PrivateComment, name: string) => {
+    setEditingCommentId(null);
+    setReplyingTo({ id: String(comment.id), name });
+    setDraft(replySeedFor(name));
+  }, []);
 
   const handleAction = useCallback((action: string) => {
     if (!selectedComment) return;
@@ -1075,7 +1162,7 @@ export default function PrivateCommentsSheet({
          const parentAuthor = parentComment?.author || {};
       const parentAuthorName = parentComment ? getUserName(parentAuthor) : "User";
 
-                const hasActions = item.canEdit || item.canDelete || item.canReply;
+                const hasActions = item.canEdit || item.canDelete;
       const likedByMe = String(item?.myReaction || "") === "❤️";
       const heartCount = getHeartCount(item);
       const commentTime = formatCommentTime(item?.createdAt || item?.updatedAt);
@@ -1176,6 +1263,16 @@ export default function PrivateCommentsSheet({
                   </Text>
                 ) : null}
               </TouchableOpacity>
+                            {item.canReply && (
+                <TouchableOpacity
+                  onPress={() => startReply(item, authorName)}
+                  activeOpacity={0.75}
+                  hitSlop={8}
+                  style={styles.commentReplyButton}
+                >
+                  <Text style={styles.commentReplyText}>Reply</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -1431,15 +1528,6 @@ export default function PrivateCommentsSheet({
         >
           <View style={styles.actionMenuContainer}>
             <View style={styles.actionMenu}>
-              {selectedComment?.canReply && (
-                <TouchableOpacity
-                  style={styles.actionMenuItem}
-                  onPress={() => handleAction("reply")}
-                >
-                  <Ionicons name="return-up-back-outline" size={20} color={PREMIUM.primary} />
-                  <Text style={styles.actionMenuItemText}>Reply</Text>
-                </TouchableOpacity>
-              )}
               
               {selectedComment?.canEdit && (
                 <TouchableOpacity
@@ -1704,6 +1792,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     backgroundColor: PREMIUM.border,
+  },
+  commentReplyButton: {
+    minHeight: 28,
+    marginLeft: 10,
+    justifyContent: "center",
+  },
+
+  commentReplyText: {
+    color: PREMIUM.textLight,
+    fontSize: 12,
+    fontWeight: "700",
   },
 
   commentHeartButtonActive: {

@@ -1,3 +1,9 @@
+/**
+ * 📁 File: src/features/chat/window/components/ChatComposer.tsx
+ * 🎯 Purpose: Renders the chat message field and composer actions.
+ * Includes: Message sending, attachment actions, and the chat gift picker button.
+ */
+
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Pressable, TextInput, View } from "react-native";
@@ -24,6 +30,7 @@ export default function ChatComposer() {
     setInputHeight,
     send,
     editId,
+    setGiftPickerOpen,
   } = useChatWindow();
   const { styles, colors } = useChatWindowStyles();
 
@@ -68,62 +75,73 @@ export default function ChatComposer() {
               <ChatComposerActions inline />
             </View>
           ) : null}
-          <TextInput
-            accessibilityLabel="Message"
-            value={text}
-            onChangeText={(nextText) => {
-              setText(nextText);
-              if (!composerExpanded) setComposerExpanded(true);
-              if (!isTypingRef.current) {
-                isTypingRef.current = true;
-                emitTyping(true);
-              }
-              if (typingStopRef.current) clearTimeout(typingStopRef.current);
-              typingStopRef.current = setTimeout(() => {
-                isTypingRef.current = false;
-                emitTyping(false);
-              }, 1200);
-            }}
-            onFocus={() => {
-              setKeyboardOpen(true);
-              setComposerExpanded(true);
-              settleToLatest(false);
-            }}
-            onBlur={() => {
-              // Real keyboard-hide events restore spacing after Android finishes resizing.
-              if (isTypingRef.current) {
-                isTypingRef.current = false;
-                emitTyping(false);
-              }
-              if (!String(text || "").trim()) {
-                setComposerExpanded(false);
-                setComposerActionsOpen(false);
-                setInputHeight(44);
-              }
-            }}
-            onContentSizeChange={(event) => {
-              setInputHeight(
-                Math.max(
-                  44,
-                  Math.min(
-                    120,
-                    Math.ceil(event.nativeEvent.contentSize.height),
+          <View style={styles.messageField}>
+            <TextInput
+              accessibilityLabel="Message"
+              value={text}
+              onChangeText={(nextText) => {
+                setText(nextText);
+                if (!composerExpanded) setComposerExpanded(true);
+                if (!isTypingRef.current) {
+                  isTypingRef.current = true;
+                  emitTyping(true);
+                }
+                if (typingStopRef.current) clearTimeout(typingStopRef.current);
+                typingStopRef.current = setTimeout(() => {
+                  isTypingRef.current = false;
+                  emitTyping(false);
+                }, 1200);
+              }}
+              onFocus={() => {
+                setKeyboardOpen(true);
+                setComposerExpanded(true);
+                settleToLatest(false);
+              }}
+              onBlur={() => {
+                // Real keyboard-hide events restore spacing after Android finishes resizing.
+                if (isTypingRef.current) {
+                  isTypingRef.current = false;
+                  emitTyping(false);
+                }
+                if (!String(text || "").trim()) {
+                  setComposerExpanded(false);
+                  setComposerActionsOpen(false);
+                  setInputHeight(44);
+                }
+              }}
+              onContentSizeChange={(event) => {
+                setInputHeight(
+                  Math.max(
+                    44,
+                    Math.min(
+                      120,
+                      Math.ceil(event.nativeEvent.contentSize.height),
+                    ),
                   ),
-                ),
-              );
-            }}
-            placeholder="Message…"
-            placeholderTextColor={colors.textMuted}
-            style={[
-              styles.input,
-              styles.inputMultiline,
-              { height: inputHeight },
-            ]}
-            multiline
-            scrollEnabled
-            textAlignVertical="top"
-            blurOnSubmit={false}
-          />
+                );
+              }}
+              placeholder="Message…"
+              placeholderTextColor={colors.textMuted}
+              style={[
+                styles.input,
+                styles.inputMultiline,
+                { height: inputHeight },
+              ]}
+              multiline
+              scrollEnabled
+              textAlignVertical="top"
+              blurOnSubmit={false}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Send a gift"
+              onPress={() => setGiftPickerOpen(true)}
+              style={styles.giftBtn}
+              hitSlop={4}
+            >
+              <Ionicons name="gift-outline" size={19} color={colors.brand} />
+            </Pressable>
+          </View>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={editId ? "Save message edit" : "Send message"}

@@ -28,6 +28,7 @@ export type MeetMiddlePlace = {
   category?: string;
   lat?: number;
   lng?: number;
+  coords?: MeetMiddleCoords | null;
   distanceMeters?: number;
   provider?: string;
   isMidpoint?: boolean;

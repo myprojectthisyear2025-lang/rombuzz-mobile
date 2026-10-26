@@ -1,7 +1,7 @@
-import { useState } from "react";
 import { maybeDecode } from "@/src/features/chat/thread/chatPayload";
 import { buildReplySnapshot } from "@/src/features/chat/thread/chatReplyUtils";
 import type { Msg, ReplySnapshot } from "@/src/features/chat/thread/chatTypes";
+import { useState } from "react";
 
 export function useChatComposer(closeSheet: () => void) {
   const [text, setText] = useState("");
@@ -12,6 +12,7 @@ export function useChatComposer(closeSheet: () => void) {
   const [editId, setEditId] = useState<string | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
   const startReplying = (message: Msg) => {
     const snapshot = buildReplySnapshot(message);
     if (!snapshot) return;
@@ -46,6 +47,8 @@ export function useChatComposer(closeSheet: () => void) {
     setPlusOpen,
     cameraOpen,
     setCameraOpen,
+    giftPickerOpen,
+    setGiftPickerOpen,
     startReplying,
     startEdit,
   };

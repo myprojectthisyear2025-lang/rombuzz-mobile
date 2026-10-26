@@ -39,6 +39,7 @@ module.exports = ({ config }) => {
 
   const plugins = [
     ...(baseConfig.plugins || []),
+    "./plugins/withAgoraPip",
     "expo-apple-authentication",
     [
       "@sentry/react-native/expo",

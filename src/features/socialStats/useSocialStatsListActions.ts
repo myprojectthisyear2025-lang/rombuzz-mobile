@@ -5,25 +5,26 @@ import { perfTap } from "@/src/performance/diagnostics/core";
  */
 
 import {
-    useRouter,
+  useRouter,
 } from "expo-router";
 
 import {
-    useState,
+  useState,
 } from "react";
 
 import {
-    Alert,
+  Alert,
+  DeviceEventEmitter,
 } from "react-native";
 
 import {
-    rbzApiJson,
+  rbzApiJson,
 } from "@/src/performance/api/rbzApiClient";
 
 import {
-    SocialStatsTab,
-    SocialStatsUser,
-    socialUserId,
+  SocialStatsTab,
+  SocialStatsUser,
+  socialUserId,
 } from "./socialStatsTypes";
 
 export function useSocialStatsListActions({
@@ -133,6 +134,7 @@ export function useSocialStatsListActions({
         if (
           response.success
         ) {
+          DeviceEventEmitter.emit("rbz:match-request:handled");
           Alert.alert(
             action ===
               "accept"

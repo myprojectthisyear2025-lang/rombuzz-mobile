@@ -9,11 +9,10 @@ import { diagnosticImage } from "@/src/performance/diagnostics/media";
 import {
   useRomBuzzTheme,
 } from "@/src/design/RomBuzzThemeProvider";
-
 import {
   RBZFont,
 } from "@/src/design/rombuzzTypography";
-
+import PendingMatchRequestBadge from "@/src/features/socialStats/PendingMatchRequestBadge";
 import {
   Ionicons,
 } from "@expo/vector-icons";
@@ -45,6 +44,7 @@ export type RootTabName =
 type Props = {
   activeTab: string | null;
   chatUnreadTotal: number;
+  pendingMatchRequestCount: number;
   chatPulse: Animated.Value;
   profilePhoto: string | null;
   profileCompletion: number;
@@ -89,6 +89,7 @@ const ITEMS = [
 export default function RootBottomBar({
   activeTab,
   chatUnreadTotal,
+  pendingMatchRequestCount,
   chatPulse,
   profilePhoto,
   profileCompletion,
@@ -312,6 +313,19 @@ export default function RootBottomBar({
                       </Text>
                     </View>
                   )}
+                </View>
+              ) : item.name === "social-stats" ? (
+                <View style={styles.chatIcon}>
+                  <Ionicons
+                    name={focused ? item.activeIcon : item.icon}
+                    size={24}
+                    color={color}
+                  />
+                  <PendingMatchRequestBadge
+                    count={pendingMatchRequestCount}
+                    backgroundColor={colors.brand}
+                    borderColor={colors.tabBar}
+                  />
                 </View>
               ) : (
                 <Ionicons

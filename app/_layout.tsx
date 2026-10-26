@@ -1,5 +1,4 @@
-import { perfMark } from "@/src/performance/diagnostics/core";
-import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network";
+
 /**
  * ============================================================
  * 📁 File: app/_layout.tsx
@@ -12,18 +11,25 @@ import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network
  */
 
 import { Sentry } from "@/src/monitoring/sentry";
+import { perfMark } from "@/src/performance/diagnostics/core";
+import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network";
 
 import RomBuzzSystemStatusBar from "@/src/components/system/RomBuzzSystemStatusBar";
 import {
   RomBuzzThemeProvider,
   useRomBuzzTheme,
 } from "@/src/design/RomBuzzThemeProvider";
+import { useRomBuzzTypography } from "@/src/design/rombuzzTypography";
 import AppUpdateGate from "@/src/features/appUpdate/AppUpdateGate";
+import { getSessionGeneration, getSessionSnapshot, isSessionCurrent } from "@/src/features/auth/rbzSession";
 import { useRootAuth } from "@/src/features/auth/useRootAuth";
-import { useNotificationLifecycle } from "@/src/features/notifications/notificationState";
+import { useStartupPresentation } from "@/src/features/auth/useStartupPresentation";
 import { useChatUnreadLifecycle } from "@/src/features/chat/unread/useChatUnreadLifecycle";
 import IncomingMeetMiddleOverlay from "@/src/features/meetMiddle/IncomingMeetMiddleOverlay";
+import { useNotificationLifecycle } from "@/src/features/notifications/notificationState";
+import { shouldPresentPush, usePushRegistration } from "@/src/features/notifications/usePushRegistration";
 import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallMiniStore";
+import { handleVideoCallNotificationAction } from "@/src/features/videoCall/videoCallNotificationActions";
 import { VideoCallProvider } from "@/src/features/videoCall/VideoCallProvider";
 import { resolveNotificationHref } from "@/src/lib/socket";
 import {
@@ -33,13 +39,10 @@ import {
 } from "@react-navigation/native";
 import Constants from "expo-constants";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { getSessionSnapshot, getSessionGeneration, isSessionCurrent } from "@/src/features/auth/rbzSession";
-import { shouldPresentPush, usePushRegistration } from "@/src/features/notifications/usePushRegistration";
 import React, {
   useEffect,
   useMemo,
-  useRef,
-  useState,
+  useRef
 } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -54,6 +57,24 @@ if (Notifications) {
       const show = shouldPresentPush(notification?.request?.content?.data);
       return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
     },
+  });
+
+  Notifications.setNotificationCategoryAsync("incoming_video_call", [
+    {
+      identifier: "ANSWER_CALL",
+      buttonTitle: "Answer",
+      options: { opensAppToForeground: true },
+    },
+    {
+      identifier: "DECLINE_CALL",
+      buttonTitle: "Decline",
+      options: { opensAppToForeground: true, isDestructive: true },
+    },
+  ]).catch((err: any) => {
+    console.warn(
+      "Incoming call notification actions could not register:",
+      err?.message || err,
+    );
   });
 }
 
@@ -90,7 +111,9 @@ function RootLayout() {
   const { ready, loggedIn, onboardingPending, authToken, authUserId } = useRootAuth();
   useChatUnreadLifecycle(ready && loggedIn === true && onboardingPending === false);
   useNotificationLifecycle(ready && loggedIn === true && onboardingPending === false);
-  const [splashDone, setSplashDone] = useState(false);
+  const splashDone = useRomBuzzTypography();
+
+  useStartupPresentation(ready && splashDone, segments);
 
   const handledResponseIdsRef = useRef(new Set<string>());
   const loggedInRef = useRef<boolean>(false);
@@ -113,22 +136,22 @@ function RootLayout() {
       return;
     }
 
-    const timer = setTimeout(() => {
-      if (onboardingPending) {
-        router.replace("/auth/register-full");
-      } else if (loggedIn) {
-        router.replace("/(tabs)/(root)/homepage");
-      } else {
-        router.replace("/auth/login");
-      }
-    }, 2000);
+    const current = segments.join("/");
+    if (current !== "" && current !== "index") return;
 
-    return () => clearTimeout(timer);
+    if (onboardingPending) {
+      router.replace("/auth/register-full");
+    } else if (loggedIn) {
+      router.replace("/(tabs)/(root)/homepage");
+    } else {
+      router.replace("/auth/login");
+    }
   }, [
     ready,
     loggedIn,
     onboardingPending,
     splashDone,
+    segments,
     router,
   ]);
 
@@ -143,7 +166,7 @@ function RootLayout() {
     }
 
     const current = segments.join("/");
-    if (current === "index") return;
+    if (current === "" || current === "index") return;
 
     // An unfinished signup always wins over normal auth routing.
     // This prevents killing/reopening the app from bypassing onboarding.
@@ -176,18 +199,9 @@ function RootLayout() {
   ]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      perfMark("startup", "splash-gate-complete");
-      setSplashDone(true);
-    }, 2100);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     if (!Notifications) return;
 
-    const handleNotificationResponse = (response: any | null) => {
+    const handleNotificationResponse = async (response: any | null) => {
       if (!response || !loggedInRef.current || !getSessionSnapshot().token) return;
       const recipientId = String(response.notification.request.content.data?.recipientId || response.notification.request.content.data?.receiverId || "");
       const current = getSessionSnapshot().user;
@@ -202,6 +216,12 @@ function RootLayout() {
 
       if (responseId && handledResponseIdsRef.current.has(responseId)) return;
       if (responseId) handledResponseIdsRef.current.add(responseId);
+
+      const handledCallAction = await handleVideoCallNotificationAction(
+        response,
+        (route) => router.push(route as any),
+      );
+      if (handledCallAction) return;
 
       const href = resolveNotificationHref(
         response.notification.request.content.data || {}
@@ -237,7 +257,7 @@ function RootLayout() {
 
     const owner = getSessionGeneration();
     Notifications.getLastNotificationResponseAsync()
-      .then((response: any) => {
+      .then(async (response: any) => {
         if (!response || !isSessionCurrent(owner)) return;
         const recipientId = String(response.notification.request.content.data?.recipientId || response.notification.request.content.data?.receiverId || "");
         if (!recipientId || recipientId !== authUserId) return;
@@ -245,6 +265,12 @@ function RootLayout() {
         const responseId = String(response.notification.request.identifier || "");
         if (responseId && handledResponseIdsRef.current.has(responseId)) return;
         if (responseId) handledResponseIdsRef.current.add(responseId);
+
+        const handledCallAction = await handleVideoCallNotificationAction(
+          response,
+          (route) => router.push(route as any),
+        );
+        if (handledCallAction) return;
 
         const href = resolveNotificationHref(
           response.notification.request.content.data || {}
@@ -267,19 +293,6 @@ function RootLayout() {
     router,
   ]);
 
-  if (
-    !ready ||
-    loggedIn === null ||
-    onboardingPending === null ||
-    !splashDone
-  ) {
-    return (
-      <ThemeProvider value={navigationTheme}>
-        <RomBuzzSystemStatusBar />
-      </ThemeProvider>
-    );
-  }
-
    return (
     <GestureHandlerRootView
       style={{
@@ -290,7 +303,10 @@ function RootLayout() {
       <ThemeProvider value={navigationTheme}>
         <VideoCallProvider key={authUserId || "signed-out"}>
           <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
+            <Stack.Screen
+              name="index"
+              options={{ animation: "none" }}
+            />
             <Stack.Screen name="start" />
             <Stack.Screen name="auth/login" />
             <Stack.Screen name="auth/register" />

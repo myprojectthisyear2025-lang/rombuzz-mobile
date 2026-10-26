@@ -322,15 +322,21 @@ export function useDiscoverProfileController({
           return;
         }
 
+        const previousStatus = relationshipStatus;
+
         try {
-          setActionLoading(
-            true
-          );
+          setActionLoading(true);
+          setRelationshipStatus({
+            likedByMe: true,
+            likedMe: !!previousStatus?.likedMe,
+            matched: !!previousStatus?.matched,
+          });
 
           const stored =
             await getToken();
 
           if (!stored) {
+            setRelationshipStatus(previousStatus);
             return Alert.alert(
               "Login required",
               "Please log in again."
@@ -369,6 +375,7 @@ export function useDiscoverProfileController({
               return;
             }
 
+            setRelationshipStatus(previousStatus);
             return Alert.alert(
               "Could not send request",
               data?.error ||
@@ -410,6 +417,7 @@ export function useDiscoverProfileController({
             }
           );
         } catch (err) {
+          setRelationshipStatus(previousStatus);
           console.warn(
             "Send match request failed:",
             err
@@ -430,6 +438,7 @@ export function useDiscoverProfileController({
         getToken,
         goToMatchedProfile,
         isProfilePreview,
+        relationshipStatus,
         userId,
       ]
     );
