@@ -34,7 +34,11 @@ import {
 import { RtcTextureView } from "react-native-agora";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoCall } from "./VideoCallProvider";
+import { finishCallSound } from "./callSoundPlayer";
+import { endSystemCall } from "./systemCallKeep";
+import useSystemCallPip from "./useSystemCallPip";
 import { useVideoCallSocket } from "./useVideoCallSocket";
+import { endVideoCall } from "./videoCallApi";
 
 const MINI_WIDTH = 116;
 const MINI_HEIGHT = 168;
@@ -148,10 +152,35 @@ export default function ActiveVideoCallMiniBubble() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-   const [miniCall, setMiniCall] = useState<MiniCallPayload | null>(() =>
+  const [miniCall, setMiniCall] = useState<MiniCallPayload | null>(() =>
     getActiveVideoCallMiniSnapshot()
   );
   const [clockTick, setClockTick] = useState(0);
+  const endingRef = useRef(false);
+
+  const isInSystemPip = useSystemCallPip(() => {
+    const current = getActiveVideoCallMiniSnapshot();
+
+    if (!current?.callId || endingRef.current) return;
+
+    endingRef.current = true;
+    hideActiveVideoCallMini();
+    clearActiveCall();
+    endSystemCall(current.callId);
+
+    void finishCallSound(
+      current.callId,
+      runActiveVideoCallDetachedCleanup(),
+    );
+
+    void endVideoCall(current.callId, "pip_end_button")
+      .catch((error) => {
+        console.warn("Video call end sync failed", error);
+      })
+      .finally(() => {
+        endingRef.current = false;
+      });
+  });
 
   const clearMiniCallIfEnded = useCallback(
     (payload: any) => {
@@ -161,7 +190,7 @@ export default function ActiveVideoCallMiniBubble() {
 
       hideActiveVideoCallMini();
       clearActiveCall();
-      void runActiveVideoCallDetachedCleanup();
+      void finishCallSound(eventCallId, runActiveVideoCallDetachedCleanup());
     },
     [clearActiveCall],
   );
@@ -357,7 +386,18 @@ export default function ActiveVideoCallMiniBubble() {
       <Animated.View
         {...panResponder.panHandlers}
         pointerEvents="auto"
-        style={[styles.bubble, positionRef.getLayout()]}
+        style={[
+          styles.bubble,
+          positionRef.getLayout(),
+          isInSystemPip && {
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            borderRadius: 0,
+            borderWidth: 0,
+          },
+        ]}
       >
            <Pressable onPress={restoreCall} style={styles.pressable}>
           {showRemoteVideo ? (

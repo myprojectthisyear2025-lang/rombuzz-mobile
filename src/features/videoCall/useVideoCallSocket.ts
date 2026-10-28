@@ -19,12 +19,13 @@
  */
 
 import { useEffect, useRef } from "react";
+import { DeviceEventEmitter } from "react-native";
 
-import { getSocket } from "@/src/lib/socket";
 import type {
   IncomingVideoCallEvent,
   VideoCallSocketEvent,
 } from "@/src/features/videoCall/videoCallTypes";
+import { getSocket } from "@/src/lib/socket";
 
 type VideoCallSocketHandlers = {
   onIncoming?: (payload: IncomingVideoCallEvent) => void;
@@ -83,6 +84,11 @@ export function useVideoCallSocket(handlers: VideoCallSocketHandlers) {
       if (safe) latest.current.onMissed?.(safe);
     };
 
+    const localExpiry = DeviceEventEmitter.addListener(
+      "rbz:video-call:expired",
+      onMissed,
+    );
+
     (async () => {
       const socket = await getSocket();
       if (!mounted || !socket) return;
@@ -100,6 +106,7 @@ export function useVideoCallSocket(handlers: VideoCallSocketHandlers) {
 
     return () => {
       mounted = false;
+      localExpiry.remove();
 
       if (!socketRef) return;
 

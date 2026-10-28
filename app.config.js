@@ -36,10 +36,16 @@ module.exports = ({ config }) => {
 
   const variantName = process.env.APP_VARIANT || "development";
   const variant = VARIANTS[variantName] || VARIANTS.development;
+  const googleServicesFile = variantName === "development" ? undefined :
+    process.env.GOOGLE_SERVICES_JSON || baseConfig.android?.googleServicesFile ||
+    (variantName === "production" ? "./google-services.json" : undefined);
 
   const plugins = [
     ...(baseConfig.plugins || []),
+    "@config-plugins/react-native-callkeep",
+    "./plugins/withCallKeepMicrophone",
     "./plugins/withAgoraPip",
+    "./plugins/withCallAudio",
     "expo-apple-authentication",
     [
       "@sentry/react-native/expo",
@@ -64,9 +70,7 @@ module.exports = ({ config }) => {
     android: {
       ...baseConfig.android,
       package: variant.appId,
-      ...(process.env.GOOGLE_SERVICES_JSON
-        ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
-        : {}),
+      googleServicesFile,
       blockedPermissions: [
         ...(baseConfig.android?.blockedPermissions || []),
         "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
@@ -76,6 +80,7 @@ module.exports = ({ config }) => {
     extra: {
       ...(baseConfig.extra || {}),
       appVariant: variantName,
+      androidPushEnabled: !!googleServicesFile,
     },
 
     plugins,

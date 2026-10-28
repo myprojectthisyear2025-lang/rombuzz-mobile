@@ -1,11 +1,11 @@
 /** Serializes device token ownership across logout, rotation, permission changes and account switches. */
-import { useEffect } from "react";
-import { AppState, DeviceEventEmitter, Platform } from "react-native";
-import Constants from "expo-constants";
-import * as SecureStore from "expo-secure-store";
 import { API_BASE } from "@/src/config/api";
 import { getSessionGeneration, getSessionSnapshot, isSessionCurrent, subscribeSession } from "@/src/features/auth/rbzSession";
-import { syncPushOwner as register, queuePushCleanup, retryPushCleanup, forgetTransferredPushCleanup, type PushOwner as Owner } from "./pushTokenCleanup";
+import Constants from "expo-constants";
+import * as SecureStore from "expo-secure-store";
+import { useEffect } from "react";
+import { AppState, DeviceEventEmitter, Platform } from "react-native";
+import { forgetTransferredPushCleanup, queuePushCleanup, syncPushOwner as register, retryPushCleanup, type PushOwner as Owner } from "./pushTokenCleanup";
 
 const OWNER_KEY = "RBZ_PUSH_OWNER_V2";
 const TOKEN_KEY = "RBZ_PUSH_TOKEN_CURRENT";
@@ -32,11 +32,13 @@ export function usePushRegistration(Notifications: any, enabled: boolean) {
   useEffect(() => {
     if (!Notifications) return;
     let alive = true;
+    const pushAvailable = Platform.OS !== "android" ||
+      Constants.expoConfig?.extra?.androidPushEnabled !== false;
     const enqueue = (ask = false) => {
       const generation = getSessionGeneration();
       const session = getSessionSnapshot();
       const userId = String(session.user?.id || session.user?._id || "");
-      const valid = () => alive && enabled && isSessionCurrent(generation) && !!userId;
+      const valid = () => alive && enabled && pushAvailable && isSessionCurrent(generation) && !!userId;
       queue = queue.catch(() => {}).then(async () => {
         let previous: Owner | null = null;
         try { previous = JSON.parse(await SecureStore.getItemAsync(OWNER_KEY) || "null"); } catch {}

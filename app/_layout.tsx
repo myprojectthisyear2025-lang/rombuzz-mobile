@@ -10,10 +10,6 @@
  * ============================================================
  */
 
-import { Sentry } from "@/src/monitoring/sentry";
-import { perfMark } from "@/src/performance/diagnostics/core";
-import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network";
-
 import RomBuzzSystemStatusBar from "@/src/components/system/RomBuzzSystemStatusBar";
 import {
   RomBuzzThemeProvider,
@@ -32,6 +28,9 @@ import ActiveVideoCallMiniBubble from "@/src/features/videoCall/ActiveVideoCallM
 import { handleVideoCallNotificationAction } from "@/src/features/videoCall/videoCallNotificationActions";
 import { VideoCallProvider } from "@/src/features/videoCall/VideoCallProvider";
 import { resolveNotificationHref } from "@/src/lib/socket";
+import { Sentry } from "@/src/monitoring/sentry";
+import { perfMark } from "@/src/performance/diagnostics/core";
+import { installNetworkDiagnostics } from "@/src/performance/diagnostics/network";
 import {
   DarkTheme,
   DefaultTheme,
@@ -55,7 +54,12 @@ if (Notifications) {
   Notifications.setNotificationHandler({
     handleNotification: async (notification: any) => {
       const show = shouldPresentPush(notification?.request?.content?.data);
-      return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
+      return {
+        shouldShowBanner: show,
+        shouldShowList: show,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      };
     },
   });
 
@@ -80,6 +84,7 @@ if (Notifications) {
 
 function RootLayout() {
   useEffect(() => { perfMark("startup", "root-mounted"); }, []);
+
   const {
     colors,
     isDark,

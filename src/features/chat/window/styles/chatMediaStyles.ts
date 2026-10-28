@@ -1,7 +1,7 @@
 /** Theme-aware media styles for the mobile chat window. */
-import { StyleSheet } from "react-native";
-import { RBZFont } from "@/src/design/rombuzzTypography";
 import type { RomBuzzColors } from "@/src/design/rombuzzTheme";
+import { RBZFont } from "@/src/design/rombuzzTypography";
+import { StyleSheet } from "react-native";
 
 export function createMediaStyles(colors: RomBuzzColors, BUBBLE_MAX_W: number) {
   return StyleSheet.create({
@@ -30,7 +30,6 @@ export function createMediaStyles(colors: RomBuzzColors, BUBBLE_MAX_W: number) {
     },
     mediaProtectedThumb: {
       opacity: 0.18,
-      transform: [{ scale: 1.12 }],
     },
     mediaOverlay: {
       ...StyleSheet.absoluteFillObject,

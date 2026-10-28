@@ -44,11 +44,11 @@ import {
   View,
 } from "react-native";
 import {
+  AudioScenarioType,
   ChannelProfileType,
   ClientRoleType,
   createAgoraRtcEngine,
   type IRtcEngine,
-  RtcSurfaceView,
   RtcTextureView,
 } from "react-native-agora";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -61,6 +61,13 @@ import {
   setActiveVideoCallDetachedCleanup,
   showActiveVideoCallMini,
 } from "@/src/features/videoCall/ActiveVideoCallMiniStore";
+import {
+  finishCallSound,
+  stopRtcCallSound,
+} from "@/src/features/videoCall/callSoundPlayer";
+import { endSystemCall } from "@/src/features/videoCall/systemCallKeep";
+import { useActiveCallSounds } from "@/src/features/videoCall/useCallSounds";
+import useSystemCallPip from "@/src/features/videoCall/useSystemCallPip";
 import { useVideoCallSocket } from "@/src/features/videoCall/useVideoCallSocket";
 import {
   acceptVideoCall,
@@ -75,6 +82,7 @@ import type {
   VideoCallSession,
 } from "@/src/features/videoCall/videoCallTypes";
 import VideoCallGiftOverlay from "@/src/features/videoCallGifts/VideoCallGiftOverlay";
+
 const RBZ = {
   c1: "#b1123c",
   c2: "#d8345f",
@@ -240,12 +248,30 @@ export default function RomBuzzVideoCallScreen() {
   const [remoteUids, setRemoteUids] = useState<number[]>([]);
   const [error, setError] = useState("");
 
+  const isInSystemPip = useSystemCallPip(() => {
+    if (!minimizedToGlobalRef.current && engineRef.current) {
+      leaveScreen("pip_end_button");
+    }
+  });
+
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
 
   const [callConnected, setCallConnected] = useState(false);
   const [liveCallSeconds, setLiveCallSeconds] = useState(0);
+
+  useActiveCallSounds({
+    id: callId,
+    caller: routeRole === "caller",
+    ringing: call?.status === "ringing",
+    joined,
+    hasPeer: remoteUids.length > 0,
+    restored: routeStartedAtMs > 0,
+    expiresAt: call?.expiresAt,
+    error,
+    engine: engineRef,
+  });
 
   // ✅ X button minimizes only. Red end-call button is the only hang-up action.
   const [callMinimized, setCallMinimized] = useState(false);
@@ -554,6 +580,7 @@ export default function RomBuzzVideoCallScreen() {
   }, [call, pendingCallerLaunch]);
 
   const cleanupAgora = async () => {
+    await stopRtcCallSound(callId);
     const engine = engineRef.current;
     engineRef.current = null;
 
@@ -590,23 +617,30 @@ export default function RomBuzzVideoCallScreen() {
 
   const leaveScreen = (reason = "left_screen", notifyBackend = true) => {
     if (leavingRef.current) return;
+
+    const wasMinimized = minimizedToGlobalRef.current;
     leavingRef.current = true;
 
-    // Leave the call UI immediately. Backend persistence should never
-    // hold the user on the video-call screen after pressing hang up.
     minimizedToGlobalRef.current = false;
     hideActiveVideoCallMini();
     setActiveVideoCallDetachedCleanup(null);
     clearActiveCall();
 
     const activeCallId = callId;
+    void finishCallSound(callId, cleanupAgora());
+
+    if (activeCallId) {
+      endSystemCall(activeCallId);
+    }
 
     cleanupAgora().catch(() => null);
 
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/(tabs)/(root)/chat");
+    if (!wasMinimized) {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)/(root)/chat");
+      }
     }
 
     if (notifyBackend && activeCallId) {
@@ -872,6 +906,7 @@ export default function RomBuzzVideoCallScreen() {
         engine.initialize({
           appId: joinToken.appId,
           channelProfile: ChannelProfileType.ChannelProfileCommunication,
+          audioScenario: AudioScenarioType.AudioScenarioChatroom,
         });
 
         if (Platform.OS === "android") {
@@ -1134,6 +1169,10 @@ export default function RomBuzzVideoCallScreen() {
 
      const giftOverlayBottomOffset = insets.bottom + 104;
 
+  if (!isFocused) {
+    return <Stack.Screen options={{ headerShown: false }} />;
+  }
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
@@ -1144,7 +1183,13 @@ export default function RomBuzzVideoCallScreen() {
           style={StyleSheet.absoluteFill}
         />
 
-             <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <View
+          style={[
+            styles.header,
+            { paddingTop: insets.top + 10 },
+            isInSystemPip && { display: "none" },
+          ]}
+        >
           <View>
             <Text style={styles.headerTitle}>{callTitle}</Text>
             <Text style={styles.headerSub}>
@@ -1163,7 +1208,12 @@ export default function RomBuzzVideoCallScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.videoStage}>
+        <View
+          style={[
+            styles.videoStage,
+            isInSystemPip && StyleSheet.absoluteFillObject,
+          ]}
+        >
           {loading ? (
             <View style={styles.centerState}>
               <ActivityIndicator color={colors.white} size="large" />
@@ -1210,7 +1260,7 @@ export default function RomBuzzVideoCallScreen() {
                     </View>
                   )
                 ) : (
-                  <RtcSurfaceView
+                  <RtcTextureView
                     style={styles.remoteVideo}
                     canvas={{ uid: remoteUid }}
                   />
@@ -1224,7 +1274,11 @@ export default function RomBuzzVideoCallScreen() {
 
               <Animated.View
                 {...previewPanResponder.panHandlers}
-                style={[styles.localPreview, previewPositionRef.getLayout()]}
+                style={[
+                  styles.localPreview,
+                  previewPositionRef.getLayout(),
+                  isInSystemPip && { display: "none" },
+                ]}
               >
                 {shouldShowRemoteInSmallBox ? (
                   <RtcTextureView
@@ -1254,7 +1308,13 @@ export default function RomBuzzVideoCallScreen() {
           )}
         </View>
 
-        <View style={[styles.controlsWrap, { paddingBottom: insets.bottom + 18 }]}>
+        <View
+          style={[
+            styles.controlsWrap,
+            { paddingBottom: insets.bottom + 18 },
+            isInSystemPip && { display: "none" },
+          ]}
+        >
           <Pressable
             onPress={toggleCamera}
             style={[styles.controlButton, cameraOff ? styles.controlActive : null]}

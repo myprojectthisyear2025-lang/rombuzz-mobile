@@ -49,21 +49,29 @@ function withAgoraPip(config) {
     const contents = mod.modResults.contents;
     const nativeActivityImport =
       "import io.agora.rtc.ng.react.AgoraPIPActivity";
+    const addPipControls = require("./romBuzzPipActivity");
 
-    if (contents.includes("AgoraPIPActivity")) return mod;
+    if (contents.includes("AgoraPIPActivity")) {
+      mod.modResults.contents = addPipControls(contents);
+      return mod;
+    }
+
     if (!contents.includes("import com.facebook.react.ReactActivity")) {
       throw new Error("withAgoraPip could not find the ReactActivity import.");
     }
+
     if (!contents.includes(": ReactActivity()")) {
       throw new Error("withAgoraPip could not find the MainActivity superclass.");
     }
 
-    mod.modResults.contents = contents
-      .replace(
-        "import com.facebook.react.ReactActivity",
-        nativeActivityImport,
-      )
-      .replace(": ReactActivity()", ": AgoraPIPActivity()");
+    mod.modResults.contents = addPipControls(
+      contents
+        .replace(
+          "import com.facebook.react.ReactActivity",
+          nativeActivityImport,
+        )
+        .replace(": ReactActivity()", ": AgoraPIPActivity()"),
+    );
 
     return mod;
   });

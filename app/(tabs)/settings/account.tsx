@@ -31,10 +31,10 @@ export default function AccountSettings() {
   const nameCooldownText = useMemo(() => {
     const last = me?.nameChangedAt ? new Date(me.nameChangedAt).getTime() : 0;
     if (!last) return "";
-    const remainingMs = 60 * 1000 - (Date.now() - last);
+    const remainingMs = 7 * 24 * 60 * 60 * 1000 - (Date.now() - last);
     if (remainingMs <= 0) return "";
-    const hours = Math.ceil(remainingMs / (60 * 1000));
-    return `You can change your name again in ${hours} minute(s).`;
+    const days = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+    return `You can change your name again in ${days} day(s).`;
   }, [me]);
 
   const load = useCallback(async () => {
