@@ -1,295 +1,74 @@
-/**
- * ============================================================
- * 📁 File: src/features/chat/thread/ChatMediaViewerController.tsx
- * 🎯 Purpose: Fullscreen media viewer controller for RomBuzz chat thread
- *
- * Used by:
- *  - app/chat/[peerId].tsx
- *
- * What this file owns:
- *  - Chat fullscreen photo viewer state
- *  - Chat fullscreen video viewer state
- *  - Building the photo viewer item list from chat messages
- *  - Opening and closing image/video viewers
- *  - Handling view-once / view-twice close behavior
- *
- * Why this file exists:
- *  - app/chat/[peerId].tsx was growing over 4000 lines
- *  - Media viewer logic is isolated and does not need to live
- *    inside the main chat thread screen
- *  - This keeps the chat screen smaller without touching layout,
- *    scroll behavior, composer, or message bubble rendering
- *
- * Important:
- *  - This file does NOT change chat layout
- *  - This file does NOT change composer behavior
- *  - This file does NOT change message rendering
- *  - It only controls fullscreen image/video media viewing
- * ============================================================
- */
-
+/** Chat media galleries, horizontal video paging, and protected view consumption. */
 import MediaViewer from "@/src/components/chat/MediaViewer";
 import RBZImageViewer from "@/src/components/media/RBZImageViewer";
-import React, { useCallback, useMemo, useState } from "react";
-import type { Msg } from "./chatTypes";
+import React, { useRef, useState } from "react";
+import { chatVideoUri, sentChatVideoUri } from "./chatVideoSource";
+import {
+  chatImageItems, chatImageUri, chatVideoItems, sameChatMedia,
+  type ChatImageItem, type ChatViewerArgs
+} from "./chatViewerItems";
 
-type ViewerItem = {
-  id: string | number;
-  url: string;
-  title?: string;
-};
-
-function getChatImageUri(message: any) {
-  const candidates = [
-    message?.signedUrl,
-    message?.url,
-    message?.mediaUrl,
-    message?.previewUrl,
-  ].map((value) => String(value || "").trim());
-
-  return (
-    candidates.find((value) => /^https?:\/\//i.test(value)) ||
-    candidates.find((value) => /^(file|content|blob|data):/i.test(value)) ||
-    ""
-  );
-}
-
-function getChatVideoUri(message: any) {
-  return String(
-    message?.playback?.hls ||
-      message?.previewUrl ||
-      message?.signedUrl ||
-      message?.url ||
-      message?.mediaUrl ||
-      ""
-  ).trim();
-}
-
-type ChatMediaViewerControllerArgs = {
-  messages: Msg[];
-  isExpoGo: boolean;
-  maybeDecodeMessage: (message: any) => any;
-  isExpiredMessage: (message: any) => boolean;
-  getMaxViews: (message: any) => 1 | 2 | undefined;
-  consumeEphemeralView: (message: any) => Promise<void>;
-};
-
-export function useChatMediaViewerController({
-  messages,
-  isExpoGo,
-  maybeDecodeMessage,
-  isExpiredMessage,
-  getMaxViews,
-  consumeEphemeralView,
-}: ChatMediaViewerControllerArgs) {
+export function useChatMediaViewerController(args: ChatViewerArgs) {
+  const { getMaxViews, consumeEphemeralView, isExpiredMessage } = args;
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
-  const [imageViewerItems, setImageViewerItems] = useState<ViewerItem[]>([]);
+  const [imageViewerItems, setImageViewerItems] = useState<ChatImageItem[]>([]);
   const [imageViewerIndex, setImageViewerIndex] = useState(0);
+  const [ephemeralImageMsg, setEphemeralImageMsg] = useState<any>(null);
+  const [videoItems, setVideoItems] = useState<any[]>([]);
+  const [videoIndex, setVideoIndex] = useState(0);
+  const viewedVideo = useRef(false);
+  const video = videoItems[videoIndex];
 
-  // ✅ View-once / view-twice photos should not use the swipeable gallery viewer.
-  // They open as a single fullscreen item and are consumed only when closed.
-  const [ephemeralImageViewerOpen, setEphemeralImageViewerOpen] = useState(false);
-  const [ephemeralImageMsg, setEphemeralImageMsg] = useState<any | null>(null);
-
-  const [videoViewerOpen, setVideoViewerOpen] = useState(false);
-  const [videoViewerMsg, setVideoViewerMsg] = useState<any | null>(null);
-
-  const buildChatImageViewerItems = useCallback(
-    (activeMsg?: any) => {
-      const items = messages
-        .map((raw) => maybeDecodeMessage(raw))
-        .filter((msg: any) => {
-          if (!msg || isExpiredMessage(msg)) return false;
-
-          const imageUri = getChatImageUri(msg);
-
-          const isDirectImage =
-            String(msg?.mediaType || "").toLowerCase() === "image" &&
-            !!imageUri;
-
-          const isSharedImage =
-            msg?.type === "share_post" &&
-            !!String(msg?.mediaUrl || "").trim();
-
-          const isSharedProfilePhoto =
-            msg?.type === "share_profile_media" &&
-            String(msg?.mediaType || "").toLowerCase() === "photo" &&
-            !!String(msg?.mediaUrl || "").trim();
-
-          return isDirectImage || isSharedImage || isSharedProfilePhoto;
-        })
-        .map((msg: any) => {
-          const imageUri = getChatImageUri(msg);
-
-          return {
-            id: String(msg?.id || imageUri || msg?.mediaUrl || Math.random()),
-            url: imageUri || String(msg?.mediaUrl || "").trim(),
-            title:
-              msg?.type === "share_profile_media"
-                ? `${String(msg?.ownerName || "Shared")}'s Photo`
-                : "Photo",
-          };
-        })
-        .filter((item) => !!item.url);
-
-      if (!items.length && activeMsg) {
-        const fallbackUrl = getChatImageUri(activeMsg);
-
-        if (fallbackUrl) {
-          return [
-            {
-              id: String(activeMsg?.id || fallbackUrl),
-              url: fallbackUrl,
-              title: "Photo",
-            },
-          ];
-        }
-      }
-
-      return items;
-    },
-    [messages, maybeDecodeMessage, isExpiredMessage]
-  );
-
-  const openImageViewer = useCallback(
-    (message: any) => {
-      if (message && getMaxViews(message)) {
-        setEphemeralImageMsg(message);
-        setEphemeralImageViewerOpen(true);
-        return;
-      }
-
-      const items = buildChatImageViewerItems(message);
-      const activeId = String(message?.id || message?.url || message?.mediaUrl || "");
-      const foundIndex = items.findIndex((item) => String(item.id) === activeId);
-
-      setImageViewerItems(items);
-      setImageViewerIndex(foundIndex >= 0 ? foundIndex : 0);
-      setImageViewerOpen(true);
-    },
-    [buildChatImageViewerItems, getMaxViews]
-  );
-
-  const closeImageViewer = useCallback(() => {
-    setImageViewerOpen(false);
-  }, []);
-
-  const closeEphemeralImageViewer = useCallback(() => {
-    setEphemeralImageViewerOpen(false);
-    setEphemeralImageMsg(null);
-  }, []);
-
-  const openVideoViewer = useCallback((message: any) => {
-    setVideoViewerMsg(message);
-    setVideoViewerOpen(true);
-  }, []);
-
-  const closeVideoViewer = useCallback(() => {
-    setVideoViewerOpen(false);
-    setVideoViewerMsg(null);
-  }, []);
-
-   const closeImageViewerWithEphemeralCheck = useCallback(async () => {
-    const activeImage = imageViewerItems[imageViewerIndex];
-
-      const matchedMessage = messages
-      .map((raw) => maybeDecodeMessage(raw))
-      .find((msg: any) => {
-        const candidateUrl = getChatImageUri(msg);
-        return candidateUrl && candidateUrl === String(activeImage?.url || "").trim();
-      });
-
-    if (matchedMessage && getMaxViews(matchedMessage)) {
-      await consumeEphemeralView(matchedMessage);
-    }
-
-    closeImageViewer();
-  }, [
-    imageViewerItems,
-    imageViewerIndex,
-    messages,
-    maybeDecodeMessage,
-    getMaxViews,
-    consumeEphemeralView,
-    closeImageViewer,
-  ]);
-
-  const closeEphemeralImageViewerWithConsume = useCallback(async () => {
-    const active = ephemeralImageMsg;
-
-    // Close the viewer first so the user never gets stuck on a black screen
-    // while the server consumes/removes the message.
-    closeEphemeralImageViewer();
-
-    if (active && getMaxViews(active)) {
-      await consumeEphemeralView(active);
-    }
-  }, [
-    ephemeralImageMsg,
-    getMaxViews,
-    consumeEphemeralView,
-    closeEphemeralImageViewer,
-  ]);
-
-  const closeVideoViewerWithEphemeralCheck = useCallback(async () => {
-    if (videoViewerMsg && getMaxViews(videoViewerMsg)) {
-      await consumeEphemeralView(videoViewerMsg);
-    }
-
-    closeVideoViewer();
-  }, [videoViewerMsg, getMaxViews, consumeEphemeralView, closeVideoViewer]);
-
-  const mediaViewerNode = useMemo(
-    () => (
-      <>
-          <RBZImageViewer
-          visible={imageViewerOpen}
-          items={imageViewerItems}
-          initialIndex={imageViewerIndex}
-          title="Photo"
-          onIndexChange={setImageViewerIndex}
-          onClose={closeImageViewerWithEphemeralCheck}
-        />
-
-        <MediaViewer
-          visible={ephemeralImageViewerOpen}
-          uri={getChatImageUri(ephemeralImageMsg)}
-          mediaType="image"
-          maxViews={getMaxViews(ephemeralImageMsg)}
-          allowDownload={false}
-          onClose={closeEphemeralImageViewerWithConsume}
-        />
-
-           <MediaViewer
-          visible={videoViewerOpen}
-          uri={getChatVideoUri(videoViewerMsg)}
-          mediaType="video"
-          muted={!!videoViewerMsg?.muted}
-          maxViews={getMaxViews(videoViewerMsg)}
-          allowDownload={!isExpoGo && !getMaxViews(videoViewerMsg)}
-          onClose={closeVideoViewerWithEphemeralCheck}
-        />
-      </>
-    ),
-     [
-      imageViewerOpen,
-      imageViewerItems,
-      imageViewerIndex,
-      closeImageViewerWithEphemeralCheck,
-      ephemeralImageViewerOpen,
-      ephemeralImageMsg,
-      closeEphemeralImageViewerWithConsume,
-      videoViewerOpen,
-      videoViewerMsg,
-      getMaxViews,
-      isExpoGo,
-      closeVideoViewerWithEphemeralCheck,
-    ]
-  );
-
-  return {
-    openImageViewer,
-    openVideoViewer,
-    mediaViewerNode,
+  const openImageViewer = (message: any) => {
+    if (!message || message.deleted || isExpiredMessage(message)) return;
+    if (getMaxViews(message)) { setEphemeralImageMsg(message); return; }
+    const items = chatImageItems(args, message);
+    const activeId = String(message.id || message.url || message.mediaUrl || "");
+    const found = items.findIndex(item => String(item.id) === activeId);
+    setImageViewerItems(items);
+    setImageViewerIndex(Math.max(0, found));
+    setImageViewerOpen(true);
   };
+  const openVideoViewer = (message: any) => {
+    if (!message || message.deleted || isExpiredMessage(message)) return;
+    const items = chatVideoItems(args, message);
+    setVideoIndex(Math.max(0, items.findIndex(item => sameChatMedia(item, message))));
+    viewedVideo.current = false;
+    setVideoItems(items);
+  };
+  const closeEphemeralImage = async () => {
+    const active = ephemeralImageMsg;
+    setEphemeralImageMsg(null);
+    if (active && getMaxViews(active)) await consumeEphemeralView(active);
+  };
+  const closeVideo = async () => {
+    const active = video, played = viewedVideo.current;
+    setVideoItems([]);
+    viewedVideo.current = false;
+    if (active && played && getMaxViews(active)) await consumeEphemeralView(active);
+  };
+  const changeVideoIndex = (next: number) => {
+    viewedVideo.current = false;
+    setVideoIndex(Math.max(0, Math.min(videoItems.length - 1, next)));
+  };
+  const pages = videoItems.map((message, index) => ({
+    id: String(message.id || index), uri: chatVideoUri(message),
+    localUri: sentChatVideoUri(message), muted: !!message.muted,
+    maxViews: getMaxViews(message),
+    thumbnailUrl: String(message.thumbnailUrl || message.playback?.thumbnailUrl || ""),
+  }));
+  const mediaViewerNode = <>
+    <RBZImageViewer visible={imageViewerOpen} items={imageViewerItems}
+      initialIndex={imageViewerIndex} title="Photo" onIndexChange={setImageViewerIndex}
+      onClose={() => setImageViewerOpen(false)} />
+    <MediaViewer visible={!!ephemeralImageMsg} uri={chatImageUri(ephemeralImageMsg)}
+      mediaType="image" maxViews={getMaxViews(ephemeralImageMsg)}
+      allowDownload={false} onClose={closeEphemeralImage} />
+    <MediaViewer visible={!!video} uri={chatVideoUri(video)} localUri={sentChatVideoUri(video)}
+      mediaType="video" muted={!!video?.muted} maxViews={getMaxViews(video)}
+      items={pages} index={videoIndex} onIndexChange={changeVideoIndex}
+      onViewed={() => { viewedVideo.current = true; }}
+      allowDownload={false} onClose={closeVideo} />
+  </>;
+  return { openImageViewer, openVideoViewer, mediaViewerNode };
 }

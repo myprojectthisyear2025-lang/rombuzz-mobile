@@ -1,7 +1,8 @@
+/** Classify chat rows from server message types; ordinary messages cannot become call cards. */
 import { RBZ_TAG, decodeCached } from "@/src/features/chat/thread/chatPayload";
 import type { Msg } from "@/src/features/chat/thread/chatTypes";
 import { getMeetMiddleBubblePayload } from "@/src/features/chat/thread/MeetMiddleChatBubble";
-import { isVideoCallHistoryMessage } from "@/src/features/videoCall/VideoCallHistoryBubble";
+import { isChatCallHistoryMessage } from "@/src/features/videoCall/isChatCallHistoryMessage";
 import { isGiftedPaidMedia } from "../hooks/chatMediaUtils";
 
 function formatReactions(reactions?: Record<string, string>) {
@@ -44,8 +45,8 @@ export function getChatMessagePresentation(item: Msg, myId: string) {
   const isAudio = m?.mediaType === "audio";
   const isGiftedMedia = isMedia && isGiftedPaidMedia(m);
 
-  // A stream video may have call-like duration/status fields. Media always wins.
-  const isVideoCallHistory = !isMedia && isVideoCallHistoryMessage(m);
+  // Call identity comes from the raw server message, before rich-payload decoding.
+  const isVideoCallHistory = !isMedia && !isShared && isChatCallHistoryMessage(item);
   const meetMiddlePayload = getMeetMiddleBubblePayload(m);
   const isMeetMiddleConfirmed =
     meetMiddlePayload?.kind === "milestone" &&

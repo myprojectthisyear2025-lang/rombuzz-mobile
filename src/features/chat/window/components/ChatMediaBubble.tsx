@@ -1,17 +1,17 @@
 /**
  * 📁 File: src/features/chat/window/components/ChatMediaBubble.tsx
- * 🎯 Purpose: Displays chat photos and videos without cropping their source.
+ * 🎯 Purpose: Raised 3D chat photo/video frames that preserve media proportions.
  * Used by: Chat message rendering in the mobile chat window.
  * Layout: Fits media proportionally inside the existing maximum bubble frame.
  */
+import ChatVideoPoster from "@/src/components/chat/ChatVideoPoster";
 import type { Msg } from "@/src/features/chat/thread/chatTypes";
-import { diagnosticImage, diagnosticVideo } from "@/src/performance/diagnostics/media";
-import { ResizeMode } from "expo-av";
+import { diagnosticImage } from "@/src/performance/diagnostics/media";
 import React, { useState } from "react";
-import { Pressable } from "react-native";
 import { useChatWindow } from "../ChatWindowContext";
 import { getMediaKey } from "../hooks/chatMediaUtils";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
+import ChatBubbleSurface from "./ChatBubbleSurface";
 import {
   ChatHeartBurst,
   ChatProtectedMediaOverlay,
@@ -19,11 +19,10 @@ import {
 } from "./ChatMediaEffects";
 import type { ChatMessagePresentation } from "./chatMessagePresentation";
 
-const PerfVideo = diagnosticVideo("chat-video");
 const PerfImage = diagnosticImage("chat-media");
 
 type MediaSize = { width: number; height: number };
-const MEDIA_BORDER = 2;
+const MEDIA_BORDER = 4;
 
 function fitMediaSize(
   sourceWidth: number,
@@ -58,7 +57,6 @@ export default function ChatMediaBubble({
   const {
     isExpired,
     getMaxViews,
-    getChatVideoUri,
     openImageViewer,
     openVideoViewer,
     handleMessageTap,
@@ -87,7 +85,10 @@ export default function ChatMediaBubble({
   };
 
   return (
-    <Pressable
+    <ChatBubbleSurface
+      isMine={isMine}
+      maxWidth={BUBBLE_MAX_W}
+      variant="media"
       accessibilityRole="button"
       accessibilityLabel={
         maxViews
@@ -102,29 +103,18 @@ export default function ChatMediaBubble({
         })
       }
       onLongPress={() => openSheet(item)}
-      style={[
-        styles.mediaWrap,
-        isMine ? styles.mediaMine : styles.mediaPeer,
-        { width: mediaSize.width + MEDIA_BORDER },
-      ]}
+      style={{ width: mediaSize.width + MEDIA_BORDER, marginVertical: 6 }}
     >
       {isVideo ? (
-        <PerfVideo
-          source={{ uri: getChatVideoUri(m) }}
+        <ChatVideoPoster
+          message={m}
           style={[
             styles.mediaThumb,
             maxViews ? styles.mediaProtectedThumb : null,
             mediaFrameStyle,
           ]}
-          resizeMode={ResizeMode.CONTAIN}
-          onReadyForDisplay={(event) =>
-            setSourceSize({
-              width: event.naturalSize.width,
-              height: event.naturalSize.height,
-            })
-          }
-          shouldPlay={false}
-          isMuted={!!m.muted}
+          protectedMedia={!!maxViews}
+          onSize={setSourceSize}
         />
       ) : (
         <PerfImage
@@ -147,6 +137,6 @@ export default function ChatMediaBubble({
       {isVideo && !maxViews ? <ChatVideoPlayBadge /> : null}
       {maxViews ? <ChatProtectedMediaOverlay maxViews={maxViews} /> : null}
       <ChatHeartBurst messageKey={getMediaKey(m)} />
-    </Pressable>
+    </ChatBubbleSurface>
   );
 }

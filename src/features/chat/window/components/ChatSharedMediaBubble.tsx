@@ -1,12 +1,14 @@
-import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
-import React from "react";
-import { Image, Pressable, Text, View } from "react-native";
+/** Raised shared post/profile media frames use image thumbnails without allocating video players. */
+import ChatVideoPoster from "@/src/components/chat/ChatVideoPoster";
 import type { Msg } from "@/src/features/chat/thread/chatTypes";
+import { Ionicons } from "@expo/vector-icons";
+import React from "react";
+import { Image, Text, View } from "react-native";
 import { useChatWindow } from "../ChatWindowContext";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
-import type { ChatMessagePresentation } from "./chatMessagePresentation";
+import ChatBubbleSurface from "./ChatBubbleSurface";
 import { ChatVideoPlayBadge } from "./ChatMediaEffects";
+import type { ChatMessagePresentation } from "./chatMessagePresentation";
 
 export default function ChatSharedMediaBubble({
   item,
@@ -22,23 +24,15 @@ export default function ChatSharedMediaBubble({
     model;
   if (m?.deleted)
     return (
-      <Pressable
+      <ChatBubbleSurface isMine={isMine} maxWidth={BUBBLE_MAX_W}
         onLongPress={() => openSheet(item)}
-        style={{
-          alignSelf: "flex-start",
-          maxWidth: BUBBLE_MAX_W,
-          flexShrink: 0,
-          overflow: "visible",
-        }}
       >
-        <View style={[styles.bubble, isMine ? styles.mine : styles.peer]}>
-          <Text
-            style={[styles.msgText, isMine ? styles.mineText : styles.peerText]}
-          >
-            This message was unsent
-          </Text>
-        </View>
-      </Pressable>
+        <Text
+          style={[styles.msgText, { color: isMine ? "#FFFFFF" : colors.text }]}
+        >
+          This message was unsent
+        </Text>
+      </ChatBubbleSurface>
     );
   const isVideo = isSharedReel || isSharedProfileReel;
   const label = isSharedProfileReel
@@ -49,13 +43,14 @@ export default function ChatSharedMediaBubble({
         ? "Shared reel"
         : "Shared post";
   return (
-    <Pressable
+    <ChatBubbleSurface isMine={isMine} maxWidth={BUBBLE_MAX_W} variant="media"
       accessibilityRole="button"
       accessibilityLabel={`Open ${label.toLowerCase()}`}
       onPress={() =>
         handleMessageTap(item, m, {
           singleTapAction: () => {
             const payload = {
+              ...m,
               id: String(m?.id || ""),
               url: String(m?.mediaUrl || ""),
               mediaUrl: String(m?.mediaUrl || ""),
@@ -68,15 +63,13 @@ export default function ChatSharedMediaBubble({
         })
       }
       onLongPress={() => openSheet(item)}
-      style={[styles.mediaWrap, isMine ? styles.mediaMine : styles.mediaPeer]}
+      style={{ width: BUBBLE_MAX_W, marginVertical: 6 }}
     >
       {isVideo ? (
-        <Video
-          source={{ uri: String(m?.mediaUrl || "") }}
+        <ChatVideoPoster
+          message={{ ...m, url: String(m?.mediaUrl || "") }}
           style={styles.mediaThumb}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={false}
-          isMuted
+          resizeMode="cover"
         />
       ) : (
         <Image
@@ -95,6 +88,6 @@ export default function ChatSharedMediaBubble({
         <Text style={styles.mediaOverlayText}>{label}</Text>
         <Text style={styles.mediaOverlayText}>Tap to open</Text>
       </View>
-    </Pressable>
+    </ChatBubbleSurface>
   );
 }

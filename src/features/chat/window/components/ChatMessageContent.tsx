@@ -1,15 +1,17 @@
-import React from "react";
-import { Pressable, Text, View } from "react-native";
+/** Text bubbles use a native 3D surface; existing message actions and special renderers stay intact. */
 import AudioBubble from "@/src/components/chat/AudioBubble";
 import ChatGiftMessageBubble from "@/src/components/chat/ChatGiftMessageBubble";
 import ChatGiftedMediaBubble from "@/src/components/chat/ChatGiftedMediaBubble";
 import type { Msg } from "@/src/features/chat/thread/chatTypes";
+import React from "react";
+import { Text } from "react-native";
 import { useChatWindow } from "../ChatWindowContext";
 import { useChatWindowStyles } from "../styles/useChatWindowStyles";
-import type { ChatMessagePresentation } from "./chatMessagePresentation";
+import ChatBubbleSurface from "./ChatBubbleSurface";
 import ChatMediaBubble from "./ChatMediaBubble";
-import ChatSharedMediaBubble from "./ChatSharedMediaBubble";
 import ChatReplyQuote from "./ChatReplyQuote";
+import ChatSharedMediaBubble from "./ChatSharedMediaBubble";
+import type { ChatMessagePresentation } from "./chatMessagePresentation";
 
 type ContentProps = { item: Msg; model: ChatMessagePresentation };
 
@@ -28,7 +30,7 @@ export default function ChatMessageContent({ item, model }: ContentProps) {
     handleMessageTap,
     showTimestampForMessage,
   } = useChatWindow();
-  const { styles, BUBBLE_MAX_W } = useChatWindowStyles();
+  const { styles, colors, BUBBLE_MAX_W } = useChatWindowStyles();
   const {
     m,
     isMine,
@@ -79,7 +81,9 @@ export default function ChatMessageContent({ item, model }: ContentProps) {
   if (isShared) return <ChatSharedMediaBubble item={item} model={model} />;
 
   return (
-    <Pressable
+    <ChatBubbleSurface
+      isMine={isMine}
+      maxWidth={BUBBLE_MAX_W}
       onPress={() =>
         handleMessageTap(item, m, {
           singleTapAction: isPlainTextMessage
@@ -89,21 +93,13 @@ export default function ChatMessageContent({ item, model }: ContentProps) {
         })
       }
       onLongPress={() => openSheet(item)}
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: BUBBLE_MAX_W,
-        flexShrink: 0,
-        overflow: "visible",
-      }}
     >
-      <View style={[styles.bubble, isMine ? styles.mine : styles.peer]}>
-        <ChatReplyQuote replyTo={m?.replyTo} isMine={isMine} insideBubble />
-        <Text
-          style={[styles.msgText, isMine ? styles.mineText : styles.peerText]}
-        >
-          {m?.deleted ? "This message was unsent" : String(m?.text || "")}
-        </Text>
-      </View>
-    </Pressable>
+      <ChatReplyQuote replyTo={m?.replyTo} isMine={isMine} insideBubble />
+      <Text
+        style={[styles.msgText, { lineHeight: 22, color: isMine ? "#FFFFFF" : colors.text }]}
+      >
+        {m?.deleted ? "This message was unsent" : String(m?.text || "")}
+      </Text>
+    </ChatBubbleSurface>
   );
 }

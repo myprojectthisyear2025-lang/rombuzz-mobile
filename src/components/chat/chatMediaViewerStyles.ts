@@ -148,4 +148,27 @@ export const chatMediaViewerStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  galleryNavigation: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  errorPanel: {
+    maxWidth: 300,
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: "rgba(25,25,30,0.94)",
+    alignItems: "center",
+    gap: 16,
+  },
+  errorText: {
+    color: "#fff",
+    textAlign: "center",
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+  },
 });
