@@ -49,3 +49,9 @@ app-example
 /.perf-work/
 
 docs/performance/evidence/local-baseline.json
+
+# Firebase configuration kept locally
+/google-services.json
+/google-services.dev.json
+/GoogleService-Info.plist
+/GoogleService-Info.dev.plist
