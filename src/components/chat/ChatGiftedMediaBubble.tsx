@@ -41,6 +41,8 @@ import {
 } from "react-native";
 
 import { API_BASE } from "@/src/config/api";
+import { useRomBuzzTheme } from "@/src/design/RomBuzzThemeProvider";
+import ChatBubbleSurface from "@/src/features/chat/window/components/ChatBubbleSurface";
 
 const RBZ = {
   c1: "#b1123c",
@@ -125,6 +127,7 @@ export default function ChatGiftedMediaBubble({
   onOpenVideo,
   onLongPress,
 }: Props) {
+  const { colors } = useRomBuzzTheme();
   const [unlocking, setUnlocking] = useState(false);
   const sparkleAnim = useRef(new Animated.Value(0)).current;
 
@@ -285,9 +288,7 @@ const PROTECTED_STARS = [
 
   const bubbleStyle: StyleProp<ViewStyle> = [
     styles.wrap,
-    { maxWidth },
-    isMine ? styles.mine : styles.peer,
-    shouldProtectVisual ? styles.protectedWrap : undefined,
+    { width: maxWidth },
   ];
 
   const mediaStyle: StyleProp<ViewStyle> = [
@@ -302,17 +303,22 @@ const PROTECTED_STARS = [
 
   const unlockButtonStyle: StyleProp<ViewStyle> = [
     styles.unlockBtn,
+    { backgroundColor: colors.brand },
     unlocking ? styles.unlockBtnDisabled : undefined,
   ];
 
   return (
-    <Pressable
+    <ChatBubbleSurface
+      isMine={isMine}
+      maxWidth={maxWidth}
+      variant="media"
       onPress={openMedia}
       onLongPress={onLongPress}
       delayLongPress={260}
       style={bubbleStyle}
     >
-      {isVideo ? (
+      <View style={styles.mediaFrame}>
+        {isVideo ? (
         posterUri ? (
                 <Image
             source={{ uri: posterUri }}
@@ -387,7 +393,7 @@ const PROTECTED_STARS = [
 
           <View style={styles.privacyVeil} pointerEvents="none" />
 
-          <View style={styles.lockIcon}>
+          <View style={[styles.lockIcon, { backgroundColor: colors.brand }]}>
             <Ionicons
               name={lockedForReceiver ? "gift" : "lock-closed"}
               size={27}
@@ -439,34 +445,27 @@ const PROTECTED_STARS = [
             </View>
           ) : null}
 
-          <View style={styles.priceBadge}>
-            <Ionicons name="gift" size={13} color={RBZ.white} />
-            <Text style={styles.priceBadgeText}>Unlocked</Text>
-          </View>
-        </>
-      ) : null}
-    </Pressable>
+            <View style={[styles.priceBadge, { backgroundColor: colors.brand }]}>
+              <Ionicons name="gift" size={13} color={RBZ.white} />
+              <Text style={styles.priceBadgeText}>Unlocked</Text>
+            </View>
+          </>
+        ) : null}
+      </View>
+    </ChatBubbleSurface>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
     marginVertical: 6,
-    borderRadius: 18,
+  },
+  mediaFrame: {
+    width: "100%",
+    aspectRatio: 3 / 4,
+    borderRadius: 20,
     overflow: "hidden",
-    backgroundColor: "#151018",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  mine: {
-    alignSelf: "flex-end",
-  },
-  peer: {
-    alignSelf: "flex-start",
-  },
-  protectedWrap: {
-    borderColor: "rgba(216,52,95,0.34)",
-    backgroundColor: "#171018",
+    backgroundColor: "#20131b",
   },
   media: {
     width: "100%",

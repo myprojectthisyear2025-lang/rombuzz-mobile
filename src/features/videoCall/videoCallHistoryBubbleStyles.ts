@@ -1,4 +1,4 @@
-/** Shared iOS and Android layout for call-history cards and their inline action. */
+/** Call-history contents; the shared chat surface supplies themed 3D depth. */
 
 import { StyleSheet } from "react-native";
 
@@ -41,29 +41,13 @@ export const styles = StyleSheet.create({
 
   card: {
     flex: 1,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginVertical: 0,
+  },
+  cardContent: {
+    minHeight: 36,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    minHeight: 58,
-  },
-  cardMine: {
-    borderTopRightRadius: 8,
-  },
-  cardPeer: {
-    borderTopLeftRadius: 8,
-  },
-
-  cardPositive: {
-    backgroundColor: "#ffffff",
-    borderColor: "rgba(0,0,0,0.08)",
-  },
-  cardNegative: {
-    backgroundColor: "#fff5f5",
-    borderColor: "rgba(198,40,40,0.16)",
   },
 
   iconWrap: {
@@ -74,35 +58,25 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
-  iconWrapPositive: {
-    backgroundColor: "#b1123c",
-  },
-  iconWrapNegative: {
-    backgroundColor: "rgba(198,40,40,0.10)",
-  },
-
   textCol: {
     flex: 1,
     minWidth: 0,
     flexShrink: 1,
   },
+
   title: {
-    color: "#111827",
     fontSize: 14,
     fontWeight: "900",
   },
-  titleNegative: {
-    color: "#c62828",
-  },
   subtitle: {
     marginTop: 2,
-    color: "#6b7280",
+    opacity: 0.78,
     fontSize: 12,
     fontWeight: "800",
   },
   exactTimeText: {
     marginTop: 3,
-    color: "#6b7280",
+    opacity: 0.78,
     fontSize: 11,
     fontWeight: "700",
   },
@@ -116,7 +90,8 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#b1123c",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.24)",
     flexShrink: 0,
   },
   callBackText: {
