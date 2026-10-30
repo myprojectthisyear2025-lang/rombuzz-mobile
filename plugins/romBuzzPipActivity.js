@@ -96,8 +96,9 @@ const METHODS = `
 `;
 
 module.exports = function addRomBuzzPipControls(contents) {
+  const addPipLifecycle = require("./romBuzzPipLifecycle");
   if (contents.includes("private var rbzPipReceiverRegistered")) {
-    return contents;
+    return addPipLifecycle(contents);
   }
 
   if (
@@ -116,5 +117,7 @@ module.exports = function addRomBuzzPipControls(contents) {
     throw new Error("RomBuzz PiP: Kotlin MainActivity class not found.");
   }
 
-  return contents.replace(pattern, (match) => match + "\n" + METHODS);
+  return addPipLifecycle(
+    contents.replace(pattern, (match) => match + "\n" + METHODS),
+  );
 };

@@ -63,10 +63,46 @@ export function usePushRegistration(Notifications: any, enabled: boolean) {
         const prefs = (await response.json())?.settings?.notifications || {};
         if (!valid()) return;
         setPushPreferences(prefs, generation);
-        if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("default", {
-          name: "RomBuzz", importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250], lightColor: "#b1123c",
-        });
+        if (Platform.OS === "android") {
+          await Notifications.setNotificationChannelAsync("default", {
+            name: "RomBuzz",
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: "#b1123c",
+          });
+
+          await Notifications.setNotificationChannelAsync("rombuzz-messages-v1", {
+            name: "RomBuzz messages",
+            importance: Notifications.AndroidImportance.HIGH,
+            sound: "alert.wav",
+            vibrationPattern: [0, 250],
+            lightColor: "#F52E64",
+          });
+
+          await Notifications.setNotificationChannelAsync("rombuzz-microbuzz-v1", {
+            name: "MicroBuzz requests",
+            importance: Notifications.AndroidImportance.HIGH,
+            sound: "microbuzz_req.wav",
+            vibrationPattern: [0, 250],
+            lightColor: "#F52E64",
+          });
+
+          await Notifications.setNotificationChannelAsync("rombuzz-activity-v1", {
+            name: "Buzz, matches and gifts",
+            importance: Notifications.AndroidImportance.HIGH,
+            sound: "notification.wav",
+            vibrationPattern: [0, 250],
+            lightColor: "#F52E64",
+          });
+
+          await Notifications.setNotificationChannelAsync("rombuzz-quiet-v1", {
+            name: "Other activity",
+            importance: Notifications.AndroidImportance.DEFAULT,
+            sound: null,
+            enableVibrate: false,
+          });
+        }
+
         if (!valid()) return;
         let permission = await Notifications.getPermissionsAsync();
         if (prefs.push !== false && valid() && (ask || permission.status === "undetermined") && permission.canAskAgain !== false) {

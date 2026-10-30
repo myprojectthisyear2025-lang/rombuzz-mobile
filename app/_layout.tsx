@@ -53,11 +53,24 @@ const Notifications: any = IS_EXPO_GO ? null : require("expo-notifications");
 if (Notifications) {
   Notifications.setNotificationHandler({
     handleNotification: async (notification: any) => {
-      const show = shouldPresentPush(notification?.request?.content?.data);
+      const data = notification?.request?.content?.data;
+      const show = shouldPresentPush(data);
+      const type = String(
+        data?.type || data?.notificationType || "",
+      ).toLowerCase();
+
+      const hasNotificationSound = [
+        "message",
+        "buzz",
+        "match",
+        "gift",
+        "media_gift",
+      ].includes(type);
+
       return {
         shouldShowBanner: show,
         shouldShowList: show,
-        shouldPlaySound: false,
+        shouldPlaySound: show && hasNotificationSound,
         shouldSetBadge: false,
       };
     },

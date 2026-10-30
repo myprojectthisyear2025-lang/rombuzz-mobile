@@ -36,6 +36,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoCall } from "./VideoCallProvider";
 import { finishCallSound } from "./callSoundPlayer";
 import { endSystemCall } from "./systemCallKeep";
+import useCallSurfaceRefresh from "./useCallSurfaceRefresh";
 import useSystemCallPip from "./useSystemCallPip";
 import { useVideoCallSocket } from "./useVideoCallSocket";
 import { endVideoCall } from "./videoCallApi";
@@ -181,6 +182,22 @@ export default function ActiveVideoCallMiniBubble() {
         endingRef.current = false;
       });
   });
+
+  const miniSurfaceRevision = useCallSurfaceRefresh(
+    !!miniCall, isInSystemPip, () => setClockTick((value) => value + 1),
+  );
+
+  const wasInSystemPipRef = useRef(isInSystemPip);
+  useEffect(() => {
+    const restored = wasInSystemPipRef.current && !isInSystemPip;
+    wasInSystemPipRef.current = isInSystemPip;
+    if (!restored || !miniCall?.callId) return;
+    hideActiveVideoCallMini();
+    router.dismissTo({
+      pathname: "/video-call/[callId]",
+      params: { callId: miniCall.callId },
+    });
+  }, [isInSystemPip, miniCall?.callId, router]);
 
   const clearMiniCallIfEnded = useCallback(
     (payload: any) => {
@@ -384,7 +401,7 @@ export default function ActiveVideoCallMiniBubble() {
   return (
     <View pointerEvents="box-none" style={styles.root}>
       <Animated.View
-        {...panResponder.panHandlers}
+        {...(isInSystemPip ? {} : panResponder.panHandlers)}
         pointerEvents="auto"
         style={[
           styles.bubble,
@@ -399,7 +416,11 @@ export default function ActiveVideoCallMiniBubble() {
           },
         ]}
       >
-           <Pressable onPress={restoreCall} style={styles.pressable}>
+           <Pressable
+             key={`mini-video-stage-${miniSurfaceRevision}`}
+             onPress={isInSystemPip ? undefined : restoreCall}
+             style={styles.pressable}
+           >
           {showRemoteVideo ? (
             <RtcTextureView
               key={`mini-remote-${remoteUidNumber}`}

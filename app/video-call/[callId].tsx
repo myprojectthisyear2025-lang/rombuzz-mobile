@@ -67,6 +67,7 @@ import {
 } from "@/src/features/videoCall/callSoundPlayer";
 import { endSystemCall } from "@/src/features/videoCall/systemCallKeep";
 import { useActiveCallSounds } from "@/src/features/videoCall/useCallSounds";
+import useCallSurfaceRefresh from "@/src/features/videoCall/useCallSurfaceRefresh";
 import useSystemCallPip from "@/src/features/videoCall/useSystemCallPip";
 import { useVideoCallSocket } from "@/src/features/videoCall/useVideoCallSocket";
 import {
@@ -260,6 +261,15 @@ export default function RomBuzzVideoCallScreen() {
 
   const [callConnected, setCallConnected] = useState(false);
   const [liveCallSeconds, setLiveCallSeconds] = useState(0);
+
+  const videoSurfaceRevision = useCallSurfaceRefresh(
+    isFocused, isInSystemPip, () => {
+      const startedAt = connectedAtRef.current;
+      if (startedAt) {
+        setLiveCallSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+      }
+    },
+  );
 
   useActiveCallSounds({
     id: callId,
@@ -918,8 +928,8 @@ export default function RomBuzzVideoCallScreen() {
               autoEnterEnabled: pip.pipIsAutoEnterSupported(),
               aspectRatioX: 9,
               aspectRatioY: 16,
-              seamlessResizeEnabled: true,
-              useExternalStateMonitor: true,
+              seamlessResizeEnabled: false,
+              useExternalStateMonitor: false,
               externalStateMonitorInterval: 100,
             });
 
@@ -1175,7 +1185,12 @@ export default function RomBuzzVideoCallScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: false }} />
+      <Stack.Screen options={{
+        headerShown: false,
+        presentation: "card",
+        animation: "none",
+        contentStyle: { backgroundColor: "#07070a" },
+      }} />
 
       <View style={styles.screen}>
         <LinearGradient
@@ -1209,6 +1224,7 @@ export default function RomBuzzVideoCallScreen() {
         </View>
 
         <View
+          key={`call-video-stage-${videoSurfaceRevision}`}
           style={[
             styles.videoStage,
             isInSystemPip && StyleSheet.absoluteFillObject,
@@ -1273,11 +1289,18 @@ export default function RomBuzzVideoCallScreen() {
               )}
 
               <Animated.View
-                {...previewPanResponder.panHandlers}
+                {...(isInSystemPip ? {} : previewPanResponder.panHandlers)}
                 style={[
                   styles.localPreview,
                   previewPositionRef.getLayout(),
-                  isInSystemPip && { display: "none" },
+                  isInSystemPip && {
+                    top: 8,
+                    left: undefined,
+                    right: 8,
+                    width: "30%",
+                    height: "30%",
+                    borderRadius: 8,
+                  },
                 ]}
               >
                 {shouldShowRemoteInSmallBox ? (

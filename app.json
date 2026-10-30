@@ -66,7 +66,12 @@
         {
           "icon": "./assets/images/logo.png",
           "color": "#b1123c",
-          "defaultChannel": "default"
+          "defaultChannel": "default",
+          "sounds": [
+            "./assets/sounds/defaults/alert.wav",
+            "./assets/sounds/defaults/microbuzz_req.wav",
+            "./assets/sounds/defaults/notification.wav"
+          ]
         }
       ],
       [
